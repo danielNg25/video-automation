@@ -10,6 +10,7 @@ build/
 
 # Data (runtime — only keep .gitkeep)
 data/raw/*.mp4
+data/raw/*.json
 data/srt/*.srt
 data/output/*.mp4
 data/logs/*.log

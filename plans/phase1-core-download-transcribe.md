@@ -352,6 +352,290 @@ python3 -m pytest tests/test_downloader.py tests/test_transcriber.py -v
 
 ---
 
+## Web UI + API (Phase 1)
+
+### 1.18 FastAPI Foundation — `server/main.py`
+
+Set up the FastAPI application:
+
+- `server/__init__.py` — Package init
+- `server/main.py` — FastAPI app with CORS (allow `localhost:5173`), lifespan for startup/shutdown
+- `server/deps.py` — Shared dependencies: config loader, task manager singleton
+- `server/models.py` — Pydantic schemas:
+  - `DownloadRequest`: `url: str`
+  - `TranscribeRequest`: `video_id: str`, `language: str = "zh"`, `task: str = "transcribe"`
+  - `TaskResponse`: `task_id: str`
+  - `VideoResponse`: mirrors `VideoMetadata` dataclass
+  - `SRTSegment`: `index: int`, `start: str`, `end: str`, `text: str`
+- **Dependencies**: None (can start in parallel with backend tasks)
+
+### 1.19 Task Manager — `server/task_manager.py`
+
+In-memory async task tracking with SSE support:
+
+- `TaskInfo` dataclass: `task_id`, `status` (pending/running/completed/failed), `progress` (0.0–1.0), `stage`, `result`, `error`, `events: asyncio.Queue`
+- `TaskManager` class:
+  - `create_task(name: str) -> TaskInfo`
+  - `update_progress(task_id, progress, stage, message)`
+  - `complete_task(task_id, result)`
+  - `fail_task(task_id, error)`
+  - `get_task(task_id) -> TaskInfo`
+  - `subscribe(task_id) -> AsyncGenerator[dict]` — yields SSE events from the queue
+- **Dependencies**: 1.18
+
+### 1.20 SSE Events Router — `server/routers/events.py`
+
+- `GET /api/events/{task_id}` — SSE endpoint using `StreamingResponse` with `text/event-stream`
+- Event types: `progress`, `stage_change`, `complete`, `error`
+- Format: `event: {type}\ndata: {json}\n\n`
+- Auto-closes when task completes or client disconnects
+- **Dependencies**: 1.19
+
+### 1.21 Download Router + Service — `server/routers/download.py` + `server/services/download_service.py`
+
+**API Endpoints:**
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/download` | Start download `{"url": "..."}` → `{"task_id": "..."}` |
+| `GET` | `/api/download/{task_id}` | Get download result (metadata + file info) |
+| `GET` | `/api/videos` | List all downloaded videos (scan `data/raw/`) |
+| `GET` | `/api/videos/{video_id}` | Get single video detail |
+
+**Service layer** (`download_service.py`):
+- Wraps `download_with_fallback()` from `src/downloader/__init__.py`
+- Adds progress tracking: intercepts the httpx stream to count bytes vs content-length
+- Spawns download as `asyncio.Task`, pushes progress events to task manager
+- Reports fallback activation: emits `stage_change` event when switching to yt-dlp
+- **Dependencies**: 1.10, 1.19, 1.20
+
+### 1.22 Transcribe Router + Service — `server/routers/transcribe.py` + `server/services/transcribe_service.py`
+
+**API Endpoints:**
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/transcribe` | Start transcription `{"video_id": "...", "language": "zh"}` → `{"task_id": "..."}` |
+| `GET` | `/api/transcribe/{task_id}` | Get transcription result (segments + SRT path) |
+| `GET` | `/api/videos/{video_id}/srt` | Get SRT content as JSON segments or raw text |
+
+**Service layer** (`transcribe_service.py`):
+- Wraps `get_transcriber()` from `src/transcriber/__init__.py`
+- Runs transcription in thread via `asyncio.to_thread()` (CPU-bound)
+- Progress: faster-whisper returns a generator (incremental progress possible); mlx-whisper returns all at once (0% → 100%)
+- **Dependencies**: 1.14, 1.19, 1.20
+
+### 1.23 React Frontend Foundation — `web/`
+
+Scaffold the frontend:
+
+```
+web/
+├── package.json
+├── vite.config.ts           # proxy /api → localhost:8000
+├── tsconfig.json
+├── index.html
+├── src/
+│   ├── main.tsx
+│   ├── App.tsx              # Sidebar layout + page routing
+│   ├── api/
+│   │   └── client.ts        # fetch wrapper for API calls
+│   ├── hooks/
+│   │   ├── useTask.ts       # SSE subscription hook (manages EventSource lifecycle)
+│   │   └── useApi.ts        # Generic API hook with loading/error states
+│   ├── components/
+│   │   ├── Sidebar.tsx      # Navigation sidebar
+│   │   ├── ProgressBar.tsx  # Reusable progress bar with label
+│   │   └── VideoCard.tsx    # Video metadata card
+│   └── pages/
+│       └── DownloadPage.tsx # Phase 1 page
+```
+
+**Setup commands:**
+```bash
+cd web && npm create vite@latest . -- --template react-ts
+npm install tailwindcss @tailwindcss/vite
+npx shadcn@latest init
+npx shadcn@latest add button input card progress badge tabs scroll-area
+```
+
+- **Dependencies**: None (can start in parallel)
+
+### 1.24 Download Page — `web/src/pages/DownloadPage.tsx`
+
+**Components:**
+
+1. **URLInput section** (top):
+   - Large input field with placeholder: "Paste Douyin share link or URL"
+   - "Download" button (disabled while active, shows spinner)
+   - Error banner with retry button
+
+2. **DownloadProgress** (middle, shown during download):
+   - Progress bar with percentage
+   - Speed + ETA text: "2.3 MB / 5.1 MB — 1.2 MB/s"
+   - Fallback indicator badge: "Using yt-dlp fallback" (if applicable)
+
+3. **VideoCard** (shown after download):
+   - Left: video thumbnail (or placeholder icon)
+   - Right: title, author, duration, resolution, file size
+   - "Transcribe" button with dropdown: Chinese / Chinese + English
+
+4. **TranscriptionProgress** (shown during transcription):
+   - Indeterminate or determinate progress bar
+   - Stage text: "Loading model..." → "Transcribing..." → "Generating SRT..."
+
+5. **SRTPreview** (shown after transcription):
+   - Scrollable list of segments
+   - Each segment: timestamp range + Chinese text + English (lighter color, if available)
+
+6. **RecentDownloads** (bottom):
+   - Compact grid of previously downloaded videos
+   - Status badges: Downloaded / Transcribed / Processed
+
+**Key interactions:**
+- Download button → POST `/api/download` → subscribe SSE `/api/events/{task_id}`
+- Progress updates drive the progress bar in real-time
+- After download, auto-fetch video metadata from GET `/api/videos/{video_id}`
+- Transcribe button → POST `/api/transcribe` → subscribe SSE → show SRT preview on complete
+
+- **Dependencies**: 1.21, 1.22, 1.23
+
+### 1.25 Backend Dependencies — `pyproject.toml`
+
+Add to `[project.dependencies]`:
+```
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+```
+
+Add to `Makefile`:
+```makefile
+server:
+	uvicorn server.main:app --reload --port 8000
+
+web:
+	cd web && npm run dev
+
+dev:
+	make server & make web & wait
+```
+
+- **Dependencies**: 1.1
+
+---
+
+### Updated Dependency Graph (with Web UI)
+
+```
+1.1, 1.2, 1.3 ──────── (parallel, no deps)
+       │
+       ▼
+      1.4 ◄──────────── (needs 1.3)
+       │
+       ▼
+      1.5               1.6              1.7
+ (needs 1.4)       (needs 1.3)      (needs 1.3)
+       │                │                │
+       └────────────────┼────────────────┘
+                        │
+                        ▼
+      1.8 ◄──── (needs 1.5, 1.6, 1.7)     1.11 ◄── (needs 1.6)
+      1.9 ◄──── (needs 1.5, 1.6, 1.7)        │
+       │                                    1.12, 1.13 ◄── (need 1.11)
+       ▼                                       │
+     1.10 ◄── (needs 1.8, 1.9)             1.14 ◄── (needs 1.12, 1.13)
+                                               │
+                                            1.15 ◄── (needs 1.11)
+
+                    --- Web UI ---
+
+  1.18 (FastAPI) ────── (no deps, parallel with backend)
+       │
+       ▼
+  1.19 (TaskManager) ◄── (needs 1.18)
+       │
+       ▼
+  1.20 (SSE) ◄── (needs 1.19)
+       │
+       ├──▶ 1.21 (Download API) ◄── (needs 1.10, 1.19, 1.20)
+       └──▶ 1.22 (Transcribe API) ◄── (needs 1.14, 1.19, 1.20)
+
+  1.23 (React scaffold) ────── (no deps, parallel)
+       │
+       ▼
+  1.24 (Download page) ◄── (needs 1.21, 1.22, 1.23)
+```
+
+---
+
+### Web UI Verification Checklist
+
+### V1.12: FastAPI server starts
+
+```bash
+make server
+# In another terminal:
+curl http://localhost:8000/docs
+```
+
+**Expected**: Swagger UI loads with all endpoints.
+
+### V1.13: Download via API
+
+```bash
+curl -X POST http://localhost:8000/api/download \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://v.douyin.com/iRNBho6t/"}'
+# Returns: {"task_id": "..."}
+
+# Subscribe to progress:
+curl -N http://localhost:8000/api/events/{task_id}
+# Streams: event: progress, event: complete
+```
+
+**Expected**: Task starts, progress events stream, download completes.
+
+### V1.14: Transcribe via API
+
+```bash
+curl -X POST http://localhost:8000/api/transcribe \
+  -H "Content-Type: application/json" \
+  -d '{"video_id": "<video_id>", "language": "zh"}'
+
+curl http://localhost:8000/api/videos/<video_id>/srt
+```
+
+**Expected**: Transcription starts, SRT content returned as JSON segments.
+
+### V1.15: Video list API
+
+```bash
+curl http://localhost:8000/api/videos
+```
+
+**Expected**: JSON array of video metadata for all downloaded videos.
+
+### V1.16: React UI loads
+
+```bash
+make web
+# Open http://localhost:5173
+```
+
+**Expected**: Download page renders with URL input, sidebar navigation.
+
+### V1.17: End-to-end UI flow
+
+1. Open `http://localhost:5173`
+2. Paste Douyin URL → click Download
+3. See progress bar update in real-time
+4. After download, see video card with metadata
+5. Click Transcribe → see progress → see SRT preview
+
+**Expected**: Full flow works without using terminal.
+
+---
+
 ## Edge Cases
 
 1. **Invalid Douyin URL**: Share links come in multiple formats (`v.douyin.com/xxx/`, `www.douyin.com/video/xxx`, raw text with embedded URL). Must extract actual URL.

@@ -215,8 +215,16 @@ douyin-automation/
 - [x] **1.15** Translation support — `src/processor/subtitle.py`
 - [x] **1.16** Cookie refresh script — `scripts/refresh_douyin_cookie.py`
 - [x] **1.17** Phase 1 tests — `tests/test_downloader.py`, `tests/test_transcriber.py`
+- [ ] **1.18** FastAPI foundation — `server/main.py`, `deps.py`, `models.py`
+- [ ] **1.19** Task manager — `server/task_manager.py`
+- [ ] **1.20** SSE events router — `server/routers/events.py`
+- [ ] **1.21** Download router + service — `server/routers/download.py`
+- [ ] **1.22** Transcribe router + service — `server/routers/transcribe.py`
+- [ ] **1.23** React frontend foundation — `web/` scaffold
+- [ ] **1.24** Download page — `web/src/pages/DownloadPage.tsx`
+- [ ] **1.25** Backend dependencies — `pyproject.toml` + `Makefile` updates
 
-**Verification:**
+**Verification (Backend):**
 - [x] V1.1 — `pip install -e ".[macos]"` completes without errors
 - [x] V1.2 — All `__init__.py` files in place
 - [x] V1.3 — Config loads with env var interpolation
@@ -228,6 +236,14 @@ douyin-automation/
 - [x] V1.9 — Timestamp formatting handles edge cases
 - [ ] V1.10 — Chinese → English translation produces English SRT
 - [x] V1.11 — Unit tests pass
+
+**Verification (Web UI):**
+- [ ] V1.12 — FastAPI server starts, Swagger UI at `/docs`
+- [ ] V1.13 — Download via API with SSE progress events
+- [ ] V1.14 — Transcribe via API returns SRT segments
+- [ ] V1.15 — Video list API returns all downloaded videos
+- [ ] V1.16 — React UI loads at `localhost:5173`
+- [ ] V1.17 — End-to-end: paste URL → download → transcribe → see SRT preview in browser
 
 ---
 
@@ -241,8 +257,10 @@ douyin-automation/
 - [ ] **2.4** CJK font handling — `ensure_cjk_fonts()` in `src/processor/subtitle.py`
 - [ ] **2.5** Batch processor — `src/processor/__init__.py`
 - [ ] **2.6** Phase 2 tests — `tests/test_processor.py`
+- [ ] **2.7** Process router + service — `server/routers/process.py`
+- [ ] **2.8** Process page — `web/src/pages/ProcessPage.tsx`
 
-**Verification:**
+**Verification (Backend):**
 - [ ] V2.1 — ffmpeg and ffprobe available
 - [ ] V2.2 — CJK font detected on system
 - [ ] V2.3 — SRT parsing produces correct segments
@@ -252,6 +270,12 @@ douyin-automation/
 - [ ] V2.7 — Batch processing produces one output per platform
 - [ ] V2.8 — Dual-line subtitle merge (Chinese + English) works
 - [ ] V2.9 — Unit tests pass
+
+**Verification (Web UI):**
+- [ ] V2.10 — Process API with ffmpeg progress events
+- [ ] V2.11 — Subtitle styles and platform specs API
+- [ ] V2.12 — Serve processed video via API
+- [ ] V2.13 — Process page: select video → configure style → process → preview output
 
 ---
 
@@ -267,8 +291,11 @@ douyin-automation/
 - [ ] **3.6** X/Twitter uploader *(stretch goal)* — `src/uploader/x.py`
 - [ ] **3.7** Uploader factory — `src/uploader/__init__.py`
 - [ ] **3.8** Phase 3 tests — `tests/test_uploader.py`
+- [ ] **3.9** Auth router — `server/routers/auth.py`
+- [ ] **3.10** Upload router + service — `server/routers/upload.py`
+- [ ] **3.11** Upload page — `web/src/pages/UploadPage.tsx`
 
-**Verification:**
+**Verification (Backend):**
 - [ ] V3.1 — YouTube OAuth setup saves token with refresh_token
 - [ ] V3.2 — YouTube upload (private) succeeds, video visible in Studio
 - [ ] V3.3 — TikTok upload (draft) succeeds, video in inbox
@@ -277,6 +304,13 @@ douyin-automation/
 - [ ] V3.6 — Uploader factory returns correct types, only enabled platforms
 - [ ] V3.7 — Error handling returns `UploadResult(success=False)`, no crash
 - [ ] V3.8 — Unit tests pass
+
+**Verification (Web UI):**
+- [ ] V3.9 — Auth status API returns per-platform connection status
+- [ ] V3.10 — OAuth flow via API (start → authorize → callback → connected)
+- [ ] V3.11 — Upload via API with per-platform progress
+- [ ] V3.12 — Upload page: connect accounts → select video → upload → see result URLs
+- [ ] V3.13 — Retry failed upload without re-uploading successful platforms
 
 ---
 
@@ -294,8 +328,13 @@ douyin-automation/
 - [ ] **4.8** Module entry point — `src/__main__.py`
 - [ ] **4.9** README.md (finalize)
 - [ ] **4.10** Integration tests — `tests/test_pipeline.py`
+- [ ] **4.11** Pipeline router + service — `server/routers/pipeline.py`
+- [ ] **4.12** Config router — `server/routers/config.py`
+- [ ] **4.13** Dashboard page — `web/src/pages/DashboardPage.tsx`
+- [ ] **4.14** Settings page — `web/src/pages/SettingsPage.tsx`
+- [ ] **4.15** React Router — route-based navigation
 
-**Verification:**
+**Verification (CLI):**
 - [ ] V4.1 — `python -m src --help` displays all commands
 - [ ] V4.2 — `python -m src process --help` shows all options
 - [ ] V4.3 — Full pipeline: URL → subtitled video → uploaded to all platforms
@@ -306,6 +345,17 @@ douyin-automation/
 - [ ] V4.8 — Structured JSON logs written to `data/logs/pipeline.log`
 - [ ] V4.9 — `python -m src status` displays rich-formatted table
 - [ ] V4.10 — All tests pass: `pytest tests/ -v`
+
+**Verification (Web UI):**
+- [ ] V4.11 — Pipeline API runs full pipeline with stage-level SSE events
+- [ ] V4.12 — Batch API processes multiple URLs with concurrency control
+- [ ] V4.13 — Dashboard stats API returns counts and success rate
+- [ ] V4.14 — Pipeline history API with filtering
+- [ ] V4.15 — Config API: read (secrets redacted) and update (partial merge)
+- [ ] V4.16 — Dashboard UI: stats, quick process, pipeline table with live updates
+- [ ] V4.17 — Batch processing UI: paste URLs → track per-video progress
+- [ ] V4.18 — Settings UI: edit config → save → persists
+- [ ] V4.19 — React Router: all routes work, sidebar highlights active page
 
 ---
 

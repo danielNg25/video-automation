@@ -12,6 +12,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Dark theme with Material Design 3 color tokens, Material Symbols icons, Inter + JetBrains Mono fonts
 - Stitch design screenshots and HTML references (`ui/screenshots/`, `ui/screens/`)
 - Web UI + API layer plan: FastAPI backend + React/Vite/shadcn frontend, split per phase
+- Detailed Web UI + API tasks to all phase plans (tasks 1.18-1.25, 2.7-2.8, 3.9-3.11, 4.11-4.15)
+- Web UI verification checklists per phase (V1.12-V1.17, V2.10-V2.13, V3.9-V3.13, V4.11-V4.19)
+- Updated README.md checklist with all Web UI tasks and verification items
 - UI design prompt for generating mockups with LLM tools (`plans/ui-design-prompt.md`)
 - Architecture diagram updated with Web UI and API layers
 - Phase 1 implementation: download + transcribe pipeline
