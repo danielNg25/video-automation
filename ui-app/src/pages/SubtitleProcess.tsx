@@ -198,17 +198,19 @@ function SubtitleProcessPage() {
     }
   };
 
-  // Preview style (CSS approximation)
+  // Preview style (CSS approximation, scaled for 200px-wide preview)
+  const scaledFontSize = Math.max(10, fontSize * 0.45);
+  const scaledOutline = Math.max(0.3, outlineWidth * 0.25);
   const previewStyle: React.CSSProperties = {
     fontFamily: fontName,
-    fontSize: `${Math.max(14, fontSize * 0.7)}px`,
+    fontSize: `${scaledFontSize}px`,
     fontWeight: boldEnabled ? 'bold' : 'normal',
     color: 'white',
     textShadow: shadowEnabled
-      ? `0 0 ${outlineWidth}px black, 0 0 ${outlineWidth * 2}px black, 1px 1px 2px rgba(0,0,0,0.8)`
-      : `0 0 ${outlineWidth}px black, 0 0 ${outlineWidth * 2}px black`,
-    WebkitTextStroke: `${Math.max(0.5, outlineWidth * 0.3)}px black`,
-    lineHeight: '1.4',
+      ? `0 0 ${scaledOutline}px black, 0 0 ${scaledOutline * 2}px black, 1px 1px 2px rgba(0,0,0,0.8)`
+      : `0 0 ${scaledOutline}px black, 0 0 ${scaledOutline * 2}px black`,
+    WebkitTextStroke: `${scaledOutline}px black`,
+    lineHeight: '1.3',
   };
 
   return (
@@ -225,7 +227,7 @@ function SubtitleProcessPage() {
             </div>
 
             {/* Preview Frame — simulates 9:16 phone screen */}
-            <div className="relative aspect-[9/16] max-h-[360px] rounded-xl overflow-hidden border-2 border-outline-variant/20 shadow-lg mx-auto">
+            <div className="relative w-[200px] h-[356px] rounded-xl overflow-hidden border-2 border-outline-variant/20 shadow-lg mx-auto flex-shrink-0">
               {/* Background: video thumbnail or gradient placeholder */}
               {selectedVideo?.thumbnail ? (
                 <img
@@ -234,38 +236,44 @@ function SubtitleProcessPage() {
                   className="absolute inset-0 w-full h-full object-cover"
                 />
               ) : (
-                <div className="absolute inset-0 bg-gradient-to-b from-zinc-700 via-zinc-800 to-zinc-900" />
+                <div className="absolute inset-0">
+                  <div className="w-full h-full bg-gradient-to-b from-zinc-600 via-zinc-800 to-zinc-900" />
+                  {/* Placeholder content lines */}
+                  <div className="absolute top-1/3 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 opacity-30">
+                    <span className="material-symbols-outlined text-white text-3xl">movie</span>
+                    <span className="text-[9px] text-white/60">Select a video</span>
+                  </div>
+                </div>
               )}
               {/* Dark overlay for subtitle readability */}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/30" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20" />
               {/* Simulated platform UI top bar */}
-              <div className="absolute top-0 left-0 right-0 px-3 pt-2 pb-6 flex justify-between items-center">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full bg-white/40" />
-                  <div className="w-12 h-1.5 rounded bg-white/20" />
+              <div className="absolute top-0 left-0 right-0 px-2 pt-1.5 flex justify-between items-center">
+                <div className="flex items-center gap-1">
+                  <div className="w-1.5 h-1.5 rounded-full bg-white/30" />
+                  <div className="w-8 h-1 rounded bg-white/15" />
                 </div>
-                <div className="flex gap-1.5">
-                  <div className="w-5 h-5 rounded-full bg-white/10" />
-                  <div className="w-5 h-5 rounded-full bg-white/10" />
+                <div className="flex gap-1">
+                  <div className="w-3.5 h-3.5 rounded-full bg-white/10" />
+                  <div className="w-3.5 h-3.5 rounded-full bg-white/10" />
                 </div>
               </div>
               {/* Subtitle text positioned by vertical margin */}
               <div
-                className="absolute left-0 right-0 flex justify-center px-3 text-center"
-                style={{ bottom: `${Math.max(8, verticalMargin * 0.5)}px` }}
+                className="absolute left-0 right-0 flex justify-center px-2 text-center"
+                style={{ bottom: `${Math.max(6, verticalMargin * 0.4)}px` }}
               >
                 <p style={previewStyle}>
-                  Sample subtitle text preview
+                  Sample subtitle text
                 </p>
               </div>
               {/* Simulated platform UI side buttons (TikTok-style) */}
-              <div className="absolute right-2 bottom-1/4 flex flex-col gap-3 items-center">
-                {['favorite', 'chat_bubble', 'share', 'bookmark'].map((icon) => (
-                  <div key={icon} className="flex flex-col items-center gap-0.5">
-                    <div className="w-7 h-7 rounded-full bg-white/15 flex items-center justify-center">
-                      <span className="material-symbols-outlined text-white/60 text-sm">{icon}</span>
+              <div className="absolute right-1.5 bottom-1/4 flex flex-col gap-2 items-center">
+                {['favorite', 'chat_bubble', 'share'].map((icon) => (
+                  <div key={icon} className="flex flex-col items-center">
+                    <div className="w-5 h-5 rounded-full bg-white/15 flex items-center justify-center">
+                      <span className="material-symbols-outlined text-white/50 text-[11px]">{icon}</span>
                     </div>
-                    <span className="text-[7px] text-white/40">123</span>
                   </div>
                 ))}
               </div>
