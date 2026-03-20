@@ -270,29 +270,29 @@ douyin-automation/
 
 - [ ] **2.1** SRT parser + ASS converter — `src/processor/subtitle.py`
 - [ ] **2.2** FFmpeg processor — `src/processor/ffmpeg.py`
-- [ ] **2.3** Platform specs — `config/platforms.yaml` + `PLATFORM_SPECS` dict
-- [ ] **2.4** CJK font handling — `ensure_cjk_fonts()` in `src/processor/subtitle.py`
-- [ ] **2.5** Batch processor — `src/processor/__init__.py`
+- [ ] **2.3** Platform specs — `config/platforms.yaml` + subtitle language per platform
+- [ ] **2.4** Subtitle style config — `config/subtitle_styles.yaml` (Arial default, per-platform overrides)
+- [ ] **2.5** Batch processor — `src/processor/__init__.py` (selects correct translated SRT per platform)
 - [ ] **2.6** Phase 2 tests — `tests/test_processor.py`
 - [ ] **2.7** Process router + service — `server/routers/process.py`
 - [ ] **2.8** Process page — `web/src/pages/ProcessPage.tsx`
 
 **Verification (Backend):**
 - [ ] V2.1 — ffmpeg and ffprobe available
-- [ ] V2.2 — CJK font detected on system
-- [ ] V2.3 — SRT parsing produces correct segments
-- [ ] V2.4 — SRT → ASS conversion has valid `[Script Info]`, `[V4+ Styles]`, `[Events]`
-- [ ] V2.5 — Subtitle burn-in produces viewable video with CJK rendering
+- [ ] V2.2 — SRT parsing produces correct segments
+- [ ] V2.3 — SRT → ASS conversion has valid `[Script Info]`, `[V4+ Styles]`, `[Events]`
+- [ ] V2.4 — English subtitle burn-in produces viewable video
+- [ ] V2.5 — Vietnamese subtitle burn-in renders diacritics correctly (ă, ơ, ư, etc.)
 - [ ] V2.6 — X/Twitter reformatted output meets constraints (≤140s, ≤512MB, H.264)
-- [ ] V2.7 — Batch processing produces one output per platform
-- [ ] V2.8 — Dual-line subtitle merge (Chinese + English) works
+- [ ] V2.7 — Batch processing: TikTok/Facebook get Vietnamese subs, YouTube/X get English subs
+- [ ] V2.8 — Dual-line subtitle merge (English + Vietnamese) works
 - [ ] V2.9 — Unit tests pass
 
 **Verification (Web UI):**
-- [ ] V2.10 — Process API with ffmpeg progress events
-- [ ] V2.11 — Subtitle styles and platform specs API
+- [ ] V2.10 — Process API: correct subtitle language per platform in progress events
+- [ ] V2.11 — Subtitle styles and platform specs API (with subtitle_language field)
 - [ ] V2.12 — Serve processed video via API
-- [ ] V2.13 — Process page: select video → configure style → process → preview output
+- [ ] V2.13 — Process page: select video → see subtitle language per platform → process → preview
 
 ---
 

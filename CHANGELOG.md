@@ -15,6 +15,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - SRT export from UI with multi-language support
 - Updated README checklist with new tasks (1.26-1.32) and verification items (V1.18-V1.25)
 
+### Changed
+- Phase 2 plan: subtitles are now English/Vietnamese (translated), not Chinese. Removed CJK font handling as unnecessary
+- Platform subtitle config: TikTok/Facebook use Vietnamese, YouTube/X use English
+- Default subtitle font changed from "Noto Sans CJK SC" to "Arial" (supports Vietnamese diacritics)
+
 ## [1.0.0] — 2026-03-20
 
 ### Added
