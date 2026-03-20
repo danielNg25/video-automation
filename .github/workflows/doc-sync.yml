@@ -1,0 +1,35 @@
+name: Sync Documentation
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    paths:
+      - "src/**"
+      - "config/**"
+
+jobs:
+  doc-sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Review the code changes in this PR and update documentation:
+            1. Update the relevant module CLAUDE.md (src/*/CLAUDE.md) if key classes, constraints, or interfaces changed
+            2. Update CHANGELOG.md under [Unreleased] with what was added/changed/fixed
+            3. Update README.md if CLI usage, configuration, or platform specs changed
+            4. Do NOT update the README implementation checklist — that is done manually by the developer
+
+            Only update docs that are actually affected by the changes. Do not touch docs that are still accurate.
+            Commit documentation updates to this PR branch.
+          claude_args: |
+            --max-turns 8
