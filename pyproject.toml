@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "douyin-repurpose"
+version = "0.1.0"
+description = "Automated pipeline to download Douyin videos, generate subtitles, and upload to multiple platforms"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27.0",
+    "pyyaml>=6.0",
+    "click>=8.1.0",
+    "yt-dlp>=2024.1.0",
+    "google-api-python-client>=2.100.0",
+    "google-auth-oauthlib>=1.1.0",
+    "authlib>=1.3.0",
+    "tweepy>=4.14.0",
+    "tenacity>=8.2.0",
+    "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+linux = ["faster-whisper>=1.1.0"]
+macos = ["mlx-whisper>=0.4.0"]
+
+[project.scripts]
+douyin-repurpose = "src.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = [
+    "integration: marks tests as integration tests",
+]

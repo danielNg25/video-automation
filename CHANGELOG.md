@@ -7,6 +7,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Phase 1 implementation: download + transcribe pipeline
+- Project scaffolding: `pyproject.toml`, requirements files, directory structure
+- Config loader (`src/utils/config.py`) with `${ENV_VAR}` interpolation
+- Structured JSON logger (`src/utils/logger.py`) with rich console + file output
+- Video metadata dataclass and ffprobe extraction (`src/utils/metadata.py`)
+- Douyin downloader (`src/downloader/douyin.py`) using self-hosted Evil0ctal API
+- yt-dlp fallback downloader (`src/downloader/ytdlp.py`)
+- Download factory with automatic fallback chain (`src/downloader/__init__.py`)
+- Base transcriber ABC with SRT generation (`src/transcriber/base.py`)
+- faster-whisper backend for Linux/CUDA (`src/transcriber/faster.py`)
+- mlx-whisper backend for macOS Apple Silicon (`src/transcriber/mlx.py`)
+- Transcriber factory with platform auto-selection (`src/transcriber/__init__.py`)
+- SRT parser and translation support (`src/processor/subtitle.py`)
+- Cookie refresh helper script (`scripts/refresh_douyin_cookie.py`)
+- Platform config (`config/platforms.yaml`) and subtitle styles (`config/subtitle_styles.yaml`)
+- Unit tests for downloader and transcriber (32 tests)
+- Integration tests against real Douyin API container (8 tests)
+- Docker cookie config mount for persistent API authentication
+
+### Changed
+- Docker compose port changed from 8080 to 8081, cookie config mounted as volume
+- Updated `.gitignore` with pytest cache, SRT files, and JSON log exclusions
+
+### Previously Added
 - Project planning documents (`PLAN.md`, phase plans in `plans/`)
 - `README.md` with architecture overview, usage guide, and implementation checklist
 - `CLAUDE.md` with development guidance and commit rules

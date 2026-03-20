@@ -198,36 +198,36 @@ douyin-automation/
 
 > Detailed plan: [`plans/phase1-core-download-transcribe.md`](plans/phase1-core-download-transcribe.md)
 
-- [ ] **1.1** Project scaffolding — `pyproject.toml`
-- [ ] **1.2** Requirements files — `requirements.txt`, `requirements-linux.txt`, `requirements-macos.txt`
-- [ ] **1.3** Directory structure + `__init__.py` files + `.gitignore`
-- [ ] **1.4** Configuration files — `config/config.yaml`, `platforms.yaml`, `subtitle_styles.yaml`
-- [ ] **1.5** Config loader — `src/utils/config.py`
-- [ ] **1.6** Logger utility — `src/utils/logger.py`
-- [ ] **1.7** Metadata utility — `src/utils/metadata.py`
-- [ ] **1.8** Douyin downloader — `src/downloader/douyin.py`
-- [ ] **1.9** yt-dlp fallback — `src/downloader/ytdlp.py`
-- [ ] **1.10** Downloader factory — `src/downloader/__init__.py`
-- [ ] **1.11** Base transcriber — `src/transcriber/base.py`
-- [ ] **1.12** faster-whisper backend — `src/transcriber/faster.py`
-- [ ] **1.13** mlx-whisper backend — `src/transcriber/mlx.py`
-- [ ] **1.14** Transcriber factory — `src/transcriber/__init__.py`
-- [ ] **1.15** Translation support — `src/processor/subtitle.py`
-- [ ] **1.16** Cookie refresh script — `scripts/refresh_douyin_cookie.py`
-- [ ] **1.17** Phase 1 tests — `tests/test_downloader.py`, `tests/test_transcriber.py`
+- [x] **1.1** Project scaffolding — `pyproject.toml`
+- [x] **1.2** Requirements files — `requirements.txt`, `requirements-linux.txt`, `requirements-macos.txt`
+- [x] **1.3** Directory structure + `__init__.py` files + `.gitignore`
+- [x] **1.4** Configuration files — `config/config.yaml`, `platforms.yaml`, `subtitle_styles.yaml`
+- [x] **1.5** Config loader — `src/utils/config.py`
+- [x] **1.6** Logger utility — `src/utils/logger.py`
+- [x] **1.7** Metadata utility — `src/utils/metadata.py`
+- [x] **1.8** Douyin downloader — `src/downloader/douyin.py`
+- [x] **1.9** yt-dlp fallback — `src/downloader/ytdlp.py`
+- [x] **1.10** Downloader factory — `src/downloader/__init__.py`
+- [x] **1.11** Base transcriber — `src/transcriber/base.py`
+- [x] **1.12** faster-whisper backend — `src/transcriber/faster.py`
+- [x] **1.13** mlx-whisper backend — `src/transcriber/mlx.py`
+- [x] **1.14** Transcriber factory — `src/transcriber/__init__.py`
+- [x] **1.15** Translation support — `src/processor/subtitle.py`
+- [x] **1.16** Cookie refresh script — `scripts/refresh_douyin_cookie.py`
+- [x] **1.17** Phase 1 tests — `tests/test_downloader.py`, `tests/test_transcriber.py`
 
 **Verification:**
-- [ ] V1.1 — `pip install -e ".[macos]"` completes without errors
-- [ ] V1.2 — All `__init__.py` files in place
-- [ ] V1.3 — Config loads with env var interpolation
-- [ ] V1.4 — Douyin download produces MP4 + metadata
+- [x] V1.1 — `pip install -e ".[macos]"` completes without errors
+- [x] V1.2 — All `__init__.py` files in place
+- [x] V1.3 — Config loads with env var interpolation
+- [x] V1.4 — Douyin download produces MP4 + metadata
 - [ ] V1.5 — yt-dlp fallback downloads successfully
-- [ ] V1.6 — Fallback auto-triggers when primary API fails
-- [ ] V1.7 — Transcriber selects correct backend per platform
+- [x] V1.6 — Fallback auto-triggers when primary API fails
+- [x] V1.7 — Transcriber selects correct backend per platform
 - [ ] V1.8 — Transcription produces valid SRT with Chinese text
-- [ ] V1.9 — Timestamp formatting handles edge cases
+- [x] V1.9 — Timestamp formatting handles edge cases
 - [ ] V1.10 — Chinese → English translation produces English SRT
-- [ ] V1.11 — Unit tests pass
+- [x] V1.11 — Unit tests pass
 
 ---
 

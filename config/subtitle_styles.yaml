@@ -1,0 +1,30 @@
+# Subtitle styling configuration (ASS format)
+# These values map to ASS style fields
+
+default:
+  font_name: "Noto Sans CJK SC"
+  font_size: 18
+  primary_color: "&H00FFFFFF"    # white
+  outline_color: "&H00000000"    # black
+  outline_width: 2
+  shadow_depth: 1
+  alignment: 2                   # bottom-center
+  margin_v: 30                   # vertical margin from bottom
+  bold: true
+
+# Per-platform overrides (merged with default)
+tiktok:
+  font_size: 20
+  margin_v: 50                   # higher to avoid TikTok UI elements
+
+youtube:
+  font_size: 18
+  margin_v: 30
+
+facebook:
+  font_size: 18
+  margin_v: 40
+
+x:
+  font_size: 16
+  margin_v: 30
