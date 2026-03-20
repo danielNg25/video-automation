@@ -14,6 +14,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Raw video download endpoint: `GET /api/videos/{video_id}/raw`
 - SRT export from UI with multi-language support
 - Updated README checklist with new tasks (1.26-1.32) and verification items (V1.18-V1.25)
+- SRT-to-ASS converter with configurable styling (`src/processor/subtitle.py`)
+- Dual-line subtitle merging (English + Vietnamese) for bilingual burn-in
+- Per-platform subtitle language selection with fallback chain (vi/en/zh)
+- Line-breaking for long subtitle text at word boundaries
+- FFmpeg processor (`src/processor/ffmpeg.py`): burn subtitles, reformat per platform, single-pass burn+reformat
+- Batch processor (`src/processor/__init__.py`): process one video for all platforms in one call
+- Process API endpoints: `POST /api/process`, `GET /api/subtitle-styles`, `GET /api/platforms`, `GET /api/videos/{id}/output/{platform}`
+- Process page UI (`ui-app/src/pages/SubtitleProcess.tsx`): video selector, live style preview, platform selector with subtitle language badges, SSE progress, output video preview
+- Phase 2 unit tests (28 tests): SRT parsing, ASS conversion, subtitle merging, FFmpeg mocking, batch processing
+- Phase 2 implementation plan (`plans/phase2-implementation.md`)
 
 ### Changed
 - Phase 2 plan: subtitles are now English/Vietnamese (translated), not Chinese. Removed CJK font handling as unnecessary

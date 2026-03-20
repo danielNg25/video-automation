@@ -1,9 +1,10 @@
 # Subtitle styling configuration (ASS format)
 # These values map to ASS style fields
+# Default font: Arial (supports English + Vietnamese diacritics)
 
 default:
-  font_name: "Noto Sans CJK SC"
-  font_size: 18
+  font_name: "Arial"
+  font_size: 24
   primary_color: "&H00FFFFFF"    # white
   outline_color: "&H00000000"    # black
   outline_width: 2
@@ -13,18 +14,16 @@ default:
   bold: true
 
 # Per-platform overrides (merged with default)
-tiktok:
-  font_size: 20
-  margin_v: 50                   # higher to avoid TikTok UI elements
-
-youtube:
-  font_size: 18
-  margin_v: 30
-
-facebook:
-  font_size: 18
-  margin_v: 40
-
-x:
-  font_size: 16
-  margin_v: 30
+platforms:
+  tiktok:
+    font_size: 28
+    margin_v: 80                 # higher to avoid TikTok UI elements
+  youtube:
+    font_size: 22
+    margin_v: 30
+  facebook:
+    font_size: 26
+    margin_v: 40
+  x:
+    font_size: 22
+    margin_v: 30

@@ -7,7 +7,7 @@ import json
 import subprocess
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, date
+from datetime import date, datetime
 from pathlib import Path
 
 from src.api.models import VideoResponse
@@ -339,6 +339,92 @@ class TaskManager:
             task.message = f"Transcription failed: {e}"
             self._emit(task_id, "error", {"message": str(e)})
             logger.error(f"Transcribe task {task_id} failed: {e}")
+
+    async def run_process(
+        self,
+        task_id: str,
+        video_id: str,
+        platforms: list[str],
+        style_overrides: dict | None,
+        config: dict,
+    ):
+        """Execute a video processing task in the background."""
+        from src.processor import process_for_all_platforms
+
+        task = self.tasks[task_id]
+        task.status = "running"
+        task.video_id = video_id
+        task.message = "Starting video processing..."
+        self._emit(
+            task_id,
+            "progress",
+            {"progress": 0.0, "message": "Starting video processing..."},
+        )
+
+        try:
+            video_info = self.video_index.get(video_id)
+            if not video_info:
+                raise ValueError(f"Video {video_id} not found")
+
+            video_path = Path(video_info.file_path)
+            srt_dir = Path("data/srt")
+            output_dir = Path("data/output")
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            # Progress callback for per-platform updates
+            def on_progress(platform: str, pct: float, message: str):
+                task.progress = pct
+                task.message = message
+                self._emit(
+                    task_id,
+                    "progress",
+                    {"progress": pct, "message": message, "platform": platform},
+                )
+
+            # Run CPU-bound processing in a thread
+            results = await asyncio.to_thread(
+                process_for_all_platforms,
+                video_id,
+                video_path,
+                srt_dir,
+                output_dir,
+                platforms,
+                config,
+                style_overrides,
+                on_progress,
+            )
+
+            # Build result data
+            outputs = {p: str(path) for p, path in results.items()}
+            subtitle_languages = {}
+            for p in results:
+                # Determine which subtitle language was used
+                srt_path = srt_dir / f"{video_id}_vi.srt"
+                if p in ("tiktok", "facebook") and srt_path.exists():
+                    subtitle_languages[p] = "vi"
+                else:
+                    subtitle_languages[p] = "en"
+
+            # Update video index
+            video_info.status = "processed"
+            self.video_index[video_id] = video_info
+
+            task.status = "completed"
+            task.progress = 1.0
+            task.message = "Processing complete"
+            task.result = {
+                "video_id": video_id,
+                "outputs": outputs,
+                "subtitle_languages": subtitle_languages,
+            }
+            self._emit(task_id, "complete", task.result)
+
+        except Exception as e:
+            task.status = "failed"
+            task.error = str(e)
+            task.message = f"Processing failed: {e}"
+            self._emit(task_id, "error", {"message": str(e)})
+            logger.error(f"Process task {task_id} failed: {e}")
 
     def get_stats(self) -> dict:
         """Compute dashboard statistics."""

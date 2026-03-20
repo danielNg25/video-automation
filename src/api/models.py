@@ -2,7 +2,6 @@
 
 from pydantic import BaseModel
 
-
 # --- Requests ---
 
 
@@ -18,6 +17,12 @@ class TranscribeRequest(BaseModel):
 
 class UpdateVideoRequest(BaseModel):
     title: str
+
+
+class ProcessRequest(BaseModel):
+    video_id: str
+    platforms: list[str]
+    subtitle_style: dict | None = None
 
 
 # --- Responses ---
@@ -63,6 +68,12 @@ class SrtResponse(BaseModel):
     video_id: str
     segments: list[SubtitleSegment]
     language: str
+
+
+class ProcessResult(BaseModel):
+    video_id: str
+    outputs: dict[str, str] = {}
+    subtitle_languages: dict[str, str] = {}
 
 
 class DashboardStats(BaseModel):

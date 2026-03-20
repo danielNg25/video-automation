@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from src.api.deps import get_data_dir, get_task_manager
-from src.api.routers import download, events, transcribe
+from src.api.routers import download, events, process, transcribe
 
 
 def create_app() -> FastAPI:
@@ -21,6 +21,7 @@ def create_app() -> FastAPI:
 
     app.include_router(download.router)
     app.include_router(transcribe.router)
+    app.include_router(process.router)
     app.include_router(events.router)
 
     @app.on_event("startup")
@@ -28,6 +29,11 @@ def create_app() -> FastAPI:
         data_dir = get_data_dir()
         app.mount("/files/raw", StaticFiles(directory=str(data_dir / "raw")), name="raw_videos")
         app.mount("/files/srt", StaticFiles(directory=str(data_dir / "srt")), name="srt_files")
+        app.mount(
+            "/files/output",
+            StaticFiles(directory=str(data_dir / "output")),
+            name="output_videos",
+        )
 
         tm = get_task_manager()
         await tm.scan_existing_videos()

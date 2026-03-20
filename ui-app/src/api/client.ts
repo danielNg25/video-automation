@@ -4,6 +4,9 @@ import type {
   VideoListResponse,
   SrtResponse,
   DashboardStats,
+  ProcessRequest,
+  SubtitleStyleConfig,
+  PlatformSpec,
 } from './types';
 
 const BASE = '/api';
@@ -64,6 +67,26 @@ export async function deleteVideo(videoId: string): Promise<void> {
 
 export function getStats(): Promise<DashboardStats> {
   return request('/stats');
+}
+
+export function postProcess(req: ProcessRequest): Promise<TaskResponse> {
+  return request('/process', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+}
+
+export function getSubtitleStyles(): Promise<SubtitleStyleConfig> {
+  return request('/subtitle-styles');
+}
+
+export function getPlatforms(): Promise<Record<string, PlatformSpec>> {
+  return request('/platforms');
+}
+
+export function getProcessedVideoUrl(videoId: string, platform: string): string {
+  return `${BASE}/videos/${videoId}/output/${platform}`;
 }
 
 export function subscribeSSE(
