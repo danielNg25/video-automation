@@ -3,6 +3,8 @@ import json
 import re
 from pathlib import Path
 
+import httpx
+
 from src.utils.logger import setup_logger
 from src.utils.metadata import VideoMetadata
 
@@ -70,6 +72,18 @@ class YtDlpDownloader:
         desc = info.get("description", "")
         hashtags = re.findall(r"#(\w+)", desc)
 
+        # Download thumbnail
+        thumbnail_url = info.get("thumbnail", "")
+        if thumbnail_url:
+            try:
+                thumb_path = output_dir / f"{video_id}_thumb.jpg"
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(thumbnail_url)
+                    resp.raise_for_status()
+                    thumb_path.write_bytes(resp.content)
+            except Exception:
+                thumbnail_url = ""
+
         metadata = VideoMetadata(
             video_id=video_id,
             title=info.get("title", ""),
@@ -80,6 +94,7 @@ class YtDlpDownloader:
             hashtags=hashtags,
             source_url=url,
             file_path=str(output_path),
+            thumbnail_url=thumbnail_url,
         )
         logger.info(f"Downloaded via yt-dlp: {metadata.video_id}")
         return metadata

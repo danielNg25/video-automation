@@ -215,35 +215,35 @@ douyin-automation/
 - [x] **1.15** Translation support — `src/processor/subtitle.py`
 - [x] **1.16** Cookie refresh script — `scripts/refresh_douyin_cookie.py`
 - [x] **1.17** Phase 1 tests — `tests/test_downloader.py`, `tests/test_transcriber.py`
-- [ ] **1.18** FastAPI foundation — `server/main.py`, `deps.py`, `models.py`
-- [ ] **1.19** Task manager — `server/task_manager.py`
-- [ ] **1.20** SSE events router — `server/routers/events.py`
-- [ ] **1.21** Download router + service — `server/routers/download.py`
-- [ ] **1.22** Transcribe router + service — `server/routers/transcribe.py`
-- [ ] **1.23** React frontend foundation — `web/` scaffold
-- [ ] **1.24** Download page — `web/src/pages/DownloadPage.tsx`
-- [ ] **1.25** Backend dependencies — `pyproject.toml` + `Makefile` updates
+- [x] **1.18** FastAPI foundation — `src/api/__init__.py`, `deps.py`, `models.py`
+- [x] **1.19** Task manager — `src/api/task_manager.py`
+- [x] **1.20** SSE events router — `src/api/routers/events.py`
+- [x] **1.21** Download router + service — `src/api/routers/download.py`
+- [x] **1.22** Transcribe router + service — `src/api/routers/transcribe.py`
+- [x] **1.23** React frontend foundation — `ui-app/` scaffold
+- [x] **1.24** Download & Transcribe page — `ui-app/src/pages/DownloadTranscribe.tsx`
+- [x] **1.25** Backend dependencies — `pyproject.toml` + `Makefile` updates
 
 **Verification (Backend):**
 - [x] V1.1 — `pip install -e ".[macos]"` completes without errors
 - [x] V1.2 — All `__init__.py` files in place
 - [x] V1.3 — Config loads with env var interpolation
 - [x] V1.4 — Douyin download produces MP4 + metadata
-- [ ] V1.5 — yt-dlp fallback downloads successfully
+- [x] V1.5 — yt-dlp fallback downloads successfully
 - [x] V1.6 — Fallback auto-triggers when primary API fails
 - [x] V1.7 — Transcriber selects correct backend per platform
-- [ ] V1.8 — Transcription produces valid SRT with Chinese text
+- [x] V1.8 — Transcription produces valid SRT with Chinese text
 - [x] V1.9 — Timestamp formatting handles edge cases
-- [ ] V1.10 — Chinese → English translation produces English SRT
+- [x] V1.10 — Chinese → English translation produces English SRT
 - [x] V1.11 — Unit tests pass
 
 **Verification (Web UI):**
-- [ ] V1.12 — FastAPI server starts, Swagger UI at `/docs`
-- [ ] V1.13 — Download via API with SSE progress events
-- [ ] V1.14 — Transcribe via API returns SRT segments
-- [ ] V1.15 — Video list API returns all downloaded videos
-- [ ] V1.16 — React UI loads at `localhost:5173`
-- [ ] V1.17 — End-to-end: paste URL → download → transcribe → see SRT preview in browser
+- [x] V1.12 — FastAPI server starts, Swagger UI at `/docs`
+- [x] V1.13 — Download via API with SSE progress events
+- [x] V1.14 — Transcribe via API returns SRT segments
+- [x] V1.15 — Video list API returns all downloaded videos
+- [x] V1.16 — React UI loads at `localhost:5173`
+- [x] V1.17 — End-to-end: paste URL → download → transcribe → see SRT preview in browser
 
 ---
 

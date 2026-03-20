@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, date
@@ -67,6 +68,23 @@ class TaskManager:
                 except (json.JSONDecodeError, OSError):
                     pass
 
+            # Thumbnail: check existing, or generate via ffmpeg
+            thumb_path = raw_dir / f"{video_id}_thumb.jpg"
+            if not thumb_path.exists():
+                try:
+                    subprocess.run(
+                        [
+                            "ffmpeg", "-y", "-i", str(mp4), "-ss", "00:00:01",
+                            "-frames:v", "1", "-q:v", "5", str(thumb_path),
+                        ],
+                        capture_output=True,
+                        timeout=10,
+                    )
+                except (subprocess.SubprocessError, FileNotFoundError):
+                    pass  # ffmpeg not available, skip thumbnail
+
+            thumbnail = f"/files/raw/{video_id}_thumb.jpg" if thumb_path.exists() else ""
+
             self.video_index[video_id] = VideoResponse(
                 video_id=video_id,
                 title=saved_meta.get("title", video_id),
@@ -79,6 +97,7 @@ class TaskManager:
                 hashtags=saved_meta.get("hashtags", []),
                 source_url=saved_meta.get("source_url", ""),
                 file_path=str(mp4),
+                thumbnail=thumbnail,
                 has_srt=has_srt,
                 srt_languages=srt_langs,
                 status="transcribed" if has_srt else "downloaded",
@@ -117,7 +136,11 @@ class TaskManager:
         raw_dir = Path("data/raw")
         srt_dir = Path("data/srt")
 
-        for path in [raw_dir / f"{video_id}.mp4", raw_dir / f"{video_id}.json"]:
+        for path in [
+            raw_dir / f"{video_id}.mp4",
+            raw_dir / f"{video_id}.json",
+            raw_dir / f"{video_id}_thumb.jpg",
+        ]:
             if path.exists():
                 path.unlink()
 
@@ -199,6 +222,10 @@ class TaskManager:
             size_bytes = file_path.stat().st_size
             size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
 
+            # Thumbnail
+            thumb_path = output_dir / f"{video_id}_thumb.jpg"
+            thumbnail = f"/files/raw/{video_id}_thumb.jpg" if thumb_path.exists() else ""
+
             # Update video index
             video_resp = VideoResponse(
                 video_id=video_id,
@@ -212,6 +239,7 @@ class TaskManager:
                 hashtags=metadata.hashtags,
                 source_url=metadata.source_url,
                 file_path=str(file_path),
+                thumbnail=thumbnail,
                 has_srt=False,
                 status="downloaded",
             )

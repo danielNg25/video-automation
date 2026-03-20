@@ -17,6 +17,7 @@ class VideoMetadata:
     hashtags: list[str] = field(default_factory=list)
     source_url: str = ""
     file_path: str = ""
+    thumbnail_url: str = ""
 
 
 def extract_metadata_from_file(path: Path) -> dict:

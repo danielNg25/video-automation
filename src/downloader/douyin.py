@@ -112,6 +112,22 @@ class DouyinDownloader:
             hashtags = re.findall(r"#(\w+)", desc)
             author_info = video_data.get("author", {})
 
+            # Extract cover image URL
+            cover_urls = (
+                video_data.get("video", {}).get("cover", {}).get("url_list", [])
+            )
+            thumbnail_url = cover_urls[0] if cover_urls else ""
+
+            # Download thumbnail
+            if thumbnail_url:
+                try:
+                    thumb_path = output_dir / f"{video_id}_thumb.jpg"
+                    thumb_resp = await client.get(thumbnail_url)
+                    thumb_resp.raise_for_status()
+                    thumb_path.write_bytes(thumb_resp.content)
+                except Exception:
+                    thumbnail_url = ""  # Non-fatal, continue without thumbnail
+
             metadata = VideoMetadata(
                 video_id=video_id,
                 title=desc.split("#")[0].strip() if desc else "",
@@ -121,6 +137,7 @@ class DouyinDownloader:
                 hashtags=hashtags,
                 source_url=url,
                 file_path=str(output_path),
+                thumbnail_url=thumbnail_url,
             )
             logger.info(f"Downloaded: {metadata.video_id} by {metadata.author}")
             return metadata

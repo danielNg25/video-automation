@@ -15,6 +15,7 @@ export interface VideoMetadata {
   hashtags: string[];
   source_url: string;
   file_path: string;
+  thumbnail: string;
   has_srt: boolean;
   srt_languages: string[];
   status: string;

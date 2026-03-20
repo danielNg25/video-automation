@@ -241,10 +241,14 @@ function DownloadTranscribePage() {
             {/* Video Result Card — shown when a video is selected or just downloaded */}
             {videoMeta && !isDownloading && (
               <div className="bg-surface-container-low rounded-xl overflow-hidden flex flex-col md:flex-row border border-primary/20">
-                <div className="w-full md:w-64 aspect-video bg-surface-container-highest relative group">
-                  <div className="w-full h-full bg-surface-container-highest flex items-center justify-center">
-                    <span className="material-symbols-outlined text-4xl text-zinc-600">movie</span>
-                  </div>
+                <div className="w-full md:w-64 aspect-video bg-surface-container-highest relative group overflow-hidden">
+                  {videoMeta.thumbnail ? (
+                    <img src={videoMeta.thumbnail} alt={videoMeta.title} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <span className="material-symbols-outlined text-4xl text-zinc-600">movie</span>
+                    </div>
+                  )}
                   <div className="absolute bottom-2 right-2 bg-black/80 text-white text-[10px] px-1.5 py-0.5 rounded font-mono">
                     {formatDuration(videoMeta.duration)}
                   </div>
@@ -451,10 +455,14 @@ function DownloadTranscribePage() {
                     }`}
                     onClick={() => selectVideo(v)}
                   >
-                    <div className="w-16 h-10 bg-surface-container-high rounded overflow-hidden flex-shrink-0 relative">
-                      <div className="w-full h-full bg-surface-container-highest flex items-center justify-center">
-                        <span className="material-symbols-outlined text-sm text-zinc-600">movie</span>
-                      </div>
+                    <div className="w-16 h-10 bg-surface-container-high rounded overflow-hidden flex-shrink-0">
+                      {v.thumbnail ? (
+                        <img src={v.thumbnail} alt={v.title} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full bg-surface-container-highest flex items-center justify-center">
+                          <span className="material-symbols-outlined text-sm text-zinc-600">movie</span>
+                        </div>
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-[11px] font-bold truncate">

@@ -40,6 +40,7 @@ class VideoResponse(BaseModel):
     hashtags: list[str] = []
     source_url: str = ""
     file_path: str = ""
+    thumbnail: str = ""
     has_srt: bool = False
     srt_languages: list[str] = []
     status: str = "downloaded"

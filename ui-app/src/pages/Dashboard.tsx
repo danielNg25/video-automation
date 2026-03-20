@@ -207,7 +207,11 @@ export default function DashboardPage() {
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-3">
                               <div className="w-12 h-8 rounded bg-surface-container-highest overflow-hidden relative flex items-center justify-center">
-                                <span className="material-symbols-outlined text-xs text-zinc-600">movie</span>
+                                {v.thumbnail ? (
+                                  <img src={v.thumbnail} alt={v.title} className="w-full h-full object-cover" />
+                                ) : (
+                                  <span className="material-symbols-outlined text-xs text-zinc-600">movie</span>
+                                )}
                               </div>
                               <div className="flex flex-col">
                                 <span className="font-medium text-on-surface line-clamp-1">
