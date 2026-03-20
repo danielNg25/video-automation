@@ -224,12 +224,50 @@ function SubtitleProcessPage() {
               <span className="font-mono text-[10px] text-primary bg-primary/10 px-2 py-0.5 rounded">LIVE_PREVIEW</span>
             </div>
 
-            {/* Preview Frame */}
-            <div className="relative aspect-[9/16] max-h-[320px] bg-zinc-900 rounded-lg overflow-hidden border border-outline-variant/10">
-              <div className="absolute inset-0 flex items-end justify-center px-4 text-center" style={{ paddingBottom: `${verticalMargin * 0.8}px` }}>
+            {/* Preview Frame — simulates 9:16 phone screen */}
+            <div className="relative aspect-[9/16] max-h-[360px] rounded-xl overflow-hidden border-2 border-outline-variant/20 shadow-lg mx-auto">
+              {/* Background: video thumbnail or gradient placeholder */}
+              {selectedVideo?.thumbnail ? (
+                <img
+                  src={selectedVideo.thumbnail}
+                  alt="Preview"
+                  className="absolute inset-0 w-full h-full object-cover"
+                />
+              ) : (
+                <div className="absolute inset-0 bg-gradient-to-b from-zinc-700 via-zinc-800 to-zinc-900" />
+              )}
+              {/* Dark overlay for subtitle readability */}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/30" />
+              {/* Simulated platform UI top bar */}
+              <div className="absolute top-0 left-0 right-0 px-3 pt-2 pb-6 flex justify-between items-center">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2 h-2 rounded-full bg-white/40" />
+                  <div className="w-12 h-1.5 rounded bg-white/20" />
+                </div>
+                <div className="flex gap-1.5">
+                  <div className="w-5 h-5 rounded-full bg-white/10" />
+                  <div className="w-5 h-5 rounded-full bg-white/10" />
+                </div>
+              </div>
+              {/* Subtitle text positioned by vertical margin */}
+              <div
+                className="absolute left-0 right-0 flex justify-center px-3 text-center"
+                style={{ bottom: `${Math.max(8, verticalMargin * 0.5)}px` }}
+              >
                 <p style={previewStyle}>
-                  This is how your subtitles will look in the final render.
+                  Sample subtitle text preview
                 </p>
+              </div>
+              {/* Simulated platform UI side buttons (TikTok-style) */}
+              <div className="absolute right-2 bottom-1/4 flex flex-col gap-3 items-center">
+                {['favorite', 'chat_bubble', 'share', 'bookmark'].map((icon) => (
+                  <div key={icon} className="flex flex-col items-center gap-0.5">
+                    <div className="w-7 h-7 rounded-full bg-white/15 flex items-center justify-center">
+                      <span className="material-symbols-outlined text-white/60 text-sm">{icon}</span>
+                    </div>
+                    <span className="text-[7px] text-white/40">123</span>
+                  </div>
+                ))}
               </div>
             </div>
 
