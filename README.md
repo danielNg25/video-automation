@@ -223,6 +223,13 @@ douyin-automation/
 - [x] **1.23** React frontend foundation — `ui-app/` scaffold
 - [x] **1.24** Download & Transcribe page — `ui-app/src/pages/DownloadTranscribe.tsx`
 - [x] **1.25** Backend dependencies — `pyproject.toml` + `Makefile` updates
+- [ ] **1.26** Translation profile system — `src/translator/profiles.py` + `config/translation_profiles/`
+- [ ] **1.27** LLM translator — `src/translator/llm.py` (Anthropic/OpenAI/local backends)
+- [ ] **1.28** Translator factory — `src/translator/__init__.py`
+- [ ] **1.29** Translation API — `src/api/routers/translate.py` (profiles CRUD + translate endpoint)
+- [ ] **1.30** Translation UI — profile selector, translation progress, multi-language SRT preview
+- [ ] **1.31** Raw video download endpoint — `GET /api/videos/{video_id}/raw`
+- [ ] **1.32** Download raw video UI — download button on VideoCard + SRT export
 
 **Verification (Backend):**
 - [x] V1.1 — `pip install -e ".[macos]"` completes without errors
@@ -244,6 +251,16 @@ douyin-automation/
 - [x] V1.15 — Video list API returns all downloaded videos
 - [x] V1.16 — React UI loads at `localhost:5173`
 - [x] V1.17 — End-to-end: paste URL → download → transcribe → see SRT preview in browser
+
+**Verification (Translation + Download):**
+- [ ] V1.18 — Translation profiles load from `config/translation_profiles/`
+- [ ] V1.19 — LLM translation produces Vietnamese SRT with profile-guided style
+- [ ] V1.20 — Profile CRUD API: create, list, update, delete profiles
+- [ ] V1.21 — Translation API with batch progress via SSE
+- [ ] V1.22 — UI: select profile → translate → see multi-language SRT preview
+- [ ] V1.23 — UI: create/edit custom translation profile
+- [ ] V1.24 — Raw video download: browser downloads MP4 file
+- [ ] V1.25 — SRT export: download SRT file from UI
 
 ---
 

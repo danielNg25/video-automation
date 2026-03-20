@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- LLM translation with profiles system (tasks 1.26-1.30): translate SRT via Anthropic/OpenAI with style-controlled profiles
+- Translation profile config (`config/translation_profiles/`): funny-casual-vi, neutral-vi, dramatic-vi
+- Profile CRUD API: `GET/POST/PUT/DELETE /api/profiles`
+- Translation API: `POST /api/translate` with batch progress via SSE
+- Raw video download endpoint: `GET /api/videos/{video_id}/raw`
+- SRT export from UI with multi-language support
+- Updated README checklist with new tasks (1.26-1.32) and verification items (V1.18-V1.25)
+
 ## [1.0.0] — 2026-03-20
 
 ### Added
