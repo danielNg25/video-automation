@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Web UI + API layer plan: FastAPI backend + React/Vite/shadcn frontend, split per phase
+- UI design prompt for generating mockups with LLM tools (`plans/ui-design-prompt.md`)
+- Architecture diagram updated with Web UI and API layers
 - Phase 1 implementation: download + transcribe pipeline
 - Project scaffolding: `pyproject.toml`, requirements files, directory structure
 - Config loader (`src/utils/config.py`) with `${ENV_VAR}` interpolation
