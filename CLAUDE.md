@@ -2,6 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Session Startup
+
+At the start of every session, before doing any work:
+
+1. Read the **Implementation Progress** checklist in `README.md` to understand what's already done
+2. Read the relevant phase plan in `plans/` for the current work
+3. Read `CHANGELOG.md` to understand recent changes
+
+When the user says "work on phase X" or "continue", identify the next unchecked task from the README checklist and read the corresponding phase plan for full context.
+
 ## Project Overview
 
 Automated pipeline to download Douyin videos, generate AI subtitles (Chinese + English), burn subtitles into video, and upload to YouTube, TikTok, Facebook, and X/Twitter. Development on macOS Apple Silicon, production on Linux.
