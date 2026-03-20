@@ -1,6 +1,6 @@
 # Douyin Download API
 douyin:
-    api_base: 'http://localhost:8080'
+    api_base: 'http://localhost:8081'
     cookie_file: 'config/douyin_cookie.txt'
     download_timeout: 120
 

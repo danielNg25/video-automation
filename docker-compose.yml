@@ -3,7 +3,7 @@ services:
     image: evil0ctal/douyin_tiktok_download_api:latest
     container_name: douyin-api
     ports:
-      - "8080:80"
+      - "8081:80"
     restart: unless-stopped
     volumes:
-      - ./config/douyin_cookie.txt:/app/cookie.txt:ro
+      - ./config/douyin_web_config.yaml:/app/crawlers/douyin/web/config.yaml:ro

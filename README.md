@@ -198,36 +198,52 @@ douyin-automation/
 
 > Detailed plan: [`plans/phase1-core-download-transcribe.md`](plans/phase1-core-download-transcribe.md)
 
-- [ ] **1.1** Project scaffolding — `pyproject.toml`
-- [ ] **1.2** Requirements files — `requirements.txt`, `requirements-linux.txt`, `requirements-macos.txt`
-- [ ] **1.3** Directory structure + `__init__.py` files + `.gitignore`
-- [ ] **1.4** Configuration files — `config/config.yaml`, `platforms.yaml`, `subtitle_styles.yaml`
-- [ ] **1.5** Config loader — `src/utils/config.py`
-- [ ] **1.6** Logger utility — `src/utils/logger.py`
-- [ ] **1.7** Metadata utility — `src/utils/metadata.py`
-- [ ] **1.8** Douyin downloader — `src/downloader/douyin.py`
-- [ ] **1.9** yt-dlp fallback — `src/downloader/ytdlp.py`
-- [ ] **1.10** Downloader factory — `src/downloader/__init__.py`
-- [ ] **1.11** Base transcriber — `src/transcriber/base.py`
-- [ ] **1.12** faster-whisper backend — `src/transcriber/faster.py`
-- [ ] **1.13** mlx-whisper backend — `src/transcriber/mlx.py`
-- [ ] **1.14** Transcriber factory — `src/transcriber/__init__.py`
-- [ ] **1.15** Translation support — `src/processor/subtitle.py`
-- [ ] **1.16** Cookie refresh script — `scripts/refresh_douyin_cookie.py`
-- [ ] **1.17** Phase 1 tests — `tests/test_downloader.py`, `tests/test_transcriber.py`
+- [x] **1.1** Project scaffolding — `pyproject.toml`
+- [x] **1.2** Requirements files — `requirements.txt`, `requirements-linux.txt`, `requirements-macos.txt`
+- [x] **1.3** Directory structure + `__init__.py` files + `.gitignore`
+- [x] **1.4** Configuration files — `config/config.yaml`, `platforms.yaml`, `subtitle_styles.yaml`
+- [x] **1.5** Config loader — `src/utils/config.py`
+- [x] **1.6** Logger utility — `src/utils/logger.py`
+- [x] **1.7** Metadata utility — `src/utils/metadata.py`
+- [x] **1.8** Douyin downloader — `src/downloader/douyin.py`
+- [x] **1.9** yt-dlp fallback — `src/downloader/ytdlp.py`
+- [x] **1.10** Downloader factory — `src/downloader/__init__.py`
+- [x] **1.11** Base transcriber — `src/transcriber/base.py`
+- [x] **1.12** faster-whisper backend — `src/transcriber/faster.py`
+- [x] **1.13** mlx-whisper backend — `src/transcriber/mlx.py`
+- [x] **1.14** Transcriber factory — `src/transcriber/__init__.py`
+- [x] **1.15** Translation support — `src/processor/subtitle.py`
+- [x] **1.16** Cookie refresh script — `scripts/refresh_douyin_cookie.py`
+- [x] **1.17** Phase 1 tests — `tests/test_downloader.py`, `tests/test_transcriber.py`
+- [x] **1.18** FastAPI foundation — `src/api/__init__.py`, `deps.py`, `models.py`
+- [x] **1.19** Task manager — `src/api/task_manager.py`
+- [x] **1.20** SSE events router — `src/api/routers/events.py`
+- [x] **1.21** Download router + service — `src/api/routers/download.py`
+- [x] **1.22** Transcribe router + service — `src/api/routers/transcribe.py`
+- [x] **1.23** React frontend foundation — `ui-app/` scaffold
+- [x] **1.24** Download & Transcribe page — `ui-app/src/pages/DownloadTranscribe.tsx`
+- [x] **1.25** Backend dependencies — `pyproject.toml` + `Makefile` updates
 
-**Verification:**
-- [ ] V1.1 — `pip install -e ".[macos]"` completes without errors
-- [ ] V1.2 — All `__init__.py` files in place
-- [ ] V1.3 — Config loads with env var interpolation
-- [ ] V1.4 — Douyin download produces MP4 + metadata
-- [ ] V1.5 — yt-dlp fallback downloads successfully
-- [ ] V1.6 — Fallback auto-triggers when primary API fails
-- [ ] V1.7 — Transcriber selects correct backend per platform
-- [ ] V1.8 — Transcription produces valid SRT with Chinese text
-- [ ] V1.9 — Timestamp formatting handles edge cases
-- [ ] V1.10 — Chinese → English translation produces English SRT
-- [ ] V1.11 — Unit tests pass
+**Verification (Backend):**
+- [x] V1.1 — `pip install -e ".[macos]"` completes without errors
+- [x] V1.2 — All `__init__.py` files in place
+- [x] V1.3 — Config loads with env var interpolation
+- [x] V1.4 — Douyin download produces MP4 + metadata
+- [x] V1.5 — yt-dlp fallback downloads successfully
+- [x] V1.6 — Fallback auto-triggers when primary API fails
+- [x] V1.7 — Transcriber selects correct backend per platform
+- [x] V1.8 — Transcription produces valid SRT with Chinese text
+- [x] V1.9 — Timestamp formatting handles edge cases
+- [x] V1.10 — Chinese → English translation produces English SRT
+- [x] V1.11 — Unit tests pass
+
+**Verification (Web UI):**
+- [x] V1.12 — FastAPI server starts, Swagger UI at `/docs`
+- [x] V1.13 — Download via API with SSE progress events
+- [x] V1.14 — Transcribe via API returns SRT segments
+- [x] V1.15 — Video list API returns all downloaded videos
+- [x] V1.16 — React UI loads at `localhost:5173`
+- [x] V1.17 — End-to-end: paste URL → download → transcribe → see SRT preview in browser
 
 ---
 
@@ -241,8 +257,10 @@ douyin-automation/
 - [ ] **2.4** CJK font handling — `ensure_cjk_fonts()` in `src/processor/subtitle.py`
 - [ ] **2.5** Batch processor — `src/processor/__init__.py`
 - [ ] **2.6** Phase 2 tests — `tests/test_processor.py`
+- [ ] **2.7** Process router + service — `server/routers/process.py`
+- [ ] **2.8** Process page — `web/src/pages/ProcessPage.tsx`
 
-**Verification:**
+**Verification (Backend):**
 - [ ] V2.1 — ffmpeg and ffprobe available
 - [ ] V2.2 — CJK font detected on system
 - [ ] V2.3 — SRT parsing produces correct segments
@@ -252,6 +270,12 @@ douyin-automation/
 - [ ] V2.7 — Batch processing produces one output per platform
 - [ ] V2.8 — Dual-line subtitle merge (Chinese + English) works
 - [ ] V2.9 — Unit tests pass
+
+**Verification (Web UI):**
+- [ ] V2.10 — Process API with ffmpeg progress events
+- [ ] V2.11 — Subtitle styles and platform specs API
+- [ ] V2.12 — Serve processed video via API
+- [ ] V2.13 — Process page: select video → configure style → process → preview output
 
 ---
 
@@ -267,8 +291,11 @@ douyin-automation/
 - [ ] **3.6** X/Twitter uploader *(stretch goal)* — `src/uploader/x.py`
 - [ ] **3.7** Uploader factory — `src/uploader/__init__.py`
 - [ ] **3.8** Phase 3 tests — `tests/test_uploader.py`
+- [ ] **3.9** Auth router — `server/routers/auth.py`
+- [ ] **3.10** Upload router + service — `server/routers/upload.py`
+- [ ] **3.11** Upload page — `web/src/pages/UploadPage.tsx`
 
-**Verification:**
+**Verification (Backend):**
 - [ ] V3.1 — YouTube OAuth setup saves token with refresh_token
 - [ ] V3.2 — YouTube upload (private) succeeds, video visible in Studio
 - [ ] V3.3 — TikTok upload (draft) succeeds, video in inbox
@@ -277,6 +304,13 @@ douyin-automation/
 - [ ] V3.6 — Uploader factory returns correct types, only enabled platforms
 - [ ] V3.7 — Error handling returns `UploadResult(success=False)`, no crash
 - [ ] V3.8 — Unit tests pass
+
+**Verification (Web UI):**
+- [ ] V3.9 — Auth status API returns per-platform connection status
+- [ ] V3.10 — OAuth flow via API (start → authorize → callback → connected)
+- [ ] V3.11 — Upload via API with per-platform progress
+- [ ] V3.12 — Upload page: connect accounts → select video → upload → see result URLs
+- [ ] V3.13 — Retry failed upload without re-uploading successful platforms
 
 ---
 
@@ -294,8 +328,13 @@ douyin-automation/
 - [ ] **4.8** Module entry point — `src/__main__.py`
 - [ ] **4.9** README.md (finalize)
 - [ ] **4.10** Integration tests — `tests/test_pipeline.py`
+- [ ] **4.11** Pipeline router + service — `server/routers/pipeline.py`
+- [ ] **4.12** Config router — `server/routers/config.py`
+- [ ] **4.13** Dashboard page — `web/src/pages/DashboardPage.tsx`
+- [ ] **4.14** Settings page — `web/src/pages/SettingsPage.tsx`
+- [ ] **4.15** React Router — route-based navigation
 
-**Verification:**
+**Verification (CLI):**
 - [ ] V4.1 — `python -m src --help` displays all commands
 - [ ] V4.2 — `python -m src process --help` shows all options
 - [ ] V4.3 — Full pipeline: URL → subtitled video → uploaded to all platforms
@@ -306,6 +345,17 @@ douyin-automation/
 - [ ] V4.8 — Structured JSON logs written to `data/logs/pipeline.log`
 - [ ] V4.9 — `python -m src status` displays rich-formatted table
 - [ ] V4.10 — All tests pass: `pytest tests/ -v`
+
+**Verification (Web UI):**
+- [ ] V4.11 — Pipeline API runs full pipeline with stage-level SSE events
+- [ ] V4.12 — Batch API processes multiple URLs with concurrency control
+- [ ] V4.13 — Dashboard stats API returns counts and success rate
+- [ ] V4.14 — Pipeline history API with filtering
+- [ ] V4.15 — Config API: read (secrets redacted) and update (partial merge)
+- [ ] V4.16 — Dashboard UI: stats, quick process, pipeline table with live updates
+- [ ] V4.17 — Batch processing UI: paste URLs → track per-video progress
+- [ ] V4.18 — Settings UI: edit config → save → persists
+- [ ] V4.19 — React Router: all routes work, sidebar highlights active page
 
 ---
 

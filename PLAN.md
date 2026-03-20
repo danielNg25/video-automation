@@ -5,7 +5,9 @@
 Automated pipeline to download videos from Douyin, generate AI subtitles (Chinese transcription + optional English translation), burn subtitles into the video, and upload to Facebook, X (Twitter), YouTube, and TikTok.
 
 **Tech Stack**: Python 3.11+, faster-whisper (Linux) / mlx-whisper (macOS), ffmpeg, platform-native APIs
-**Architecture**: Modular CLI pipeline with optional task queue for batch processing
+**Frontend**: React + Vite + Tailwind CSS + shadcn/ui
+**API**: FastAPI + SSE (Server-Sent Events) for real-time progress
+**Architecture**: Web UI + REST API + modular pipeline backend
 **Environments**: macOS (Apple Silicon) for development, Linux for production
 **Estimated Timeline**: 5 weeks
 
@@ -22,23 +24,34 @@ Automated pipeline to download videos from Douyin, generate AI subtitles (Chines
 7. [Platform API Reference](#7-platform-api-reference)
 8. [Configuration](#8-configuration)
 9. [Dependencies](#9-dependencies)
-10. [Risks & Mitigations](#10-risks--mitigations)
+10. [Web UI + API Layer](#10-web-ui--api-layer)
+11. [Risks & Mitigations](#11-risks--mitigations)
 
 ---
 
 ## 1. Architecture
 
 ```
-┌──────────────┐    ┌───────────────┐    ┌──────────────┐    ┌────────────────┐
-│  1. Download │    │ 2. Transcribe │    │ 3. Process   │    │ 4. Upload      │
-│              │───▶│               │───▶│              │───▶│                │
-│  Douyin API  │    │ faster-whisper│    │ ffmpeg burn  │    │ YT/TT/FB/X API │
-│  (self-host) │    │ SRT generate  │    │ + reformat   │    │ (per-platform) │
-└──────────────┘    └───────────────┘    └──────────────┘    └────────────────┘
-       │                    │                    │                    │
-       ▼                    ▼                    ▼                    ▼
-   /data/raw/          /data/srt/          /data/output/        upload logs
-   {id}.mp4            {id}.srt            {id}_subtitled.mp4   /data/logs/
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        Web UI (React + Vite)                           │
+│  Download Page │ Process Page │ Upload Page │ Dashboard │ Settings     │
+└────────┬───────┴──────┬───────┴──────┬──────┴─────┬─────┴──────┬──────┘
+         │              │              │            │            │
+         ▼              ▼              ▼            ▼            ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    FastAPI + SSE (server/)                              │
+│  /api/download  │ /api/process │ /api/upload │ /api/pipeline │ /api/  │
+└────────┬────────┴──────┬───────┴──────┬──────┴──────┬────────┴────────┘
+         │               │              │             │
+         ▼               ▼              ▼             ▼
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌────────────────┐
+│  1. Download │  │ 2. Transcribe│  │ 3. Process   │  │ 4. Upload      │
+│  Douyin API  │─▶│ faster-whisper│─▶│ ffmpeg burn  │─▶│ YT/TT/FB/X API│
+│  + yt-dlp    │  │ SRT generate │  │ + reformat   │  │ (per-platform) │
+└──────────────┘  └──────────────┘  └──────────────┘  └────────────────┘
+       │                 │                 │                    │
+       ▼                 ▼                 ▼                    ▼
+   /data/raw/        /data/srt/       /data/output/        /data/logs/
 ```
 
 **Data flow per video:**
@@ -781,7 +794,104 @@ brew install ffmpeg
 
 ---
 
-## 10. Risks & Mitigations
+## 10. Web UI + API Layer
+
+Each phase includes a web UI so the pipeline is usable without terminal commands. The UI is built incrementally — each phase adds its own page.
+
+**Stack**: FastAPI (API) + React/Vite/Tailwind/shadcn/ui (UI) + SSE (real-time progress)
+
+**Structure**: `server/` (FastAPI routers + services) and `web/` (React frontend) in the same repo.
+
+### 10.1 Real-Time Progress via SSE
+
+All long-running tasks follow this pattern:
+1. Client POSTs to start operation → receives `{ "task_id": "uuid" }`
+2. Client subscribes to `GET /api/events/{task_id}` (Server-Sent Events)
+3. Server pushes progress events: `progress`, `stage_change`, `complete`, `error`
+4. Client can also poll `GET /api/tasks/{task_id}` for final result
+
+### 10.2 Phase 1 UI — Download + Transcribe
+
+**API Endpoints:**
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/api/download` | Start download → `{task_id}` |
+| GET | `/api/videos` | List downloaded videos |
+| GET | `/api/videos/{video_id}` | Video detail + metadata |
+| POST | `/api/transcribe` | Start transcription → `{task_id}` |
+| GET | `/api/videos/{video_id}/srt` | Get SRT content |
+| GET | `/api/events/{task_id}` | SSE progress stream |
+
+**UI — Download Page:**
+- URL input field + Download button
+- Real-time download progress bar (bytes / total)
+- Video card after download: thumbnail, title, author, duration
+- Transcribe button with language selector (zh/en)
+- SRT preview: scrollable timestamped subtitle segments
+
+### 10.3 Phase 2 UI — Subtitle + Reformat
+
+**API Endpoints:**
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/api/process` | Start processing → `{task_id}` |
+| GET | `/api/subtitle-styles` | Get style config |
+| PUT | `/api/subtitle-styles/{platform}` | Update style |
+| GET | `/api/platforms` | Platform specs |
+| GET | `/api/videos/{video_id}/output/{platform}` | Serve processed video |
+
+**UI — Process Page:**
+- Video selector (only videos with SRT)
+- Subtitle style editor: font, size, color picker, outline, position
+- Platform checkboxes with constraint badges (max duration, max size)
+- Per-platform processing progress (from ffmpeg stderr)
+- Output video player per platform
+
+### 10.4 Phase 3 UI — Upload
+
+**API Endpoints:**
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/auth/status` | OAuth status per platform |
+| POST | `/api/auth/{platform}/start` | Start OAuth flow |
+| POST | `/api/auth/{platform}/callback` | Handle callback |
+| POST | `/api/upload` | Start upload → `{task_id}` |
+| POST | `/api/upload/{task_id}/retry` | Retry failed platforms |
+
+**UI — Upload Page:**
+- Auth status panel: connection indicator per platform, Connect button
+- Upload form: video selector, platform checkboxes, metadata editor with char counters
+- Per-platform upload progress bars
+- Results cards: post URL links, retry button for failures
+
+### 10.5 Phase 4 UI — Dashboard + Settings
+
+**API Endpoints:**
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/api/pipeline` | Full pipeline → `{task_id}` |
+| POST | `/api/pipeline/batch` | Batch → `{batch_id}` |
+| GET | `/api/pipeline/history` | List all runs |
+| POST | `/api/pipeline/{task_id}/retry` | Retry from failed stage |
+| GET | `/api/dashboard/stats` | Summary statistics |
+| GET/PUT | `/api/config` | Read/update config |
+
+**UI — Dashboard Page:**
+- Stats cards: total videos, today's count, success rate, active tasks
+- Batch input: textarea for multiple URLs, platform selector, Process All button
+- Pipeline table: video, status with stage indicator, platforms, duration, retry action
+- Expandable detail: 4-step progress (Download → Transcribe → Process → Upload)
+
+**UI — Settings Page:**
+- Structured config editor (not raw YAML): Douyin API, Whisper, FFmpeg, Pipeline sections
+
+---
+
+## 11. Risks & Mitigations
 
 | Risk                            | Impact                    | Likelihood | Mitigation                                                                  |
 | ------------------------------- | ------------------------- | ---------- | --------------------------------------------------------------------------- |

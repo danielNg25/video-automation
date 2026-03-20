@@ -353,6 +353,164 @@ python3 -m pytest tests/test_uploader.py -v
 
 ---
 
+## Web UI + API (Phase 3)
+
+### 3.9 Auth Router — `server/routers/auth.py`
+
+**API Endpoints:**
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/auth/status` | Check OAuth status for all platforms |
+| `POST` | `/api/auth/{platform}/start` | Start OAuth flow → `{auth_url}` |
+| `POST` | `/api/auth/{platform}/callback` | Handle OAuth callback `{code}` → save token |
+
+**`GET /api/auth/status` response:**
+```json
+{
+  "youtube": {"authenticated": true, "account": "user@gmail.com", "expires": "2026-04-19"},
+  "tiktok": {"authenticated": false},
+  "facebook": {"authenticated": true, "page": "My Page", "expires": "2026-05-20"},
+  "x": {"authenticated": false, "enabled": false, "reason": "Disabled in config"}
+}
+```
+
+**OAuth flow:**
+1. Frontend calls `POST /api/auth/youtube/start`
+2. Backend generates auth URL with redirect to `http://localhost:8000/api/auth/youtube/callback`
+3. Backend returns `{auth_url}` → frontend opens in popup/new tab
+4. User authorizes → redirected back to callback endpoint
+5. Backend exchanges code for token, saves to `config/{platform}_token.json`
+6. Frontend polls `/api/auth/status` or receives confirmation via redirect
+
+- **Dependencies**: 3.2 (OAuth setup script logic, reused)
+
+### 3.10 Upload Router + Service — `server/routers/upload.py` + `server/services/upload_service.py`
+
+**API Endpoints:**
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/upload` | Start upload `{video_id, platforms, metadata}` → `{task_id}` |
+| `GET` | `/api/upload/{task_id}` | Get upload result per platform |
+| `POST` | `/api/upload/{task_id}/retry` | Retry failed platforms `{platforms: [...]}` |
+
+**Service layer** (`upload_service.py`):
+- Wraps `get_uploader()` and individual platform uploaders from `src/uploader/`
+- Progress tracking per platform:
+  - YouTube: resumable upload reports bytes sent / total bytes
+  - TikTok: chunk upload reports chunks sent / total chunks
+  - Facebook: 3-phase upload reports phase transitions (START → TRANSFER → FINISH)
+  - X: 4-phase upload reports phase transitions (INIT → APPEND → FINALIZE → STATUS)
+- Uploads platforms in parallel via `asyncio.gather()` with per-platform error handling
+- Retry: re-creates uploader for failed platforms only, preserves successful results
+- **Dependencies**: 3.7, Phase 1 tasks 1.19, 1.20
+
+### 3.11 Upload Page — `web/src/pages/UploadPage.tsx`
+
+**Components:**
+
+1. **AuthStatusPanel** (top):
+   - Horizontal row of platform cards
+   - Each card shows:
+     - Platform icon (YouTube red, TikTok dark, Facebook blue, X black)
+     - Platform name
+     - Status indicator: green dot (connected) / red dot (disconnected) / gray (disabled)
+     - Connected: account name, "Disconnect" link
+     - Disconnected: "Connect" button → opens OAuth popup
+     - Disabled: "Disabled in settings" text, grayed card
+   - Fetches from `GET /api/auth/status`, polls every 30s or on focus
+
+2. **UploadForm** (middle):
+   - Video selector: dropdown of processed videos (only those with platform outputs)
+   - Platform checkboxes: only platforms that are both connected AND have processed output for this video
+   - Per-platform metadata editor (accordion or tabs):
+     - **Title** field with character counter (YouTube: 100, X: 280)
+     - **Description** textarea with counter
+     - **Tags/hashtags** input (pill-style tag input with suggestions)
+     - **Privacy** selector: Public / Private / Unlisted (YouTube), Draft (TikTok)
+     - Pre-filled from video's original metadata with platform-specific formatting
+     - Counter turns red when exceeding limit
+   - "Upload to Selected Platforms" button
+
+3. **UploadProgress** (shown during upload):
+   - Per-platform progress cards:
+     - Platform icon + name
+     - Progress bar with percentage (for YouTube/TikTok chunked uploads)
+     - Stage text: "Authenticating..." → "Uploading (45%)" → "Processing..." → "Complete" / "Failed"
+     - Platform-specific notes: "TikTok: Video will appear as draft"
+   - Overall summary line: "Uploading to 3 platforms..."
+
+4. **UploadResults** (shown after completion):
+   - Per-platform result cards:
+     - Success: green checkmark, clickable post URL (opens in new tab), thumbnail if available
+     - Failed: red X, error message, "Retry" button
+   - Summary: "3/4 platforms succeeded"
+   - "Retry Failed" button (retries all failed at once)
+
+**Key interactions:**
+- "Connect" button → `POST /api/auth/{platform}/start` → open auth URL in popup → poll status until connected
+- Metadata fields pre-fill when video is selected (from `VideoMetadata`)
+- Character counters update live; turn red on exceed
+- "Upload" → `POST /api/upload` → subscribe SSE → per-platform progress bars
+- "Retry" → `POST /api/upload/{task_id}/retry` with failed platform list
+
+- **Dependencies**: 3.9, 3.10, Phase 1 task 1.23
+
+---
+
+### Web UI Verification Checklist (Phase 3)
+
+### V3.9: Auth status API
+
+```bash
+curl http://localhost:8000/api/auth/status
+```
+
+**Expected**: JSON with auth status per platform (authenticated/expired/disabled).
+
+### V3.10: OAuth flow via API
+
+```bash
+curl -X POST http://localhost:8000/api/auth/youtube/start
+# Returns: {"auth_url": "https://accounts.google.com/..."}
+# Open URL in browser, authorize, check:
+curl http://localhost:8000/api/auth/status
+```
+
+**Expected**: YouTube status changes to `authenticated: true`.
+
+### V3.11: Upload via API
+
+```bash
+curl -X POST http://localhost:8000/api/upload \
+  -H "Content-Type: application/json" \
+  -d '{"video_id": "<id>", "platforms": ["youtube"], "metadata": {"title": "Test", "description": "Test", "tags": ["test"], "privacy": "private"}}'
+```
+
+**Expected**: Upload starts, task returns success with post URL.
+
+### V3.12: Upload page UI flow
+
+1. Open Upload page → see auth status for all platforms
+2. Click "Connect" on YouTube → authorize in popup → status turns green
+3. Select a processed video → checkboxes appear for connected platforms
+4. Edit title/description per platform → character counters work
+5. Click Upload → see per-platform progress → see result URLs
+
+**Expected**: Full upload flow from UI with real-time progress.
+
+### V3.13: Retry failed upload
+
+1. Upload to YouTube + TikTok (with TikTok intentionally failing — e.g., no auth)
+2. YouTube succeeds, TikTok shows "Failed" with error
+3. Fix TikTok auth → click "Retry" on TikTok
+4. TikTok re-uploads without re-uploading YouTube
+
+**Expected**: Only failed platform retried, successful results preserved.
+
+---
+
 ## Edge Cases
 
 1. **Token expiry mid-upload**: Resumable uploads can take minutes. Refresh token and retry failed chunk.

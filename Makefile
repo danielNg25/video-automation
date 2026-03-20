@@ -1,4 +1,4 @@
-.PHONY: install install-linux test lint format check clean docker-up docker-down
+.PHONY: install install-linux test lint format check clean docker-up docker-down api ui
 
 # Development (macOS)
 install:
@@ -35,6 +35,14 @@ docker-up:
 
 docker-down:
 	docker compose down
+
+# API server
+api:
+	. .venv/bin/activate && uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000
+
+# UI dev server
+ui:
+	cd ui-app && npm run dev
 
 # Cleanup
 clean:

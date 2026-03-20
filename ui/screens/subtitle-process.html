@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "secondary": "#d0bcff",
+            "primary-container": "#a078ff",
+            "surface-tint": "#d0bcff",
+            "on-primary-fixed-variant": "#5516be",
+            "primary": "#d0bcff",
+            "surface-container-low": "#1c1b1d",
+            "surface-container-high": "#2a2a2c",
+            "inverse-on-surface": "#313032",
+            "surface-container": "#201f22",
+            "surface": "#131315",
+            "on-tertiary-container": "#3f2300",
+            "surface-container-lowest": "#0e0e10",
+            "surface-variant": "#353437",
+            "on-secondary": "#372464",
+            "tertiary-container": "#ca801e",
+            "on-tertiary-fixed-variant": "#673d00",
+            "secondary-container": "#513e7f",
+            "primary-fixed-dim": "#d0bcff",
+            "primary-fixed": "#e9ddff",
+            "on-error": "#690005",
+            "on-secondary-container": "#c3adf7",
+            "tertiary-fixed": "#ffdcbb",
+            "tertiary": "#ffb869",
+            "on-surface": "#e5e1e4",
+            "tertiary-fixed-dim": "#ffb869",
+            "inverse-surface": "#e5e1e4",
+            "error-container": "#93000a",
+            "secondary-fixed": "#e9ddff",
+            "on-surface-variant": "#cbc3d7",
+            "on-secondary-fixed-variant": "#4e3b7c",
+            "on-background": "#e5e1e4",
+            "on-secondary-fixed": "#220b4e",
+            "surface-bright": "#39393b",
+            "surface-container-highest": "#353437",
+            "inverse-primary": "#6d3bd7",
+            "outline-variant": "#494454",
+            "on-tertiary": "#482900",
+            "surface-dim": "#131315",
+            "background": "#131315",
+            "on-primary-container": "#340080",
+            "on-error-container": "#ffdad6",
+            "on-primary-fixed": "#23005c",
+            "on-tertiary-fixed": "#2c1700",
+            "on-primary": "#3c0091",
+            "outline": "#958ea0",
+            "error": "#ffb4ab",
+            "secondary-fixed-dim": "#d0bcff"
+          },
+          fontFamily: {
+            "headline": ["Inter"],
+            "body": ["Inter"],
+            "label": ["Inter"],
+            "mono": ["JetBrains Mono"]
+          },
+          borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      display: inline-block;
+      line-height: 1;
+      text-transform: none;
+      letter-spacing: normal;
+      word-wrap: normal;
+      white-space: nowrap;
+      direction: ltr;
+    }
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: #0e0e10; }
+    ::-webkit-scrollbar-thumb { background: #353437; border-radius: 2px; }
+  </style>
+</head>
+<body class="bg-surface text-on-surface font-body selection:bg-primary-container/30">
+<div class="flex h-screen overflow-hidden">
+<!-- SideNavBar (Shared Component) -->
+<aside class="hidden md:flex flex-col h-full py-4 border-r border-zinc-800/20 bg-[#0e0e10] w-64 shrink-0">
+<div class="px-6 mb-8">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-primary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary-container" style="font-variation-settings: 'FILL' 1;">precision_manufacturing</span>
+</div>
+<div>
+<h1 class="text-[#d0bcff] font-black font-mono text-xs uppercase tracking-widest">Video Tool</h1>
+<p class="text-[10px] text-zinc-500 font-mono">v1.0.4</p>
+</div>
+</div>
+</div>
+<nav class="flex-1 space-y-1 px-3">
+<a class="flex items-center gap-3 px-3 py-2 text-zinc-500 hover:text-zinc-300 hover:bg-[#1c1b1d] transition-all duration-200 font-mono text-xs uppercase tracking-widest" href="#">
+<span class="material-symbols-outlined text-sm">dashboard</span>
+          Dashboard
+        </a>
+<a class="flex items-center gap-3 px-3 py-2 text-zinc-500 hover:text-zinc-300 hover:bg-[#1c1b1d] transition-all duration-200 font-mono text-xs uppercase tracking-widest" href="#">
+<span class="material-symbols-outlined text-sm">download</span>
+          Download &amp; Transcribe
+        </a>
+<a class="flex items-center gap-3 px-3 py-2 bg-[#2a2a2c] text-[#d0bcff] border-r-2 border-[#d0bcff] transition-all duration-200 font-mono text-xs uppercase tracking-widest" href="#">
+<span class="material-symbols-outlined text-sm">movie_edit</span>
+          Subtitle &amp; Process
+        </a>
+<a class="flex items-center gap-3 px-3 py-2 text-zinc-500 hover:text-zinc-300 hover:bg-[#1c1b1d] transition-all duration-200 font-mono text-xs uppercase tracking-widest" href="#">
+<span class="material-symbols-outlined text-sm">upload</span>
+          Upload
+        </a>
+<a class="flex items-center gap-3 px-3 py-2 text-zinc-500 hover:text-zinc-300 hover:bg-[#1c1b1d] transition-all duration-200 font-mono text-xs uppercase tracking-widest" href="#">
+<span class="material-symbols-outlined text-sm">settings</span>
+          Settings
+        </a>
+</nav>
+<div class="px-6 mb-4">
+<button class="w-full py-2 bg-gradient-to-br from-primary to-primary-container text-on-primary-fixed font-bold text-xs uppercase tracking-widest rounded-md hover:opacity-90 transition-opacity">
+          New Project
+        </button>
+</div>
+<div class="mt-auto px-3">
+<a class="flex items-center gap-3 px-3 py-2 text-zinc-500 hover:text-zinc-300 transition-all font-mono text-xs uppercase tracking-widest" href="#">
+<span class="material-symbols-outlined text-sm">menu_book</span>
+          Documentation
+        </a>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 flex flex-col min-w-0 bg-surface relative overflow-hidden">
+<!-- TopNavBar (Shared Component) -->
+<header class="flex justify-between items-center w-full px-6 h-14 z-50 bg-[#1c1b1d]">
+<div class="flex items-center gap-4">
+<div class="relative">
+<span class="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-zinc-500 text-sm">search</span>
+<input class="bg-[#131315] border-none text-xs rounded h-8 pl-9 pr-4 w-64 focus:ring-1 focus:ring-primary" placeholder="Search commands..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-zinc-400 hover:bg-[#2a2a2c] p-2 rounded transition-colors active:scale-95">
+<span class="material-symbols-outlined text-xl">notifications</span>
+</button>
+<button class="text-zinc-400 hover:bg-[#2a2a2c] p-2 rounded transition-colors active:scale-95">
+<span class="material-symbols-outlined text-xl">help</span>
+</button>
+<div class="h-8 w-8 rounded-full bg-surface-container-highest overflow-hidden border border-outline-variant/20">
+<img alt="User Profile" class="w-full h-full object-cover" data-alt="User avatar icon for profile display" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDi6NgRXq4Wae4Vu6Dp2pAZ8eBVzvFjsXg_c0urmE5kNFO0xhzOQeL7J_VRWTdr9nOSK4WbcRzoAtcHwlfm3I-9KZiJJrU3ZTjzqhq986QZHJ5z11UBp02Sj4Kmmmsp9foiKeK3A1L7TujAsNXpU2MwiWi6IzbQUj07ueUBdsw_tdggaYLO7W36rucgAhrMFElOcorNGuUHPDeUUgpS3uIXPgdSEfc7uj5f6m-8PhG3ConslRdXBSHIYrGloaWHxLNcHM4f3-mBIt8"/>
+</div>
+</div>
+</header>
+<!-- Content Canvas -->
+<div class="flex-1 overflow-y-auto p-6">
+<div class="flex flex-col lg:flex-row gap-6 h-full">
+<!-- Left Panel: Subtitle Style Editor (40%) -->
+<section class="lg:w-[40%] flex flex-col gap-4">
+<div class="flex items-center justify-between mb-2">
+<h2 class="text-lg font-semibold tracking-tight text-on-surface">Subtitle Style Editor</h2>
+<span class="font-mono text-[10px] text-primary bg-primary/10 px-2 py-0.5 rounded">LIVE_PREVIEW</span>
+</div>
+<!-- Preview Frame -->
+<div class="relative aspect-video bg-surface-container-lowest rounded-lg overflow-hidden border border-outline-variant/10 group">
+<img class="w-full h-full object-cover opacity-60" data-alt="Cinematic abstract visual for video subtitle preview background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDi6NgRXq4Wae4Vu6Dp2pAZ8eBVzvFjsXg_c0urmE5kNFO0xhzOQeL7J_VRWTdr9nOSK4WbcRzoAtcHwlfm3I-9KZiJJrU3ZTjzqhq986QZHJ5z11UBp02Sj4Kmmmsp9foiKeK3A1L7TujAsNXpU2MwiWi6IzbQUj07ueUBdsw_tdggaYLO7W36rucgAhrMFElOcorNGuUHPDeUUgpS3uIXPgdSEfc7uj5f6m-8PhG3ConslRdXBSHIYrGloaWHxLNcHM4f3-mBIt8"/>
+<div class="absolute inset-0 flex items-end justify-center pb-8 px-4 text-center">
+<p class="text-2xl font-bold text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] outline-zinc-900 leading-tight">
+                  This is how your subtitles will appear in the final render.
+                </p>
+</div>
+<div class="absolute top-2 right-2 flex gap-2">
+<button class="bg-surface-container-highest/80 backdrop-blur-md p-1.5 rounded-md hover:bg-surface-container-highest">
+<span class="material-symbols-outlined text-sm">fullscreen</span>
+</button>
+</div>
+</div>
+<!-- Editor Controls -->
+<div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/5 space-y-6">
+<!-- Font & Size -->
+<div class="grid grid-cols-2 gap-4">
+<div class="space-y-1.5">
+<label class="font-mono text-[10px] uppercase text-on-surface-variant">Font Family</label>
+<select class="w-full bg-surface-container-lowest border-none text-xs rounded h-9 focus:ring-1 focus:ring-primary text-on-surface">
+<option>Inter Display</option>
+<option>JetBrains Mono</option>
+<option>Roboto Condensed</option>
+<option>Impact Heavy</option>
+</select>
+</div>
+<div class="space-y-1.5">
+<div class="flex justify-between items-center">
+<label class="font-mono text-[10px] uppercase text-on-surface-variant">Font Size</label>
+<span class="font-mono text-[10px] text-primary">24px</span>
+</div>
+<input class="w-full accent-primary h-1.5 bg-surface-container-highest rounded-lg appearance-none cursor-pointer" max="36" min="16" type="range" value="24"/>
+</div>
+</div>
+<!-- Color Pickers -->
+<div class="grid grid-cols-2 gap-4">
+<div class="space-y-1.5">
+<label class="font-mono text-[10px] uppercase text-on-surface-variant">Text Color</label>
+<div class="flex items-center gap-2 bg-surface-container-lowest p-1.5 rounded border border-outline-variant/10">
+<div class="w-6 h-6 rounded bg-white border border-outline-variant/20"></div>
+<span class="font-mono text-[10px]">#FFFFFF</span>
+</div>
+</div>
+<div class="space-y-1.5">
+<label class="font-mono text-[10px] uppercase text-on-surface-variant">Outline Color</label>
+<div class="flex items-center gap-2 bg-surface-container-lowest p-1.5 rounded border border-outline-variant/10">
+<div class="w-6 h-6 rounded bg-black border border-outline-variant/20"></div>
+<span class="font-mono text-[10px]">#000000</span>
+</div>
+</div>
+</div>
+<!-- Sliders & Toggles -->
+<div class="space-y-4">
+<div class="space-y-1.5">
+<div class="flex justify-between items-center">
+<label class="font-mono text-[10px] uppercase text-on-surface-variant">Outline Width</label>
+<span class="font-mono text-[10px] text-primary">1.5px</span>
+</div>
+<input class="w-full accent-primary h-1.5 bg-surface-container-highest rounded-lg appearance-none cursor-pointer" max="5" min="0" step="0.5" type="range" value="1.5"/>
+</div>
+<div class="flex items-center justify-between pt-2">
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2">
+<div class="w-8 h-4 bg-primary rounded-full relative cursor-pointer">
+<div class="absolute right-0.5 top-0.5 w-3 h-3 bg-on-primary-fixed rounded-full"></div>
+</div>
+<span class="font-mono text-[10px] uppercase text-on-surface">Shadow</span>
+</div>
+<div class="flex items-center gap-2">
+<div class="w-8 h-4 bg-primary rounded-full relative cursor-pointer">
+<div class="absolute right-0.5 top-0.5 w-3 h-3 bg-on-primary-fixed rounded-full"></div>
+</div>
+<span class="font-mono text-[10px] uppercase text-on-surface">Bold</span>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div class="space-y-1.5">
+<label class="font-mono text-[10px] uppercase text-on-surface-variant">Position</label>
+<div class="grid grid-cols-3 gap-1 p-1 bg-surface-container-lowest rounded">
+<div class="aspect-square bg-surface-container-highest/20 rounded-sm"></div>
+<div class="aspect-square bg-surface-container-highest/20 rounded-sm"></div>
+<div class="aspect-square bg-surface-container-highest/20 rounded-sm"></div>
+<div class="aspect-square bg-surface-container-highest/20 rounded-sm"></div>
+<div class="aspect-square bg-primary/40 border border-primary/60 rounded-sm"></div>
+<div class="aspect-square bg-surface-container-highest/20 rounded-sm"></div>
+</div>
+</div>
+<div class="space-y-1.5">
+<label class="font-mono text-[10px] uppercase text-on-surface-variant">Vertical Margin</label>
+<div class="flex flex-col gap-2">
+<span class="font-mono text-[10px] text-right text-primary">8%</span>
+<input class="w-full accent-primary h-1.5 bg-surface-container-highest rounded-lg appearance-none cursor-pointer" max="50" min="0" type="range" value="8"/>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Right Panel: Processing Controls (60%) -->
+<section class="lg:w-[60%] flex flex-col gap-6">
+<div class="bg-surface-container-low p-6 rounded-xl border border-outline-variant/5">
+<h2 class="text-lg font-semibold tracking-tight text-on-surface mb-6">Processing Configuration</h2>
+<div class="space-y-6">
+<!-- Video Selector -->
+<div class="space-y-2">
+<label class="font-mono text-[10px] uppercase text-on-surface-variant">Source Video</label>
+<div class="relative">
+<select class="w-full bg-surface-container-lowest border-none text-sm rounded-lg h-12 pl-4 pr-10 focus:ring-1 focus:ring-primary text-on-surface appearance-none">
+<option>Interview_Final_Render_v2.mp4 (142MB)</option>
+<option>Product_Demo_Draft.mov (850MB)</option>
+<option>Vlog_Sequence_01.mp4 (1.2GB)</option>
+</select>
+<span class="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none">unfold_more</span>
+</div>
+</div>
+<div class="grid md:grid-cols-2 gap-8">
+<!-- Language Selection -->
+<div class="space-y-4">
+<label class="font-mono text-[10px] uppercase text-on-surface-variant">Output Languages</label>
+<div class="space-y-2 max-h-48 overflow-y-auto pr-2">
+<label class="flex items-center justify-between p-3 rounded-lg bg-surface-container-lowest border border-outline-variant/10 cursor-pointer hover:border-primary/40 transition-colors">
+<span class="text-sm">English (Auto)</span>
+<input checked="" class="rounded border-outline-variant bg-surface-container text-primary focus:ring-primary w-4 h-4" type="checkbox"/>
+</label>
+<label class="flex items-center justify-between p-3 rounded-lg bg-surface-container-lowest border border-outline-variant/10 cursor-pointer hover:border-primary/40 transition-colors">
+<span class="text-sm">Spanish (ES)</span>
+<input class="rounded border-outline-variant bg-surface-container text-primary focus:ring-primary w-4 h-4" type="checkbox"/>
+</label>
+<label class="flex items-center justify-between p-3 rounded-lg bg-surface-container-lowest border border-outline-variant/10 cursor-pointer hover:border-primary/40 transition-colors">
+<span class="text-sm">French (FR)</span>
+<input class="rounded border-outline-variant bg-surface-container text-primary focus:ring-primary w-4 h-4" type="checkbox"/>
+</label>
+<label class="flex items-center justify-between p-3 rounded-lg bg-surface-container-lowest border border-outline-variant/10 cursor-pointer hover:border-primary/40 transition-colors">
+<span class="text-sm">German (DE)</span>
+<input class="rounded border-outline-variant bg-surface-container text-primary focus:ring-primary w-4 h-4" type="checkbox"/>
+</label>
+</div>
+</div>
+<!-- Platform Selection -->
+<div class="space-y-4">
+<label class="font-mono text-[10px] uppercase text-on-surface-variant">Platform Optimization</label>
+<div class="space-y-2">
+<div class="p-3 rounded-lg bg-surface-container-lowest border border-primary/30 flex items-start gap-3">
+<input checked="" class="mt-1 rounded border-outline-variant bg-surface-container text-primary focus:ring-primary w-4 h-4" type="checkbox"/>
+<div class="flex-1">
+<div class="flex justify-between items-center mb-1">
+<span class="text-sm font-medium">TikTok</span>
+<span class="font-mono text-[9px] px-1.5 py-0.5 bg-primary/20 text-primary rounded">9:16</span>
+</div>
+<p class="text-[10px] text-on-surface-variant">Max 10min / Vertical Burn-in</p>
+</div>
+</div>
+<div class="p-3 rounded-lg bg-surface-container-lowest border border-outline-variant/10 flex items-start gap-3 hover:border-primary/40 transition-colors cursor-pointer">
+<input checked="" class="mt-1 rounded border-outline-variant bg-surface-container text-primary focus:ring-primary w-4 h-4" type="checkbox"/>
+<div class="flex-1">
+<div class="flex justify-between items-center mb-1">
+<span class="text-sm font-medium">YouTube</span>
+<span class="font-mono text-[9px] px-1.5 py-0.5 bg-zinc-800 text-zinc-400 rounded">MAX 60s</span>
+</div>
+<p class="text-[10px] text-on-surface-variant">Shorts optimization enabled</p>
+</div>
+</div>
+<div class="p-3 rounded-lg bg-surface-container-lowest border border-outline-variant/10 flex items-start gap-3 hover:border-primary/40 transition-colors cursor-pointer">
+<input class="mt-1 rounded border-outline-variant bg-surface-container text-primary focus:ring-primary w-4 h-4" type="checkbox"/>
+<div class="flex-1">
+<div class="flex justify-between items-center mb-1">
+<span class="text-sm font-medium">Facebook</span>
+<span class="font-mono text-[9px] px-1.5 py-0.5 bg-zinc-800 text-zinc-400 rounded">15:00</span>
+</div>
+<p class="text-[10px] text-on-surface-variant">Standard 16:9 Letterbox</p>
+</div>
+</div>
+<div class="p-3 rounded-lg bg-surface-container-lowest border border-outline-variant/10 flex items-start gap-3 hover:border-primary/40 transition-colors cursor-pointer">
+<input class="mt-1 rounded border-outline-variant bg-surface-container text-primary focus:ring-primary w-4 h-4" type="checkbox"/>
+<div class="flex-1">
+<div class="flex justify-between items-center mb-1">
+<span class="text-sm font-medium">X / Twitter</span>
+<span class="font-mono text-[9px] px-1.5 py-0.5 bg-zinc-800 text-zinc-400 rounded">2:20</span>
+</div>
+<p class="text-[10px] text-on-surface-variant">High-bitrate processing</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<button class="w-full h-12 bg-gradient-to-r from-primary to-primary-container text-on-primary-fixed font-bold rounded-lg flex items-center justify-center gap-2 hover:shadow-[0_0_20px_rgba(160,120,255,0.3)] transition-all">
+<span class="material-symbols-outlined">auto_fix_high</span>
+                  PROCESS VIDEO ASSETS
+                </button>
+</div>
+</div>
+<!-- Processing Queue & Results -->
+<div class="flex-1 bg-surface-container-low rounded-xl border border-outline-variant/5 flex flex-col overflow-hidden">
+<div class="flex items-center px-6 py-4 border-b border-outline-variant/10">
+<nav class="flex gap-6">
+<button class="text-xs font-bold border-b-2 border-primary pb-4 text-primary">PROCESSING QUEUE</button>
+<button class="text-xs font-medium text-on-surface-variant pb-4 hover:text-on-surface">RESULTS</button>
+<button class="text-xs font-medium text-on-surface-variant pb-4 hover:text-on-surface">EXPORT LOGS</button>
+</nav>
+</div>
+<div class="p-6 space-y-4 overflow-y-auto">
+<!-- Progress Item 1 -->
+<div class="space-y-2">
+<div class="flex justify-between items-end">
+<div>
+<h4 class="text-xs font-bold flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+                        TikTok_Interview_v2.mp4
+                      </h4>
+<p class="font-mono text-[9px] text-on-surface-variant mt-1">ENCODING_VO_STREAMS • 42.1MB / 142MB</p>
+</div>
+<span class="font-mono text-xs text-primary">32%</span>
+</div>
+<div class="h-1 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-primary w-[32%] rounded-full shadow-[0_0_10px_rgba(208,188,255,0.5)]"></div>
+</div>
+</div>
+<!-- Progress Item 2 -->
+<div class="space-y-2">
+<div class="flex justify-between items-end">
+<div>
+<h4 class="text-xs font-bold flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-zinc-600"></span>
+                        YT_Shorts_Process_01.mp4
+                      </h4>
+<p class="font-mono text-[9px] text-on-surface-variant mt-1">QUEUED • WAITING FOR RESOURCES</p>
+</div>
+<span class="font-mono text-xs text-zinc-500">0%</span>
+</div>
+<div class="h-1 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-primary w-0 rounded-full"></div>
+</div>
+</div>
+<!-- Finished Item Preview Placeholder -->
+<div class="mt-6 p-4 rounded-lg bg-surface-container-lowest border border-outline-variant/10 group cursor-pointer hover:bg-surface-container-highest transition-colors">
+<div class="flex items-center gap-4">
+<div class="w-20 aspect-video rounded bg-zinc-800 overflow-hidden relative">
+<img class="w-full h-full object-cover" data-alt="Thumbnail for processed video output" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDi6NgRXq4Wae4Vu6Dp2pAZ8eBVzvFjsXg_c0urmE5kNFO0xhzOQeL7J_VRWTdr9nOSK4WbcRzoAtcHwlfm3I-9KZiJJrU3ZTjzqhq986QZHJ5z11UBp02Sj4Kmmmsp9foiKeK3A1L7TujAsNXpU2MwiWi6IzbQUj07ueUBdsw_tdggaYLO7W36rucgAhrMFElOcorNGuUHPDeUUgpS3uIXPgdSEfc7uj5f6m-8PhG3ConslRdXBSHIYrGloaWHxLNcHM4f3-mBIt8"/>
+<div class="absolute inset-0 flex items-center justify-center bg-black/40">
+<span class="material-symbols-outlined text-white text-lg">play_arrow</span>
+</div>
+</div>
+<div class="flex-1">
+<div class="flex justify-between">
+<span class="text-xs font-bold">Latest Result: Facebook_Master_03.mp4</span>
+<span class="material-symbols-outlined text-emerald-500 text-sm" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+<div class="flex gap-2 mt-1">
+<span class="font-mono text-[9px] text-zinc-500">1080p</span>
+<span class="font-mono text-[9px] text-zinc-500">24fps</span>
+<span class="font-mono text-[9px] text-zinc-500">AAC_AUDIO</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+</div>
+</div>
+<!-- Footer Info -->
+<footer class="h-10 border-t border-outline-variant/5 bg-surface-container-lowest px-6 flex items-center justify-between">
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+<span class="font-mono text-[10px] uppercase text-zinc-500">Engine Stable</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="font-mono text-[10px] uppercase text-zinc-500">GPU Load:</span>
+<span class="font-mono text-[10px] text-primary">14.2%</span>
+</div>
+</div>
+<div class="flex items-center gap-2 font-mono text-[10px] text-zinc-600 uppercase">
+          Precision Video SDK v2.4.1-stable
+        </div>
+</footer>
+</main>
+</div>
+</body></html>

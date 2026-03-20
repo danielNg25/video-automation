@@ -293,6 +293,127 @@ python3 -m pytest tests/test_processor.py -v
 
 ---
 
+## Web UI + API (Phase 2)
+
+### 2.7 Process Router + Service — `server/routers/process.py` + `server/services/process_service.py`
+
+**API Endpoints:**
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/process` | Start processing `{video_id, platforms, subtitle_style}` → `{task_id}` |
+| `GET` | `/api/process/{task_id}` | Get processing result (output paths per platform) |
+| `GET` | `/api/subtitle-styles` | Get styles from `subtitle_styles.yaml` |
+| `PUT` | `/api/subtitle-styles/{platform}` | Update platform-specific style |
+| `GET` | `/api/platforms` | Get platform specs from `platforms.yaml` |
+| `GET` | `/api/videos/{video_id}/output/{platform}` | Stream processed video file |
+
+**Service layer** (`process_service.py`):
+- Wraps `process_for_all_platforms()` from `src/processor/__init__.py`
+- Progress tracking: parses ffmpeg stderr output (`time=HH:MM:SS.xx`) and computes percentage from total video duration
+- Processes platforms sequentially; emits `stage_change` events between platforms ("Processing for YouTube..." → "Processing for TikTok...")
+- Subtitle style overrides: merges user-provided style with `subtitle_styles.yaml` defaults before calling processor
+- **Dependencies**: 2.5, Phase 1 tasks 1.19, 1.20
+
+### 2.8 Process Page — `web/src/pages/ProcessPage.tsx`
+
+**Components:**
+
+1. **VideoSelector** (top-left):
+   - Dropdown or card list showing only videos that have SRT files
+   - Each option shows: thumbnail, title, segment count
+   - Fetches from `GET /api/videos` filtered by transcription status
+
+2. **SubtitleStyleEditor** (left panel, 40%):
+   - Font selector dropdown: "Noto Sans CJK SC", "PingFang SC", etc.
+   - Font size slider: 16–36px with number display
+   - Color pickers (using shadcn Popover + color input):
+     - Text color (default: white)
+     - Outline color (default: black)
+   - Outline width slider: 0–4px
+   - Shadow toggle + depth slider
+   - Position selector: bottom-center / top-center / middle
+   - Vertical margin slider: 20–100px
+   - Bold toggle
+   - **Live preview**: dark rectangle simulating video frame with sample subtitle text styled using current CSS approximation of the settings
+
+3. **PlatformSelector** (right panel, 60%):
+   - Checkboxes for each platform with constraint badges:
+     - TikTok: "9:16 · max 10min · 4GB"
+     - YouTube: "9:16 · max 60s (Shorts) · English subs"
+     - Facebook: "9:16 · max 15min · 4GB"
+     - X/Twitter: "9:16 · max 2:20 · 512MB" (grayed if disabled)
+   - Subtitle language selector: Chinese only / English only / Dual-line
+   - Disabled platforms if video doesn't meet constraints (e.g., too long for Shorts)
+   - "Process" button (disabled until video + at least 1 platform selected)
+
+4. **ProcessingProgress** (shown during processing):
+   - Separate progress bar per platform
+   - Active platform highlighted, others show queued/done state
+   - Percentage from ffmpeg time parsing
+   - Stage text per platform: "Burning subtitles..." → "Reformatting..." → "Complete"
+
+5. **OutputPreview** (shown after processing):
+   - Tab bar for each platform
+   - HTML5 `<video>` player for each output
+   - File size and resolution info per output
+   - Fetches from `GET /api/videos/{video_id}/output/{platform}`
+
+**Key interactions:**
+- Style changes update live preview instantly (CSS only, no API call)
+- "Process" button → POST `/api/process` → subscribe SSE → progress bars update per platform
+- After completion, tabs auto-switch to show first completed output
+
+- **Dependencies**: 2.7, Phase 1 task 1.23
+
+---
+
+### Web UI Verification Checklist (Phase 2)
+
+### V2.10: Process API endpoint
+
+```bash
+curl -X POST http://localhost:8000/api/process \
+  -H "Content-Type: application/json" \
+  -d '{"video_id": "<id>", "platforms": ["youtube", "tiktok"]}'
+# Returns: {"task_id": "..."}
+
+curl -N http://localhost:8000/api/events/{task_id}
+# Streams progress events with ffmpeg percentage
+```
+
+**Expected**: Processing starts, progress events include percentage, outputs created.
+
+### V2.11: Subtitle styles API
+
+```bash
+curl http://localhost:8000/api/subtitle-styles
+curl http://localhost:8000/api/platforms
+```
+
+**Expected**: JSON with style config and platform specs from YAML files.
+
+### V2.12: Serve processed video
+
+```bash
+curl -I http://localhost:8000/api/videos/<id>/output/youtube
+```
+
+**Expected**: `200 OK` with `Content-Type: video/mp4`.
+
+### V2.13: Process page UI flow
+
+1. Open Process page in browser
+2. Select a transcribed video from dropdown
+3. Adjust subtitle style → see live preview update
+4. Check YouTube + TikTok → click Process
+5. See per-platform progress bars fill up
+6. After completion, switch tabs to preview each output video
+
+**Expected**: Full flow works, progress is real-time, videos play in browser.
+
+---
+
 ## Edge Cases
 
 1. **No SRT exists** (music-only video): Produce video without subtitles, just reformat.

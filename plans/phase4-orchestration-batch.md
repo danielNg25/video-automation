@@ -395,6 +395,275 @@ python3 -m pytest tests/ -v --tb=short
 
 ---
 
+## Web UI + API (Phase 4)
+
+### 4.11 Pipeline Router + Service — `server/routers/pipeline.py` + `server/services/pipeline_service.py`
+
+**API Endpoints:**
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/pipeline` | Full pipeline `{url, platforms, auto_upload, metadata}` → `{task_id}` |
+| `POST` | `/api/pipeline/batch` | Batch `{urls[], platforms, concurrency}` → `{batch_id, task_ids[]}` |
+| `GET` | `/api/pipeline/{task_id}` | Pipeline status with per-stage detail |
+| `GET` | `/api/pipeline/history` | List all runs, filterable by `?status=failed&limit=20` |
+| `POST` | `/api/pipeline/{task_id}/retry` | Retry from failed stage |
+| `GET` | `/api/dashboard/stats` | Summary: total videos, today's count, success rate, active tasks |
+
+**Service layer** (`pipeline_service.py`):
+- Wraps `Pipeline.process_single()` and `Pipeline.process_batch()` from `src/pipeline.py`
+- Emits `stage_change` events at each pipeline stage transition (download → transcribe → process → upload)
+- Each stage reuses the corresponding service (download_service, transcribe_service, etc.) for consistent progress reporting
+- Batch processing: creates individual tasks per URL, uses `asyncio.Semaphore` for concurrency control
+- History: reads from `data/logs/*_state.json` files, aggregates into list
+- Stats: counts from state files — total, today, success/failure rates
+- **Dependencies**: 4.4, Phase 1 tasks 1.19, 1.20
+
+### 4.12 Config Router — `server/routers/config.py`
+
+**API Endpoints:**
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/config` | Get current config (secrets redacted — replace tokens/keys with `***`) |
+| `PUT` | `/api/config` | Update config (partial update, deep merge) |
+| `GET` | `/api/config/platforms` | Get platform configs from `platforms.yaml` |
+
+**Config management:**
+- `GET` reads from `config/config.yaml` using existing `load_config()`
+- `PUT` performs deep merge with existing config, writes back to YAML
+- Redaction: regex replace values matching `${...}` interpolation and known secret paths (tokens, keys, secrets) with `"***"`
+- Validation: check required fields, valid URLs, valid ranges (e.g., CRF 18–28)
+- **Dependencies**: Phase 1 task 1.5
+
+### 4.13 Dashboard Page — `web/src/pages/DashboardPage.tsx`
+
+**Components:**
+
+1. **StatsRow** (top):
+   - 4 metric cards in horizontal row:
+     - "Total Videos" — all-time count with icon
+     - "Processed Today" — today's count
+     - "Success Rate" — percentage with small trend indicator (up/down arrow)
+     - "Active Tasks" — currently running count, spinning indicator if > 0
+   - Fetches from `GET /api/dashboard/stats`, auto-refreshes every 30s
+
+2. **QuickActions** (middle-right, 40%):
+   - **Quick Process card**:
+     - URL input field
+     - Platform checkboxes (compact, inline)
+     - "Go" button → runs full pipeline
+   - **Batch Process card**:
+     - Textarea for multiple URLs (one per line), with line counter
+     - Platform selector (checkboxes)
+     - Concurrency slider: 1–5 with number display
+     - "Process All" button
+   - Active batch: "Processing 3/10 videos..." with overall progress bar
+
+3. **PipelineTable** (middle-left, 60%):
+   - Filter tabs: All / Running / Completed / Failed
+   - Sortable table columns:
+     - **Video**: thumbnail + title (truncated to 30 chars)
+     - **Status**: 4-dot stage indicator (Download → Transcribe → Process → Upload), colored: green (done), blue (running with pulse), gray (pending), red (failed)
+     - **Platforms**: small platform icons
+     - **Started**: relative time ("2 min ago", "1 hour ago")
+     - **Duration**: total elapsed time
+     - **Actions**: "View" and "Retry" buttons
+   - Expandable row detail on click:
+     - Per-stage timing breakdown
+     - Error messages for failed stages
+     - Output file links for completed stages
+   - Pagination: 20 rows per page
+   - Fetches from `GET /api/pipeline/history`, auto-refreshes via SSE for running tasks
+
+4. **ActivityFeed** (bottom):
+   - Compact timeline of recent events (last 20)
+   - Format: `[time] [icon] message` — e.g., "2m ago ✓ Video 7xxx uploaded to YouTube"
+   - Auto-scrolls on new entries
+   - Subscribes to a global SSE endpoint for real-time updates
+
+**Key interactions:**
+- Quick Process: POST → subscribe SSE → row appears in table with live status
+- Batch: POST → multiple rows appear, progress tracked per-video
+- "Retry" → `POST /api/pipeline/{task_id}/retry` → resumes from failed stage
+- "View" → slide-out panel or expanded row with full detail
+- Table auto-refreshes running rows via SSE, doesn't re-fetch completed rows
+
+- **Dependencies**: 4.11, Phase 1 task 1.23
+
+### 4.14 Settings Page — `web/src/pages/SettingsPage.tsx`
+
+**Layout:** Vertical tabs (left sidebar within page) + form content (right).
+
+**Sections:**
+
+1. **Douyin API**:
+   - API Base URL: text input (default: `http://localhost:8081`)
+   - Cookie file path: text input
+   - Download timeout: number input (seconds)
+   - Docker status indicator: green "Running" / red "Stopped" (checks via API)
+
+2. **Transcription**:
+   - Model size: dropdown (tiny / base / small / medium / large-v3)
+   - Device: dropdown (auto / cpu / cuda / mps)
+   - Compute type: dropdown (float16 / int8 / float32)
+   - Default language: dropdown (zh / en)
+   - VAD filter: toggle + min silence duration slider (100–1000ms)
+
+3. **Video Processing**:
+   - Default CRF: slider 18–28 with quality label ("High" at 18, "Low" at 28)
+   - Preset: dropdown (ultrafast / superfast / veryfast / faster / fast / medium / slow)
+   - Audio bitrate: dropdown (96k / 128k / 192k / 256k)
+
+4. **Platforms**:
+   - One card per platform with:
+     - Enable/Disable toggle
+     - Connection status (from auth status API)
+     - Platform-specific settings:
+       - YouTube: default privacy, default category
+       - TikTok: post mode (direct / draft)
+       - Facebook: post type (reels / feed), page ID
+       - X: note about $100/mo API requirement
+
+5. **Pipeline**:
+   - Data directory: text input
+   - Max concurrent tasks: slider 1–10
+   - Retry attempts: slider 1–5
+   - Retry base delay: number input (seconds)
+   - Skip existing: toggle
+
+**Bottom sticky bar:**
+- "Save Changes" button (disabled until modifications detected, primary color when active)
+- "Reset to Defaults" link
+- Unsaved changes warning on page navigation
+
+**Key interactions:**
+- Form state tracked with `useState`, compared to initial values for dirty detection
+- "Save" → `PUT /api/config` → toast notification on success
+- Platform enable/disable updates both config and auth status display
+- Validation: URL format, numeric ranges, required fields
+
+- **Dependencies**: 4.12, Phase 1 task 1.23
+
+### 4.15 Add React Router — `web/src/App.tsx`
+
+Upgrade from tab-based to route-based navigation:
+
+```
+/              → DashboardPage (default)
+/download      → DownloadPage
+/process       → ProcessPage
+/upload        → UploadPage
+/settings      → SettingsPage
+```
+
+- Install `react-router` (deferred to Phase 4 since earlier phases work with simple tabs)
+- Update sidebar to use `<NavLink>` with active state highlighting
+- **Dependencies**: 4.13, 4.14
+
+---
+
+### Web UI Verification Checklist (Phase 4)
+
+### V4.11: Pipeline API — single video
+
+```bash
+curl -X POST http://localhost:8000/api/pipeline \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://v.douyin.com/iRNBho6t/", "platforms": ["youtube"], "auto_upload": false}'
+
+# Subscribe to progress:
+curl -N http://localhost:8000/api/events/{task_id}
+# Expect stage_change events: downloading → transcribing → processing → complete
+```
+
+**Expected**: Pipeline runs all stages, SSE shows stage transitions.
+
+### V4.12: Pipeline API — batch
+
+```bash
+curl -X POST http://localhost:8000/api/pipeline/batch \
+  -H "Content-Type: application/json" \
+  -d '{"urls": ["url1", "url2", "url3"], "platforms": ["youtube", "tiktok"], "concurrency": 2}'
+```
+
+**Expected**: Returns batch_id + task_ids. Max 2 videos process concurrently.
+
+### V4.13: Dashboard stats API
+
+```bash
+curl http://localhost:8000/api/dashboard/stats
+```
+
+**Expected**: `{"total_videos": N, "today": N, "success_rate": 0.95, "active_tasks": 0}`
+
+### V4.14: Pipeline history API
+
+```bash
+curl "http://localhost:8000/api/pipeline/history?status=failed&limit=5"
+```
+
+**Expected**: JSON array of failed pipeline runs with stage details.
+
+### V4.15: Config API — read and update
+
+```bash
+curl http://localhost:8000/api/config
+# Check secrets are redacted (no raw tokens)
+
+curl -X PUT http://localhost:8000/api/config \
+  -H "Content-Type: application/json" \
+  -d '{"whisper": {"model_size": "medium"}}'
+
+curl http://localhost:8000/api/config | jq '.whisper.model_size'
+# Returns: "medium"
+```
+
+**Expected**: Config readable with redacted secrets, updatable with partial merge.
+
+### V4.16: Dashboard UI flow
+
+1. Open Dashboard → see stats cards with counts
+2. Paste URL in Quick Process → select platforms → click Go
+3. See new row appear in Pipeline Table with live stage indicator
+4. Watch stages progress: Download (blue) → Transcribe (blue) → Process (blue) → Upload (blue) → Done (all green)
+5. Click "View" → see expanded detail with per-stage timing
+
+**Expected**: Full dashboard experience with real-time updates.
+
+### V4.17: Batch processing UI
+
+1. Paste 3 URLs in batch textarea
+2. Select platforms, set concurrency to 2
+3. Click "Process All"
+4. See 3 rows appear in table, 2 running simultaneously
+5. As first finishes, third starts
+
+**Expected**: Concurrency control works, all videos tracked.
+
+### V4.18: Settings UI
+
+1. Open Settings → see current config values populated
+2. Change model size to "medium" → Save Changes button activates
+3. Click Save → toast "Settings saved"
+4. Refresh page → medium is still selected
+
+**Expected**: Settings persist across page loads.
+
+### V4.19: React Router navigation
+
+```bash
+# Open http://localhost:5173/download → Download page
+# Open http://localhost:5173/process → Process page
+# Open http://localhost:5173/upload → Upload page
+# Open http://localhost:5173/ → Dashboard
+# Open http://localhost:5173/settings → Settings page
+```
+
+**Expected**: All routes work, sidebar highlights active page, browser back/forward works.
+
+---
+
 ## Edge Cases
 
 1. **Empty URL file**: Exit gracefully: "No URLs to process."
@@ -456,3 +725,33 @@ python3 -m pytest tests/ -v --tb=short
 | `tests/test_uploader.py` | 3 | Uploader tests |
 | `tests/test_pipeline.py` | 4 | Integration tests |
 | `README.md` | 4 | Documentation |
+| `server/__init__.py` | 1 | Server package |
+| `server/main.py` | 1 | FastAPI app + CORS |
+| `server/deps.py` | 1 | Shared dependencies |
+| `server/models.py` | 1 | Pydantic schemas |
+| `server/task_manager.py` | 1 | Async task tracking + SSE |
+| `server/routers/events.py` | 1 | SSE endpoint |
+| `server/routers/download.py` | 1 | Download API |
+| `server/routers/transcribe.py` | 1 | Transcribe API |
+| `server/routers/process.py` | 2 | Process API |
+| `server/routers/upload.py` | 3 | Upload API |
+| `server/routers/auth.py` | 3 | OAuth API |
+| `server/routers/pipeline.py` | 4 | Pipeline API |
+| `server/routers/config.py` | 4 | Config API |
+| `server/services/download_service.py` | 1 | Download service |
+| `server/services/transcribe_service.py` | 1 | Transcribe service |
+| `server/services/process_service.py` | 2 | Process service |
+| `server/services/upload_service.py` | 3 | Upload service |
+| `server/services/pipeline_service.py` | 4 | Pipeline service |
+| `web/package.json` | 1 | Frontend dependencies |
+| `web/vite.config.ts` | 1 | Vite config + API proxy |
+| `web/src/App.tsx` | 1 | App layout + routing |
+| `web/src/pages/DownloadPage.tsx` | 1 | Download + transcribe UI |
+| `web/src/pages/ProcessPage.tsx` | 2 | Subtitle + process UI |
+| `web/src/pages/UploadPage.tsx` | 3 | Upload UI |
+| `web/src/pages/DashboardPage.tsx` | 4 | Dashboard UI |
+| `web/src/pages/SettingsPage.tsx` | 4 | Settings UI |
+| `web/src/hooks/useTask.ts` | 1 | SSE subscription hook |
+| `web/src/components/Sidebar.tsx` | 1 | Navigation sidebar |
+| `web/src/components/VideoCard.tsx` | 1 | Video metadata card |
+| `web/src/components/ProgressBar.tsx` | 1 | Reusable progress bar |

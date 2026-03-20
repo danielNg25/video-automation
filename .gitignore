@@ -6,19 +6,29 @@ __pycache__/
 dist/
 build/
 .venv/
+.pytest_cache/
 
-# Data (large files)
+# Data (runtime — only keep .gitkeep)
 data/raw/*.mp4
+data/raw/*.json
+data/raw/*.jpg
+data/srt/*.srt
 data/output/*.mp4
 data/logs/*.log
+data/logs/*.json
 
 # Secrets & credentials
 .env
 config/config.yaml
 config/douyin_cookie.txt
+config/douyin_web_config.yaml
 config/*_token.json
 config/*_secrets.json
 config/*_client_secrets.json
+
+# Node / React
+node_modules/
+ui-app/dist/
 
 # IDE
 .vscode/
