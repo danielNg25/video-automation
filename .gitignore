@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.venv/
+
+# Data (large files)
+data/raw/*.mp4
+data/output/*.mp4
+data/logs/*.log
+
+# Secrets & credentials
+.env
+config/config.yaml
+config/douyin_cookie.txt
+config/*_token.json
+config/*_secrets.json
+config/*_client_secrets.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
