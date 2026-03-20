@@ -17,3 +17,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `config/config.example.yaml` as template for main configuration
 - `Makefile` with shortcuts for install, test, lint, format, and Docker commands
 - Initialized git repository on `main` branch
+- Git workflow rules in `CLAUDE.md`: branch naming, PR creation, PR review
+- Per-module `CLAUDE.md` files for downloader, transcriber, processor, uploader, utils
+- GitHub PR template at `.github/pull_request_template.md`
