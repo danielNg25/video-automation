@@ -23,6 +23,7 @@ class ProcessRequest(BaseModel):
     video_id: str
     platforms: list[str]
     subtitle_style: dict | None = None
+    subtitle_language_overrides: dict[str, str] | None = None  # {platform: lang_code}
 
 
 # --- Responses ---

@@ -44,6 +44,9 @@ function SubtitleProcessPage() {
     x: false,
   });
 
+  // Per-platform subtitle language override (empty string = use default from config)
+  const [langOverrides, setLangOverrides] = useState<Record<string, string>>({});
+
   // Processing state
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState<Record<string, { pct: number; message: string }>>({});
@@ -90,12 +93,30 @@ function SubtitleProcessPage() {
 
   const canProcess = selectedVideoId && activePlatforms.length > 0 && !isProcessing;
 
-  // Check if a platform's required subtitle language is available
+  // Get the effective subtitle language for a platform (override or default)
+  const getEffectiveLang = (platform: string): string => {
+    if (langOverrides[platform]) return langOverrides[platform];
+    const spec = platformSpecs[platform];
+    return spec?.subtitle_language || (platform === 'tiktok' || platform === 'facebook' ? 'vi' : 'en');
+  };
+
+  // Check if the effective subtitle language is available for this video
   const hasSubtitleForPlatform = (platform: string): boolean => {
     if (!selectedVideo) return false;
-    const spec = platformSpecs[platform];
-    const lang = spec?.subtitle_language || 'en';
+    const lang = getEffectiveLang(platform);
     return selectedVideo.srt_languages.includes(lang);
+  };
+
+  const setLangOverride = (platform: string, lang: string) => {
+    setLangOverrides((prev) => {
+      const next = { ...prev };
+      if (lang === '') {
+        delete next[platform]; // clear override, use default
+      } else {
+        next[platform] = lang;
+      }
+      return next;
+    });
   };
 
   const handleProcess = async () => {
@@ -121,10 +142,19 @@ function SubtitleProcessPage() {
         bold: boldEnabled,
       };
 
+      // Build language overrides (only include platforms with non-default selections)
+      const langOverridePayload: Record<string, string> = {};
+      for (const p of activePlatforms) {
+        if (langOverrides[p]) {
+          langOverridePayload[p] = langOverrides[p];
+        }
+      }
+
       const { task_id } = await postProcess({
         video_id: selectedVideoId,
         platforms: activePlatforms,
         subtitle_style: styleOverride,
+        subtitle_language_overrides: Object.keys(langOverridePayload).length > 0 ? langOverridePayload : undefined,
       });
 
       const es = subscribeSSE(task_id, (eventType, data) => {
@@ -340,40 +370,61 @@ function SubtitleProcessPage() {
                   <label className="font-mono text-[10px] uppercase text-on-surface-variant">Target Platforms</label>
                   <div className="space-y-2">
                     {Object.entries(PLATFORM_INFO).map(([id, info]) => {
-                      const spec = platformSpecs[id];
-                      const subLang = spec?.subtitle_language || (id === 'tiktok' || id === 'facebook' ? 'vi' : 'en');
+                      const effectiveLang = getEffectiveLang(id);
                       const hasSub = hasSubtitleForPlatform(id);
+                      const availableLangs = selectedVideo?.srt_languages || [];
 
                       return (
                         <div
                           key={id}
                           className={`p-3 rounded-lg bg-surface-container-lowest border ${
                             selectedPlatforms[id] ? 'border-primary/30' : 'border-outline-variant/10'
-                          } flex items-start gap-3 cursor-pointer hover:border-primary/40 transition-colors`}
-                          onClick={() => togglePlatform(id)}
+                          } flex items-start gap-3 hover:border-primary/40 transition-colors`}
                         >
                           <input
                             checked={selectedPlatforms[id] || false}
                             onChange={() => togglePlatform(id)}
-                            className="mt-1 rounded border-outline-variant bg-surface-container text-primary focus:ring-primary w-4 h-4"
+                            className="mt-1 rounded border-outline-variant bg-surface-container text-primary focus:ring-primary w-4 h-4 cursor-pointer"
                             type="checkbox"
                           />
                           <div className="flex-1">
                             <div className="flex justify-between items-center mb-1">
-                              <span className="text-sm font-medium">{info.label}</span>
-                              <div className="flex gap-1.5">
-                                <span className="font-mono text-[9px] px-1.5 py-0.5 bg-primary/20 text-primary rounded uppercase">
-                                  {subLang} subs
-                                </span>
-                                <span className="font-mono text-[9px] px-1.5 py-0.5 bg-zinc-800 text-zinc-400 rounded">
-                                  {info.constraint}
-                                </span>
-                              </div>
+                              <span className="text-sm font-medium cursor-pointer" onClick={() => togglePlatform(id)}>{info.label}</span>
+                              <span className="font-mono text-[9px] px-1.5 py-0.5 bg-zinc-800 text-zinc-400 rounded">
+                                {info.constraint}
+                              </span>
+                            </div>
+                            {/* Subtitle language selector */}
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <span className="font-mono text-[9px] text-on-surface-variant uppercase">Subtitle:</span>
+                              <select
+                                value={langOverrides[id] || ''}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  setLangOverride(id, e.target.value);
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="bg-surface-container-lowest border border-outline-variant/20 text-[11px] rounded px-1.5 py-0.5 focus:ring-1 focus:ring-primary text-on-surface"
+                              >
+                                <option value="">
+                                  Default ({info.subLangLabel})
+                                </option>
+                                {availableLangs.map((lang) => (
+                                  <option key={lang} value={lang}>
+                                    {lang === 'en' ? 'English' : lang === 'vi' ? 'Vietnamese' : lang === 'zh' ? 'Chinese' : lang.toUpperCase()}
+                                  </option>
+                                ))}
+                              </select>
+                              <span className={`font-mono text-[9px] px-1.5 py-0.5 rounded uppercase ${
+                                hasSub ? 'bg-primary/20 text-primary' : 'bg-amber-500/20 text-amber-400'
+                              }`}>
+                                {effectiveLang}
+                              </span>
                             </div>
                             {!hasSub && selectedVideo && (
-                              <p className="text-[10px] text-amber-400 flex items-center gap-1">
+                              <p className="text-[10px] text-amber-400 flex items-center gap-1 mt-1">
                                 <span className="material-symbols-outlined text-[12px]">warning</span>
-                                {subLang.toUpperCase()} SRT not found — will use fallback
+                                {effectiveLang.toUpperCase()} SRT not available — will use fallback
                               </p>
                             )}
                           </div>
@@ -432,7 +483,7 @@ function SubtitleProcessPage() {
                               {PLATFORM_INFO[platform]?.label || platform}
                             </span>
                             <span className="font-mono text-[9px] text-on-surface-variant">
-                              {platformSpecs[platform]?.subtitle_language?.toUpperCase() || ''}
+                              {(langOverrides[platform] || platformSpecs[platform]?.subtitle_language || '').toUpperCase()}
                             </span>
                           </div>
                           <span className={`font-mono text-xs ${pct >= 100 ? 'text-emerald-500' : 'text-primary'}`}>

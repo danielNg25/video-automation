@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
@@ -12,6 +13,14 @@ from src.processor.subtitle import select_subtitle_for_platform
 from src.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
+
+
+@dataclass
+class PlatformResult:
+    """Result of processing a video for one platform."""
+
+    output_path: Path
+    subtitle_language: str  # language code actually used (e.g. "en", "vi")
 
 
 def _load_subtitle_styles() -> dict:
@@ -41,11 +50,13 @@ def process_for_all_platforms(
     config: dict,
     style_overrides: dict | None = None,
     on_progress: Callable[[str, float, str], None] | None = None,
-) -> dict[str, Path]:
+    subtitle_language_overrides: dict[str, str] | None = None,
+) -> dict[str, PlatformResult]:
     """Process a video for all requested platforms.
 
     For each platform:
     1. Select the correct translated subtitle based on platform's subtitle_language
+       (or user override if provided)
     2. Merge default style + platform override + user override
     3. Burn subtitles + reformat in a single ffmpeg pass
 
@@ -58,9 +69,11 @@ def process_for_all_platforms(
         config: Full config dict (may contain platform and style sections).
         style_overrides: Optional user style overrides.
         on_progress: Callback(platform, progress_pct, message) for progress updates.
+        subtitle_language_overrides: Optional per-platform language override.
+            e.g. {"tiktok": "en", "youtube": "vi"} to override defaults.
 
     Returns:
-        Dict mapping platform name to output video path.
+        Dict mapping platform name to PlatformResult (output path + language used).
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -78,18 +91,25 @@ def process_for_all_platforms(
     platform_styles = styles.get("platforms", {})
 
     processor = FFmpegProcessor(config.get("ffmpeg", {}))
-    results: dict[str, Path] = {}
+    results: dict[str, PlatformResult] = {}
 
     for i, platform in enumerate(platforms):
         platform_spec = all_platform_specs.get(platform, {})
 
+        # Apply language override if user specified one for this platform
+        effective_spec = dict(platform_spec)
+        if subtitle_language_overrides and platform in subtitle_language_overrides:
+            effective_spec["subtitle_language"] = subtitle_language_overrides[platform]
+
         if on_progress:
             pct = i / len(platforms)
-            sub_lang = platform_spec.get("subtitle_language", "en")
+            sub_lang = effective_spec.get("subtitle_language", "en")
             on_progress(platform, pct, f"Processing for {platform} ({sub_lang})...")
 
         # Select subtitle file
-        srt_path = select_subtitle_for_platform(video_id, platform, srt_dir, platform_spec)
+        srt_path = select_subtitle_for_platform(
+            video_id, platform, srt_dir, effective_spec
+        )
 
         if srt_path is None:
             logger.warning(f"Skipping {platform}: no subtitle file found for {video_id}")
@@ -115,7 +135,9 @@ def process_for_all_platforms(
             platform_specs=platform_spec,
         )
 
-        results[platform] = output_path
+        results[platform] = PlatformResult(
+            output_path=output_path, subtitle_language=sub_lang
+        )
         logger.info(f"Completed {platform}: {output_path}")
 
     if on_progress:

@@ -346,6 +346,7 @@ class TaskManager:
         video_id: str,
         platforms: list[str],
         style_overrides: dict | None,
+        subtitle_language_overrides: dict[str, str] | None,
         config: dict,
     ):
         """Execute a video processing task in the background."""
@@ -392,18 +393,12 @@ class TaskManager:
                 config,
                 style_overrides,
                 on_progress,
+                subtitle_language_overrides,
             )
 
-            # Build result data
-            outputs = {p: str(path) for p, path in results.items()}
-            subtitle_languages = {}
-            for p in results:
-                # Determine which subtitle language was used
-                srt_path = srt_dir / f"{video_id}_vi.srt"
-                if p in ("tiktok", "facebook") and srt_path.exists():
-                    subtitle_languages[p] = "vi"
-                else:
-                    subtitle_languages[p] = "en"
+            # Build result data from PlatformResult objects
+            outputs = {p: str(r.output_path) for p, r in results.items()}
+            subtitle_languages = {p: r.subtitle_language for p, r in results.items()}
 
             # Update video index
             video_info.status = "processed"

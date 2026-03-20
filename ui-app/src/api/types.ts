@@ -51,6 +51,7 @@ export interface ProcessRequest {
   video_id: string;
   platforms: string[];
   subtitle_style?: Record<string, unknown>;
+  subtitle_language_overrides?: Record<string, string>;
 }
 
 export interface ProcessResult {

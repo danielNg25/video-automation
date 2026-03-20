@@ -37,6 +37,7 @@ async def start_process(request: ProcessRequest):
             request.video_id,
             request.platforms,
             request.subtitle_style,
+            request.subtitle_language_overrides,
             config,
         )
     )
