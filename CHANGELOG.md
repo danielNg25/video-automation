@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- React web UI app (`ui-app/`) with 5 pages: Dashboard, Download & Transcribe, Subtitle & Process, Upload, Settings
+- Shared layout components: Sidebar with active route highlighting, TopBar with search/breadcrumbs
+- Dark theme with Material Design 3 color tokens, Material Symbols icons, Inter + JetBrains Mono fonts
+- Stitch design screenshots and HTML references (`ui/screenshots/`, `ui/screens/`)
 - Web UI + API layer plan: FastAPI backend + React/Vite/shadcn frontend, split per phase
 - UI design prompt for generating mockups with LLM tools (`plans/ui-design-prompt.md`)
 - Architecture diagram updated with Web UI and API layers

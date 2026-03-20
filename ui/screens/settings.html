@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>VideoPrecision - Settings</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "secondary": "#d0bcff",
+              "primary-container": "#a078ff",
+              "surface-tint": "#d0bcff",
+              "on-primary-fixed-variant": "#5516be",
+              "primary": "#d0bcff",
+              "surface-container-low": "#1c1b1d",
+              "surface-container-high": "#2a2a2c",
+              "inverse-on-surface": "#313032",
+              "surface-container": "#201f22",
+              "surface": "#131315",
+              "on-tertiary-container": "#3f2300",
+              "surface-container-lowest": "#0e0e10",
+              "surface-variant": "#353437",
+              "on-secondary": "#372464",
+              "tertiary-container": "#ca801e",
+              "on-tertiary-fixed-variant": "#673d00",
+              "secondary-container": "#513e7f",
+              "primary-fixed-dim": "#d0bcff",
+              "primary-fixed": "#e9ddff",
+              "on-error": "#690005",
+              "on-secondary-container": "#c3adf7",
+              "tertiary-fixed": "#ffdcbb",
+              "tertiary": "#ffb869",
+              "on-surface": "#e5e1e4",
+              "tertiary-fixed-dim": "#ffb869",
+              "inverse-surface": "#e5e1e4",
+              "error-container": "#93000a",
+              "secondary-fixed": "#e9ddff",
+              "on-surface-variant": "#cbc3d7",
+              "on-secondary-fixed-variant": "#4e3b7c",
+              "on-background": "#e5e1e4",
+              "on-secondary-fixed": "#220b4e",
+              "surface-bright": "#39393b",
+              "surface-container-highest": "#353437",
+              "inverse-primary": "#6d3bd7",
+              "outline-variant": "#494454",
+              "on-tertiary": "#482900",
+              "surface-dim": "#131315",
+              "background": "#131315",
+              "on-primary-container": "#340080",
+              "on-error-container": "#ffdad6",
+              "on-primary-fixed": "#23005c",
+              "on-tertiary-fixed": "#2c1700",
+              "on-primary": "#3c0091",
+              "outline": "#958ea0",
+              "error": "#ffb4ab",
+              "secondary-fixed-dim": "#d0bcff"
+            },
+            fontFamily: {
+              "headline": ["Inter"],
+              "body": ["Inter"],
+              "label": ["Inter"],
+              "mono": ["JetBrains Mono"]
+            },
+            borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            font-size: 20px;
+        }
+        body {
+            background-color: #131315;
+            color: #e5e1e4;
+            font-family: 'Inter', sans-serif;
+        }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        input[type="range"] {
+            accent-color: #d0bcff;
+        }
+    </style>
+</head>
+<body class="flex overflow-hidden h-screen">
+<!-- SideNavBar (Shared Component) -->
+<aside class="hidden md:flex flex-col h-full py-4 border-r border-zinc-800/20 bg-[#0e0e10] w-64 docked h-screen left-0">
+<div class="px-6 mb-8">
+<h1 class="text-[#d0bcff] font-black text-lg tracking-tighter">Video Tool</h1>
+<p class="font-mono text-[10px] uppercase tracking-widest text-zinc-500">v1.0.4</p>
+</div>
+<nav class="flex-1 space-y-1 px-3">
+<a class="flex items-center px-3 py-2 text-zinc-500 hover:text-zinc-300 transition-all duration-200 ease-in-out font-mono text-xs uppercase tracking-widest group" href="#">
+<span class="material-symbols-outlined mr-3">dashboard</span>
+<span>Dashboard</span>
+</a>
+<a class="flex items-center px-3 py-2 text-zinc-500 hover:text-zinc-300 transition-all duration-200 ease-in-out font-mono text-xs uppercase tracking-widest group" href="#">
+<span class="material-symbols-outlined mr-3">download</span>
+<span>Download &amp; Transcribe</span>
+</a>
+<a class="flex items-center px-3 py-2 text-zinc-500 hover:text-zinc-300 transition-all duration-200 ease-in-out font-mono text-xs uppercase tracking-widest group" href="#">
+<span class="material-symbols-outlined mr-3">movie_edit</span>
+<span>Subtitle &amp; Process</span>
+</a>
+<a class="flex items-center px-3 py-2 text-zinc-500 hover:text-zinc-300 transition-all duration-200 ease-in-out font-mono text-xs uppercase tracking-widest group" href="#">
+<span class="material-symbols-outlined mr-3">upload</span>
+<span>Upload</span>
+</a>
+<a class="flex items-center px-3 py-2 bg-[#2a2a2c] text-[#d0bcff] border-r-2 border-[#d0bcff] transition-all duration-200 ease-in-out font-mono text-xs uppercase tracking-widest group" href="#">
+<span class="material-symbols-outlined mr-3">settings</span>
+<span>Settings</span>
+</a>
+</nav>
+<div class="px-3 mt-auto space-y-4">
+<button class="w-full py-2 bg-gradient-to-br from-primary to-primary-container text-on-primary-fixed font-bold text-xs uppercase tracking-widest rounded-md hover:opacity-90 transition-opacity">
+                New Project
+            </button>
+<a class="flex items-center px-3 py-2 text-zinc-500 hover:text-zinc-300 font-mono text-xs uppercase tracking-widest" href="#">
+<span class="material-symbols-outlined mr-3">menu_book</span>
+<span>Documentation</span>
+</a>
+</div>
+</aside>
+<main class="flex-1 flex flex-col min-w-0 overflow-hidden relative bg-surface">
+<!-- TopNavBar (Shared Component) -->
+<header class="flex justify-between items-center w-full px-6 h-14 z-50 bg-[#131315] docked full-width top-0">
+<div class="flex items-center gap-4">
+<span class="text-lg font-bold tracking-tighter text-[#d0bcff]">VideoPrecision</span>
+<div class="hidden md:flex items-center bg-[#1c1b1d] px-3 py-1.5 rounded-md border border-zinc-800/30">
+<span class="material-symbols-outlined text-zinc-500 text-sm">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-xs text-on-surface w-48 placeholder-zinc-600" placeholder="Search settings..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-2 text-zinc-400 hover:bg-[#2a2a2c] transition-colors rounded-full">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="p-2 text-zinc-400 hover:bg-[#2a2a2c] transition-colors rounded-full">
+<span class="material-symbols-outlined">help</span>
+</button>
+<div class="h-8 w-8 rounded-full bg-secondary-container flex items-center justify-center overflow-hidden border border-primary/20">
+<img alt="User Profile" class="w-full h-full object-cover" data-alt="Abstract geometric profile avatar for user" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDi6NgRXq4Wae4Vu6Dp2pAZ8eBVzvFjsXg_c0urmE5kNFO0xhzOQeL7J_VRWTdr9nOSK4WbcRzoAtcHwlfm3I-9KZiJJrU3ZTjzqhq986QZHJ5z11UBp02Sj4Kmmmsp9foiKeK3A1L7TujAsNXpU2MwiWi6IzbQUj07ueUBdsw_tdggaYLO7W36rucgAhrMFElOcorNGuUHPDeUUgpS3uIXPgdSEfc7uj5f6m-8PhG3ConslRdXBSHIYrGloaWHxLNcHM4f3-mBIt8"/>
+</div>
+</div>
+</header>
+<!-- Settings Workspace -->
+<div class="flex flex-1 overflow-hidden">
+<!-- Settings Sidebar (Sub-nav) -->
+<nav class="w-56 bg-surface-container-lowest flex flex-col p-2 gap-1 border-r border-zinc-800/10">
+<a class="flex items-center gap-3 px-4 py-2.5 rounded text-sm font-medium bg-surface-container-high text-primary transition-colors" href="#douyin">
+<span class="material-symbols-outlined text-[18px]">api</span>
+                    Douyin API
+                </a>
+<a class="flex items-center gap-3 px-4 py-2.5 rounded text-sm font-medium text-zinc-400 hover:bg-surface-container-low transition-colors" href="#transcription">
+<span class="material-symbols-outlined text-[18px]">description</span>
+                    Transcription
+                </a>
+<a class="flex items-center gap-3 px-4 py-2.5 rounded text-sm font-medium text-zinc-400 hover:bg-surface-container-low transition-colors" href="#video">
+<span class="material-symbols-outlined text-[18px]">movie_filter</span>
+                    Video Processing
+                </a>
+<a class="flex items-center gap-3 px-4 py-2.5 rounded text-sm font-medium text-zinc-400 hover:bg-surface-container-low transition-colors" href="#platforms">
+<span class="material-symbols-outlined text-[18px]">hub</span>
+                    Platforms
+                </a>
+<a class="flex items-center gap-3 px-4 py-2.5 rounded text-sm font-medium text-zinc-400 hover:bg-surface-container-low transition-colors" href="#pipeline">
+<span class="material-symbols-outlined text-[18px]">account_tree</span>
+                    Pipeline
+                </a>
+</nav>
+<!-- Settings Content -->
+<div class="flex-1 overflow-y-auto p-8 hide-scrollbar">
+<div class="max-w-4xl mx-auto space-y-12 pb-24">
+<!-- Douyin API Section -->
+<section class="space-y-6" id="douyin">
+<div class="border-b border-zinc-800/30 pb-4">
+<h2 class="text-xl font-semibold text-on-surface">Douyin API</h2>
+<p class="text-xs text-on-surface-variant font-mono mt-1 opacity-70">Configuration for local scraper and signature services.</p>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div class="space-y-2">
+<label class="text-xs font-bold uppercase tracking-widest text-zinc-500">Service URL</label>
+<input class="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono text-primary" type="text" value="http://localhost:8080/api/v1"/>
+</div>
+<div class="space-y-2">
+<label class="text-xs font-bold uppercase tracking-widest text-zinc-500">Cookie Path</label>
+<input class="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono" type="text" value="./auth/douyin.cookies"/>
+</div>
+<div class="space-y-2">
+<label class="text-xs font-bold uppercase tracking-widest text-zinc-500">Request Timeout (ms)</label>
+<input class="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono" type="number" value="30000"/>
+</div>
+<div class="flex items-end pb-1">
+<button class="flex items-center gap-2 px-4 py-3 bg-surface-container-high hover:bg-surface-variant rounded text-xs font-bold uppercase tracking-widest transition-colors w-full justify-center">
+<span class="material-symbols-outlined text-emerald-500" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+                                    Docker Status: Healthy
+                                </button>
+</div>
+</div>
+</section>
+<!-- Transcription Section -->
+<section class="space-y-6" id="transcription">
+<div class="border-b border-zinc-800/30 pb-4">
+<h2 class="text-xl font-semibold text-on-surface">Transcription</h2>
+<p class="text-xs text-on-surface-variant font-mono mt-1 opacity-70">Whisper engine and VAD parameters.</p>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<div class="space-y-2">
+<label class="text-xs font-bold uppercase tracking-widest text-zinc-500">Model Size</label>
+<select class="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm">
+<option>tiny</option>
+<option>base</option>
+<option>small</option>
+<option>medium</option>
+<option selected="">large-v3</option>
+</select>
+</div>
+<div class="space-y-2">
+<label class="text-xs font-bold uppercase tracking-widest text-zinc-500">Device</label>
+<select class="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono">
+<option>cpu</option>
+<option selected="">cuda:0</option>
+<option>cuda:1</option>
+</select>
+</div>
+<div class="space-y-2">
+<label class="text-xs font-bold uppercase tracking-widest text-zinc-500">Compute Type</label>
+<select class="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono">
+<option selected="">float16</option>
+<option>int8_float16</option>
+<option>int8</option>
+</select>
+</div>
+<div class="space-y-2">
+<label class="text-xs font-bold uppercase tracking-widest text-zinc-500">Language</label>
+<input class="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm" placeholder="Auto (detect)" type="text"/>
+</div>
+<div class="flex items-center justify-between p-3 bg-surface-container-low rounded">
+<span class="text-xs font-bold uppercase tracking-widest text-zinc-400">VAD Filter</span>
+<div class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-9 h-5 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+</div>
+</div>
+<div class="flex items-center justify-between p-3 bg-surface-container-low rounded">
+<span class="text-xs font-bold uppercase tracking-widest text-zinc-400">Models</span>
+<span class="text-[10px] font-mono bg-emerald-900/30 text-emerald-400 px-2 py-0.5 rounded">DOWNLOADED</span>
+</div>
+</div>
+</section>
+<!-- Video Processing Section -->
+<section class="space-y-6" id="video">
+<div class="border-b border-zinc-800/30 pb-4">
+<h2 class="text-xl font-semibold text-on-surface">Video Processing</h2>
+<p class="text-xs text-on-surface-variant font-mono mt-1 opacity-70">FFmpeg encoding and rendering defaults.</p>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-8 bg-surface-container-low/50 p-6 rounded-lg">
+<div class="space-y-4">
+<div class="flex justify-between items-center">
+<label class="text-xs font-bold uppercase tracking-widest text-zinc-500">CRF (Quality)</label>
+<span class="text-xs font-mono text-primary">23</span>
+</div>
+<input class="w-full h-1.5 bg-surface-container-highest rounded-lg appearance-none cursor-pointer" max="51" min="0" type="range" value="23"/>
+<div class="flex justify-between text-[10px] font-mono text-zinc-600">
+<span>LOSSLESS (0)</span>
+<span>LOW QUAL (51)</span>
+</div>
+</div>
+<div class="space-y-2">
+<label class="text-xs font-bold uppercase tracking-widest text-zinc-500">Preset</label>
+<select class="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono">
+<option>ultrafast</option>
+<option>superfast</option>
+<option>veryfast</option>
+<option>faster</option>
+<option selected="">medium</option>
+<option>slow</option>
+</select>
+</div>
+<div class="space-y-2">
+<label class="text-xs font-bold uppercase tracking-widest text-zinc-500">Audio Bitrate</label>
+<div class="flex items-center">
+<input class="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded-l p-3 text-sm font-mono" type="text" value="192"/>
+<span class="bg-surface-container-highest px-4 py-3 border-y border-r border-outline-variant/20 text-xs font-mono text-zinc-500 rounded-r">kbps</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Platforms Section -->
+<section class="space-y-6" id="platforms">
+<div class="border-b border-zinc-800/30 pb-4">
+<h2 class="text-xl font-semibold text-on-surface">Platforms</h2>
+<p class="text-xs text-on-surface-variant font-mono mt-1 opacity-70">Destination specific publishing settings.</p>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<!-- YouTube -->
+<div class="bg-surface-container-low p-5 rounded border border-zinc-800/10">
+<div class="flex justify-between items-start mb-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-red-900/20 flex items-center justify-center">
+<span class="material-symbols-outlined text-red-500 text-sm">play_circle</span>
+</div>
+<span class="text-sm font-bold uppercase tracking-tight">YouTube</span>
+</div>
+<input checked="" class="w-4 h-4 text-primary bg-zinc-800 border-zinc-700 rounded focus:ring-0" type="checkbox"/>
+</div>
+<div class="space-y-3">
+<label class="text-[10px] font-bold uppercase tracking-widest text-zinc-500 block">Default Privacy</label>
+<select class="w-full bg-surface-container-lowest border border-outline-variant/20 text-xs py-2 px-3 rounded">
+<option>Public</option>
+<option selected="">Private</option>
+<option>Unlisted</option>
+</select>
+</div>
+</div>
+<!-- TikTok -->
+<div class="bg-surface-container-low p-5 rounded border border-zinc-800/10">
+<div class="flex justify-between items-start mb-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-cyan-900/20 flex items-center justify-center">
+<span class="material-symbols-outlined text-cyan-400 text-sm">music_note</span>
+</div>
+<span class="text-sm font-bold uppercase tracking-tight">TikTok</span>
+</div>
+<input checked="" class="w-4 h-4 text-primary bg-zinc-800 border-zinc-700 rounded focus:ring-0" type="checkbox"/>
+</div>
+<div class="space-y-3">
+<label class="text-[10px] font-bold uppercase tracking-widest text-zinc-500 block">Upload Mode</label>
+<select class="w-full bg-surface-container-lowest border border-outline-variant/20 text-xs py-2 px-3 rounded">
+<option selected="">API Direct</option>
+<option>Cookie Browser</option>
+</select>
+</div>
+</div>
+<!-- Facebook -->
+<div class="bg-surface-container-low p-5 rounded border border-zinc-800/10">
+<div class="flex justify-between items-start mb-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-blue-900/20 flex items-center justify-center">
+<span class="material-symbols-outlined text-blue-500 text-sm">groups</span>
+</div>
+<span class="text-sm font-bold uppercase tracking-tight">Facebook</span>
+</div>
+<input class="w-4 h-4 text-primary bg-zinc-800 border-zinc-700 rounded focus:ring-0" type="checkbox"/>
+</div>
+<div class="space-y-3">
+<label class="text-[10px] font-bold uppercase tracking-widest text-zinc-500 block">Target Type</label>
+<select class="w-full bg-surface-container-lowest border border-outline-variant/20 text-xs py-2 px-3 rounded">
+<option selected="">Page Reels</option>
+<option>Personal Feed</option>
+</select>
+</div>
+</div>
+<!-- X (Twitter) -->
+<div class="bg-surface-container-low p-5 rounded border border-zinc-800/10">
+<div class="flex justify-between items-start mb-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-zinc-900 flex items-center justify-center">
+<span class="material-symbols-outlined text-zinc-100 text-sm">close</span>
+</div>
+<span class="text-sm font-bold uppercase tracking-tight">X (Twitter)</span>
+</div>
+<input class="w-4 h-4 text-primary bg-zinc-800 border-zinc-700 rounded focus:ring-0" type="checkbox"/>
+</div>
+<div class="space-y-3">
+<label class="text-[10px] font-bold uppercase tracking-widest text-zinc-500 block">Automation Note</label>
+<p class="text-[11px] text-zinc-500 italic">API integration requires Premium tier client ID.</p>
+</div>
+</div>
+</div>
+</section>
+<!-- Pipeline Section -->
+<section class="space-y-6" id="pipeline">
+<div class="border-b border-zinc-800/30 pb-4">
+<h2 class="text-xl font-semibold text-on-surface">Pipeline</h2>
+<p class="text-xs text-on-surface-variant font-mono mt-1 opacity-70">Batch processing and concurrency management.</p>
+</div>
+<div class="space-y-6">
+<div class="space-y-2">
+<label class="text-xs font-bold uppercase tracking-widest text-zinc-500">Global Data Path</label>
+<div class="flex gap-2">
+<input class="flex-1 bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono" type="text" value="/mnt/storage/video_precision/data"/>
+<button class="px-4 py-2 bg-surface-container-high hover:bg-surface-variant transition-colors rounded">
+<span class="material-symbols-outlined text-zinc-400">folder_open</span>
+</button>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<div class="space-y-2">
+<label class="text-xs font-bold uppercase tracking-widest text-zinc-500">Max Concurrent</label>
+<input class="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono" type="number" value="3"/>
+</div>
+<div class="space-y-2">
+<label class="text-xs font-bold uppercase tracking-widest text-zinc-500">Retry Attempts</label>
+<input class="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono" type="number" value="3"/>
+</div>
+<div class="space-y-2">
+<label class="text-xs font-bold uppercase tracking-widest text-zinc-500">Retry Delay (s)</label>
+<input class="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono" type="number" value="10"/>
+</div>
+</div>
+<div class="flex items-center justify-between p-4 bg-primary-container/10 rounded-lg border border-primary/20">
+<div>
+<h4 class="text-sm font-semibold text-primary">Skip Existing Files</h4>
+<p class="text-[11px] text-zinc-500 mt-0.5">Resume tasks by checking for output fingerprints before starting compute.</p>
+</div>
+<div class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-11 h-6 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+</div>
+</div>
+</div>
+</section>
+</div>
+</div>
+</div>
+<!-- Sticky Footer Action -->
+<div class="absolute bottom-0 left-0 right-0 bg-surface/80 backdrop-blur-md border-t border-zinc-800/30 px-8 py-4 flex justify-between items-center z-50">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-emerald-500 text-sm">cloud_done</span>
+<span class="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">All local changes are cached</span>
+</div>
+<div class="flex gap-4">
+<button class="px-6 py-2 rounded text-xs font-bold uppercase tracking-widest text-zinc-400 hover:text-on-surface transition-colors">Discard</button>
+<button class="px-8 py-2.5 bg-gradient-to-br from-primary to-primary-container text-on-primary-fixed font-bold text-xs uppercase tracking-widest rounded shadow-lg shadow-primary/20 active:scale-95 transition-all">
+                    Save Changes
+                </button>
+</div>
+</div>
+</main>
+</body></html>

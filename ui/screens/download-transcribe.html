@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>VideoPrecision - Download &amp; Transcribe</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .mono { font-family: 'JetBrains+Mono', monospace; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: #0e0e10; }
+        ::-webkit-scrollbar-thumb { background: #353437; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #d0bcff; }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              colors: {
+                "secondary": "#d0bcff",
+                "primary-container": "#a078ff",
+                "surface-tint": "#d0bcff",
+                "on-primary-fixed-variant": "#5516be",
+                "primary": "#d0bcff",
+                "surface-container-low": "#1c1b1d",
+                "surface-container-high": "#2a2a2c",
+                "inverse-on-surface": "#313032",
+                "surface-container": "#201f22",
+                "surface": "#131315",
+                "on-tertiary-container": "#3f2300",
+                "surface-container-lowest": "#0e0e10",
+                "surface-variant": "#353437",
+                "on-secondary": "#372464",
+                "tertiary-container": "#ca801e",
+                "on-tertiary-fixed-variant": "#673d00",
+                "secondary-container": "#513e7f",
+                "primary-fixed-dim": "#d0bcff",
+                "primary-fixed": "#e9ddff",
+                "on-error": "#690005",
+                "on-secondary-container": "#c3adf7",
+                "tertiary-fixed": "#ffdcbb",
+                "tertiary": "#ffb869",
+                "on-surface": "#e5e1e4",
+                "tertiary-fixed-dim": "#ffb869",
+                "inverse-surface": "#e5e1e4",
+                "error-container": "#93000a",
+                "secondary-fixed": "#e9ddff",
+                "on-surface-variant": "#cbc3d7",
+                "on-secondary-fixed-variant": "#4e3b7c",
+                "on-background": "#e5e1e4",
+                "on-secondary-fixed": "#220b4e",
+                "surface-bright": "#39393b",
+                "surface-container-highest": "#353437",
+                "inverse-primary": "#6d3bd7",
+                "outline-variant": "#494454",
+                "on-tertiary": "#482900",
+                "surface-dim": "#131315",
+                "background": "#131315",
+                "on-primary-container": "#340080",
+                "on-error-container": "#ffdad6",
+                "on-primary-fixed": "#23005c",
+                "on-tertiary-fixed": "#2c1700",
+                "on-primary": "#3c0091",
+                "outline": "#958ea0",
+                "error": "#ffb4ab",
+                "secondary-fixed-dim": "#d0bcff"
+              },
+              fontFamily: {
+                "headline": ["Inter"],
+                "body": ["Inter"],
+                "label": ["Inter"]
+              },
+              borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+            },
+          },
+        }
+      </script>
+</head>
+<body class="bg-surface text-on-surface selection:bg-primary-container selection:text-on-primary-container">
+<div class="flex h-screen overflow-hidden">
+<!-- SideNavBar Component -->
+<aside class="hidden md:flex flex-col h-full py-4 border-r border-zinc-800/20 bg-[#0e0e10] w-64 docked h-screen left-0">
+<div class="px-6 mb-8">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-sm bg-primary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary-fixed" style="font-variation-settings: 'FILL' 1;">precision_manufacturing</span>
+</div>
+<div>
+<div class="text-[#d0bcff] font-black font-mono text-xs uppercase tracking-widest">Video Tool</div>
+<div class="text-[10px] text-on-surface-variant mono">v1.0.4</div>
+</div>
+</div>
+</div>
+<nav class="flex-1 px-3 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2 text-zinc-500 hover:text-zinc-300 transition-all duration-200 ease-in-out font-mono text-xs uppercase tracking-widest" href="#">
+<span class="material-symbols-outlined text-lg">dashboard</span>
+<span>Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 bg-[#2a2a2c] text-[#d0bcff] border-r-2 border-[#d0bcff] transition-all duration-200 ease-in-out font-mono text-xs uppercase tracking-widest" href="#">
+<span class="material-symbols-outlined text-lg">download</span>
+<span>Download &amp; Transcribe</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-zinc-500 hover:text-zinc-300 transition-all duration-200 ease-in-out font-mono text-xs uppercase tracking-widest" href="#">
+<span class="material-symbols-outlined text-lg">movie_edit</span>
+<span>Subtitle &amp; Process</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-zinc-500 hover:text-zinc-300 transition-all duration-200 ease-in-out font-mono text-xs uppercase tracking-widest" href="#">
+<span class="material-symbols-outlined text-lg">upload</span>
+<span>Upload</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-zinc-500 hover:text-zinc-300 transition-all duration-200 ease-in-out font-mono text-xs uppercase tracking-widest" href="#">
+<span class="material-symbols-outlined text-lg">settings</span>
+<span>Settings</span>
+</a>
+</nav>
+<div class="px-6 mt-4">
+<button class="w-full py-2.5 bg-gradient-to-br from-primary to-primary-container text-on-primary-fixed font-bold text-xs uppercase tracking-widest rounded-md active:scale-95 transition-transform">
+                    New Project
+                </button>
+</div>
+<div class="px-3 mt-auto pt-4">
+<a class="flex items-center gap-3 px-3 py-2 text-zinc-500 hover:text-zinc-300 transition-all duration-200 ease-in-out font-mono text-xs uppercase tracking-widest" href="#">
+<span class="material-symbols-outlined text-lg">menu_book</span>
+<span>Documentation</span>
+</a>
+</div>
+</aside>
+<main class="flex-1 flex flex-col overflow-hidden bg-surface">
+<!-- TopNavBar Component -->
+<header class="flex justify-between items-center w-full px-6 h-14 z-50 bg-[#131315] font-sans text-sm tracking-tight border-b border-surface-container-high">
+<div class="flex items-center gap-4">
+<span class="text-lg font-bold tracking-tighter text-[#d0bcff]">VideoPrecision</span>
+<div class="h-4 w-px bg-outline-variant/30"></div>
+<div class="flex items-center gap-2 text-on-surface-variant font-medium">
+<span class="material-symbols-outlined text-sm">home</span>
+<span class="material-symbols-outlined text-xs">chevron_right</span>
+<span>Transcribe</span>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="material-symbols-outlined text-zinc-400 hover:bg-[#2a2a2c] p-2 rounded-full transition-colors active:scale-95 duration-150">notifications</button>
+<button class="material-symbols-outlined text-zinc-400 hover:bg-[#2a2a2c] p-2 rounded-full transition-colors active:scale-95 duration-150">help</button>
+<div class="w-8 h-8 rounded-full bg-surface-container-highest border border-outline-variant/20 overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="User profile avatar male" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDSISztSD3WegQUhqAE6KR6GJw_IRuK7_GNHPlAL5wY4CchhDoWAAR8PufemTqma_PGuU59pNLlX_NoJ7wJY_KUBt7PF_gW8d1j43fWZMnSlRhFM8jB3Zq6ohwE5-3fTrMFXuZPczrPTOoU8a2U3IA00F9T7tB1IKT_9d1jYQ_AZCSz0xPRm9wLSb93XlgXbdjtK1t6I1ap-AzJm-lZRz_bZSEqeo2XNm5msEuMGHYSHVWN9OPZ3kXODslBMZSsJ-8MDDqHBsWMMuc"/>
+</div>
+</div>
+</header>
+<!-- Main Scrollable Content -->
+<section class="flex-1 overflow-y-auto p-6 space-y-6">
+<!-- URL Input Section -->
+<div class="bg-surface-container-low p-1 rounded-xl shadow-sm">
+<div class="flex items-center bg-surface-container-lowest p-2 rounded-lg gap-3 focus-within:ring-1 focus-within:ring-primary/40 transition-shadow">
+<div class="pl-3 text-on-surface-variant">
+<span class="material-symbols-outlined">link</span>
+</div>
+<input class="flex-1 bg-transparent border-none focus:ring-0 text-on-surface placeholder:text-zinc-600 text-sm py-3" placeholder="Paste Douyin share link or URL" type="text"/>
+<button class="bg-primary text-on-primary-fixed px-6 py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:brightness-110 active:scale-95 transition-all">
+<span>Download</span>
+<span class="material-symbols-outlined text-sm">download</span>
+</button>
+</div>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+<!-- Left Column: Active Job Status -->
+<div class="lg:col-span-7 space-y-6">
+<!-- Downloading Progress Card -->
+<div class="bg-surface-container-low rounded-xl overflow-hidden">
+<div class="p-4 border-b border-outline-variant/10 flex justify-between items-center">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-lg">downloading</span>
+<span class="text-xs font-bold uppercase tracking-widest">Active Download</span>
+</div>
+<span class="text-[10px] mono text-zinc-500">ENGINE: YT-DLP (STABLE)</span>
+</div>
+<div class="p-5 space-y-4">
+<div class="flex justify-between items-end mb-1">
+<div class="space-y-1">
+<div class="text-sm font-semibold truncate max-w-[300px]">douyin_video_7283941203.mp4</div>
+<div class="text-[10px] text-zinc-500 mono uppercase">Merging Fragments...</div>
+</div>
+<div class="text-right">
+<div class="text-lg font-black mono text-primary tracking-tighter">74.2%</div>
+<div class="text-[10px] text-zinc-500 mono">12.4 MB/s • ETA: 00:08</div>
+</div>
+</div>
+<div class="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
+<div class="bg-primary h-full w-[74.2%] transition-all duration-500 shadow-[0_0_8px_rgba(208,188,255,0.4)]"></div>
+</div>
+</div>
+</div>
+<!-- Video Result Card (After Download) -->
+<div class="bg-surface-container-low rounded-xl overflow-hidden flex flex-col md:flex-row border border-primary/20">
+<div class="w-full md:w-64 aspect-video bg-surface-container-highest relative group">
+<img class="w-full h-full object-cover" data-alt="Social media video thumbnail interface" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDSISztSD3WegQUhqAE6KR6GJw_IRuK7_GNHPlAL5wY4CchhDoWAAR8PufemTqma_PGuU59pNLlX_NoJ7wJY_KUBt7PF_gW8d1j43fWZMnSlRhFM8jB3Zq6ohwE5-3fTrMFXuZPczrPTOoU8a2U3IA00F9T7tB1IKT_9d1jYQ_AZCSz0xPRm9wLSb93XlgXbdjtK1t6I1ap-AzJm-lZRz_bZSEqeo2XNm5msEuMGHYSHVWN9OPZ3kXODslBMZSsJ-8MDDqHBsWMMuc"/>
+<div class="absolute bottom-2 right-2 bg-black/80 text-white text-[10px] px-1.5 py-0.5 rounded mono">04:12</div>
+<div class="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+<span class="material-symbols-outlined text-3xl">play_circle</span>
+</div>
+</div>
+<div class="flex-1 p-5 flex flex-col justify-between">
+<div>
+<div class="flex justify-between items-start mb-2">
+<h3 class="text-sm font-bold leading-tight">Exploring the Neo-Tokyo Aesthetics: A Visual Journey Through Shinjuku</h3>
+<span class="bg-emerald-500/10 text-emerald-400 text-[10px] px-2 py-0.5 rounded-full border border-emerald-500/20 font-bold">COMPLETED</span>
+</div>
+<div class="grid grid-cols-2 gap-y-2 gap-x-4">
+<div class="flex flex-col">
+<span class="text-[10px] text-zinc-500 uppercase tracking-tighter">Author</span>
+<span class="text-xs font-medium">@cyber_explorer</span>
+</div>
+<div class="flex flex-col">
+<span class="text-[10px] text-zinc-500 uppercase tracking-tighter">Resolution</span>
+<span class="text-xs font-medium mono">1080x1920 (9:16)</span>
+</div>
+<div class="flex flex-col">
+<span class="text-[10px] text-zinc-500 uppercase tracking-tighter">Size</span>
+<span class="text-xs font-medium mono">42.8 MB</span>
+</div>
+<div class="flex flex-col">
+<span class="text-[10px] text-zinc-500 uppercase tracking-tighter">Codec</span>
+<span class="text-xs font-medium mono">h.264 / AAC</span>
+</div>
+</div>
+</div>
+<div class="mt-6 flex items-center gap-3">
+<div class="flex-1 flex gap-px rounded-md overflow-hidden border border-outline-variant/20">
+<select class="flex-1 bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 focus:ring-0">
+<option>Chinese (Mandarin)</option>
+<option>Chinese + English</option>
+<option>English Only</option>
+</select>
+</div>
+<button class="bg-primary text-on-primary-fixed px-4 py-2 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap active:scale-95 transition-all">
+<span>Transcribe</span>
+<span class="material-symbols-outlined text-sm">neurology</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Transcription Progress -->
+<div class="bg-surface-container-low rounded-xl p-5 border border-outline-variant/10">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-full border-2 border-primary border-t-transparent animate-spin"></div>
+<div class="flex-1">
+<div class="flex justify-between items-center mb-1">
+<span class="text-xs font-bold uppercase tracking-widest text-primary">Transcribing Audio...</span>
+<span class="text-[10px] mono text-zinc-500">WHISPER v3 LARGE</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="text-[11px] text-on-surface-variant mono">Current Stage:</span>
+<span class="text-[11px] font-medium text-emerald-400">Loading model weights to GPU...</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Column: Result Preview -->
+<div class="lg:col-span-5 h-full flex flex-col min-h-[500px]">
+<div class="bg-surface-container-low rounded-xl flex-1 flex flex-col border border-outline-variant/10">
+<div class="p-4 border-b border-outline-variant/10 flex justify-between items-center bg-surface-container-high/30">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-zinc-400">subtitles</span>
+<span class="text-xs font-bold uppercase tracking-widest">SRT Preview</span>
+</div>
+<div class="flex gap-2">
+<button class="p-1.5 hover:bg-surface-container-highest rounded transition-colors text-zinc-400" title="Export SRT">
+<span class="material-symbols-outlined text-sm">download</span>
+</button>
+<button class="p-1.5 hover:bg-surface-container-highest rounded transition-colors text-zinc-400" title="Copy Text">
+<span class="material-symbols-outlined text-sm">content_copy</span>
+</button>
+</div>
+</div>
+<div class="flex-1 overflow-y-auto p-2 space-y-1">
+<!-- Segment -->
+<div class="group p-3 rounded hover:bg-surface-container-high transition-colors cursor-pointer border-l-2 border-transparent hover:border-primary">
+<div class="flex justify-between mb-1">
+<span class="text-[10px] mono text-primary font-bold">00:00:01,240 → 00:00:04,500</span>
+<span class="text-[10px] text-zinc-600 mono">#1</span>
+</div>
+<p class="text-xs leading-relaxed text-on-surface-variant group-hover:text-on-surface">你好，欢迎来到东京。今天我们要探索的是新宿区的独特魅力。</p>
+</div>
+<!-- Segment -->
+<div class="group p-3 rounded hover:bg-surface-container-high transition-colors cursor-pointer border-l-2 border-transparent hover:border-primary">
+<div class="flex justify-between mb-1">
+<span class="text-[10px] mono text-primary font-bold">00:00:04,500 → 00:00:08,120</span>
+<span class="text-[10px] text-zinc-600 mono">#2</span>
+</div>
+<p class="text-xs leading-relaxed text-on-surface-variant group-hover:text-on-surface">Hello and welcome to Tokyo. Today we're exploring the unique charm of Shinjuku.</p>
+</div>
+<!-- Segment -->
+<div class="group p-3 rounded hover:bg-surface-container-high transition-colors cursor-pointer border-l-2 border-transparent hover:border-primary">
+<div class="flex justify-between mb-1">
+<span class="text-[10px] mono text-primary font-bold">00:00:08,120 → 00:00:12,800</span>
+<span class="text-[10px] text-zinc-600 mono">#3</span>
+</div>
+<p class="text-xs leading-relaxed text-on-surface-variant group-hover:text-on-surface">这里的霓虹灯光在雨后显得格外迷人，充满了赛博朋克的氛围。</p>
+</div>
+<!-- Segment -->
+<div class="group p-3 rounded hover:bg-surface-container-high transition-colors cursor-pointer border-l-2 border-transparent hover:border-primary">
+<div class="flex justify-between mb-1">
+<span class="text-[10px] mono text-primary font-bold">00:00:12,800 → 00:00:15,340</span>
+<span class="text-[10px] text-zinc-600 mono">#4</span>
+</div>
+<p class="text-xs leading-relaxed text-on-surface-variant group-hover:text-on-surface">The neon lights here are particularly enchanting after rain, filled with a cyberpunk vibe.</p>
+</div>
+<!-- Segment -->
+<div class="group p-3 rounded hover:bg-surface-container-high transition-colors cursor-pointer border-l-2 border-primary">
+<div class="flex justify-between mb-1">
+<span class="text-[10px] mono text-primary font-bold">00:00:15,340 → 00:00:19,200</span>
+<span class="text-[10px] text-zinc-600 mono">#5</span>
+</div>
+<p class="text-xs leading-relaxed text-on-surface">我们将深入这些小巷，寻找那些被隐藏的视觉宝藏。</p>
+</div>
+<!-- Loading/Empty State Skeleton for future segments -->
+<div class="p-3 opacity-30">
+<div class="h-2 w-24 bg-surface-container-highest rounded mb-2"></div>
+<div class="h-3 w-full bg-surface-container-highest rounded mb-1"></div>
+<div class="h-3 w-2/3 bg-surface-container-highest rounded"></div>
+</div>
+</div>
+<div class="p-4 bg-surface-container-highest/20 border-t border-outline-variant/10">
+<button class="w-full py-2 bg-outline-variant/20 hover:bg-outline-variant/40 rounded-md text-[10px] font-bold uppercase tracking-widest transition-colors">
+                                    Open Full Editor
+                                </button>
+</div>
+</div>
+</div>
+</div>
+<!-- Recent Downloads -->
+<div class="space-y-4 pt-6">
+<div class="flex items-center justify-between">
+<h2 class="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500">Recent Downloads</h2>
+<button class="text-[10px] font-bold text-primary hover:underline">VIEW HISTORY</button>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+<!-- History Item 1 -->
+<div class="bg-surface-container-lowest p-3 rounded-lg flex items-center gap-4 hover:bg-surface-container-low transition-colors group border border-outline-variant/5">
+<div class="w-16 h-10 bg-surface-container-high rounded overflow-hidden flex-shrink-0">
+<img class="w-full h-full object-cover" data-alt="Abstract colorful light streaks" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDSISztSD3WegQUhqAE6KR6GJw_IRuK7_GNHPlAL5wY4CchhDoWAAR8PufemTqma_PGuU59pNLlX_NoJ7wJY_KUBt7PF_gW8d1j43fWZMnSlRhFM8jB3Zq6ohwE5-3fTrMFXuZPczrPTOoU8a2U3IA00F9T7tB1IKT_9d1jYQ_AZCSz0xPRm9wLSb93XlgXbdjtK1t6I1ap-AzJm-lZRz_bZSEqeo2XNm5msEuMGHYSHVWN9OPZ3kXODslBMZSsJ-8MDDqHBsWMMuc"/>
+</div>
+<div class="flex-1 min-w-0">
+<div class="text-[11px] font-bold truncate">douyin_v_9122.mp4</div>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="text-[9px] mono text-zinc-500">12.4 MB</span>
+<span class="w-1 h-1 rounded-full bg-zinc-700"></span>
+<span class="text-[9px] font-bold text-emerald-500 uppercase">Success</span>
+</div>
+</div>
+<button class="opacity-0 group-hover:opacity-100 material-symbols-outlined text-sm text-zinc-500 hover:text-on-surface">more_vert</button>
+</div>
+<!-- History Item 2 -->
+<div class="bg-surface-container-lowest p-3 rounded-lg flex items-center gap-4 hover:bg-surface-container-low transition-colors group border border-outline-variant/5">
+<div class="w-16 h-10 bg-surface-container-high rounded overflow-hidden flex-shrink-0">
+<img class="w-full h-full object-cover" data-alt="Cyberpunk city street neon" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDSISztSD3WegQUhqAE6KR6GJw_IRuK7_GNHPlAL5wY4CchhDoWAAR8PufemTqma_PGuU59pNLlX_NoJ7wJY_KUBt7PF_gW8d1j43fWZMnSlRhFM8jB3Zq6ohwE5-3fTrMFXuZPczrPTOoU8a2U3IA00F9T7tB1IKT_9d1jYQ_AZCSz0xPRm9wLSb93XlgXbdjtK1t6I1ap-AzJm-lZRz_bZSEqeo2XNm5msEuMGHYSHVWN9OPZ3kXODslBMZSsJ-8MDDqHBsWMMuc"/>
+</div>
+<div class="flex-1 min-w-0">
+<div class="text-[11px] font-bold truncate">tutorial_01_remix.mp4</div>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="text-[9px] mono text-zinc-500">156.2 MB</span>
+<span class="w-1 h-1 rounded-full bg-zinc-700"></span>
+<span class="text-[9px] font-bold text-primary uppercase">Transcribing</span>
+</div>
+</div>
+<button class="opacity-0 group-hover:opacity-100 material-symbols-outlined text-sm text-zinc-500 hover:text-on-surface">more_vert</button>
+</div>
+<!-- History Item 3 -->
+<div class="bg-surface-container-lowest p-3 rounded-lg flex items-center gap-4 hover:bg-surface-container-low transition-colors group border border-outline-variant/5">
+<div class="w-16 h-10 bg-surface-container-high rounded overflow-hidden flex-shrink-0 relative">
+<div class="absolute inset-0 bg-error/20 flex items-center justify-center">
+<span class="material-symbols-outlined text-error text-sm">error</span>
+</div>
+</div>
+<div class="flex-1 min-w-0">
+<div class="text-[11px] font-bold truncate text-error/80">unknown_stream_f9.m3u8</div>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="text-[9px] mono text-zinc-500">0.0 KB</span>
+<span class="w-1 h-1 rounded-full bg-zinc-700"></span>
+<span class="text-[9px] font-bold text-error uppercase">Failed</span>
+</div>
+</div>
+<button class="opacity-0 group-hover:opacity-100 material-symbols-outlined text-sm text-zinc-500 hover:text-on-surface">more_vert</button>
+</div>
+</div>
+</div>
+</section>
+</main>
+</div>
+<!-- Floating Tooltip/Status Indicator -->
+<div class="fixed bottom-6 right-6 z-[100] bg-surface-container-highest/80 backdrop-blur-xl border border-outline-variant/30 px-4 py-2 rounded-full shadow-2xl flex items-center gap-3">
+<div class="flex -space-x-2">
+<div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+</div>
+<span class="text-[10px] font-bold mono uppercase tracking-widest text-on-surface">Worker Node 04: Active</span>
+<div class="h-3 w-px bg-outline-variant/30"></div>
+<span class="text-[10px] mono text-primary">GPU Util: 42%</span>
+</div>
+</body></html>
