@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
 import { postDownload, postTranscribe, getVideos, getVideo, getSrt, subscribeSSE, patchVideoTitle, deleteVideo } from '../api/client';
 import type { VideoMetadata, SubtitleSegment } from '../api/types';
 
 function DownloadTranscribePage() {
+  const navigate = useNavigate();
   const [url, setUrl] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
@@ -331,6 +333,15 @@ function DownloadTranscribePage() {
                       <span>{isTranscribing ? 'Transcribing...' : videoMeta.has_srt ? 'Re-Transcribe' : 'Transcribe'}</span>
                       <span className="material-symbols-outlined text-sm">neurology</span>
                     </button>
+                    {videoMeta.has_srt && (
+                      <button
+                        onClick={() => navigate(`/editor/${videoMeta.video_id}?lang=${previewLanguage || videoMeta.srt_languages[0] || 'zh'}`)}
+                        className="bg-surface-container-highest text-on-surface px-4 py-2 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap active:scale-95 transition-all hover:bg-surface-container-high"
+                      >
+                        <span>Edit Subtitles</span>
+                        <span className="material-symbols-outlined text-sm">edit_note</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

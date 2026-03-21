@@ -135,6 +135,23 @@ class FFmpegProcessor:
         if style.get("bold", False):
             parts.append("Bold=1")
 
+        # Background color support
+        bg_color = style.get("background_color", "")
+        bg_opacity = style.get("background_opacity", 0)
+        if bg_color:
+            parts.append(f"BackColour={bg_color}")
+            parts.append("BorderStyle=3")
+        elif bg_opacity > 0:
+            alpha_hex = f"{bg_opacity:02X}"
+            parts.append(f"BackColour=&H{alpha_hex}000000")
+            parts.append("BorderStyle=3")
+
+        # Horizontal margin
+        margin_h = style.get("margin_h", 0)
+        if margin_h:
+            parts.append(f"MarginL={max(0, margin_h)}")
+            parts.append(f"MarginR={max(0, -margin_h)}")
+
         return ",".join(parts)
 
     @staticmethod

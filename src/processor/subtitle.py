@@ -113,6 +113,30 @@ def _seconds_to_srt_timestamp(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
+def write_srt(segments: list[dict], output_path: Path) -> Path:
+    """Write segments to an SRT file.
+
+    Inverse of parse_srt(). Renumbers segments sequentially.
+
+    Args:
+        segments: List of dicts with 'start' (float seconds), 'end' (float seconds), 'text'.
+        output_path: Path for output SRT file.
+
+    Returns:
+        Path to written SRT file.
+    """
+    lines = []
+    for i, seg in enumerate(segments, start=1):
+        start_ts = _seconds_to_srt_timestamp(seg["start"])
+        end_ts = _seconds_to_srt_timestamp(seg["end"])
+        lines.append(f"{i}\n{start_ts} --> {end_ts}\n{seg['text']}\n\n")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text("".join(lines), encoding="utf-8")
+    logger.info(f"Wrote SRT file: {output_path} ({len(segments)} segments)")
+    return output_path
+
+
 def break_long_lines(text: str, max_chars: int = 40) -> str:
     """Break text at word boundaries if exceeding max_chars per line.
 
@@ -156,7 +180,26 @@ def srt_to_ass(srt_path: Path, style_config: dict, output_path: Path) -> Path:
     shadow_depth = style_config.get("shadow_depth", 1)
     alignment = style_config.get("alignment", 2)
     margin_v = style_config.get("margin_v", 30)
+    margin_h = style_config.get("margin_h", 0)
     bold = -1 if style_config.get("bold", True) else 0
+
+    # Background: BorderStyle=3 (opaque box) when background_color is set
+    back_colour = style_config.get("background_color", "")
+    bg_opacity = style_config.get("background_opacity", 0)
+    if back_colour:
+        back_colour_val = back_colour
+        border_style = 3  # opaque box behind text
+    elif bg_opacity > 0:
+        # Semi-transparent black background from opacity alone
+        alpha_hex = f"{bg_opacity:02X}"
+        back_colour_val = f"&H{alpha_hex}000000"
+        border_style = 3
+    else:
+        back_colour_val = "&H00000000"
+        border_style = 1  # normal outline + shadow
+
+    margin_l = max(0, 10 + margin_h)
+    margin_r = max(0, 10 - margin_h)
 
     header = (
         "[Script Info]\n"
@@ -170,8 +213,8 @@ def srt_to_ass(srt_path: Path, style_config: dict, output_path: Path) -> Path:
         "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, "
         "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
         f"Style: Default,{font_name},{font_size},{primary_color},&H000000FF,"
-        f"{outline_color},&H00000000,{bold},0,0,0,100,100,0,0,1,"
-        f"{outline_width},{shadow_depth},{alignment},10,10,{margin_v},1\n"
+        f"{outline_color},{back_colour_val},{bold},0,0,0,100,100,0,0,{border_style},"
+        f"{outline_width},{shadow_depth},{alignment},{margin_l},{margin_r},{margin_v},1\n"
         "\n"
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"

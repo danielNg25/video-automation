@@ -276,6 +276,9 @@ douyin-automation/
 - [x] **2.6** Phase 2 tests — `tests/test_processor.py`
 - [x] **2.7** Process router + service — `src/api/routers/process.py`
 - [x] **2.8** Process page — `ui-app/src/pages/SubtitleProcess.tsx`
+- [x] **2.9** Subtitle editor — `ui-app/src/pages/SubtitleEditor.tsx` (video player, inline editing, timeline, style panel)
+- [x] **2.10** Editor API — `src/api/routers/editor.py` (save SRT, preview frame, preview clip)
+- [x] **2.11** Editor entry point — "Edit Subtitles" button on Download & Transcribe page
 
 **Verification (Backend):**
 - [x] V2.1 — ffmpeg and ffprobe available

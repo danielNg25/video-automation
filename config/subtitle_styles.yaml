@@ -11,7 +11,10 @@ default:
   shadow_depth: 1
   alignment: 2                   # bottom-center
   margin_v: 30                   # vertical margin from bottom
+  margin_h: 0                    # horizontal offset in pixels
   bold: true
+  background_color: ""           # empty = transparent, e.g. "&H80000000" for semi-transparent black
+  background_opacity: 0          # 0-255 (ASS BackColour alpha, 0 = fully transparent)
 
 # Per-platform overrides (merged with default)
 platforms:

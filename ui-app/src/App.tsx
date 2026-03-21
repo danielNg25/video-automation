@@ -7,6 +7,7 @@ const DownloadTranscribePage = lazy(() => import('./pages/DownloadTranscribe'));
 const SubtitleProcessPage = lazy(() => import('./pages/SubtitleProcess'));
 const UploadPage = lazy(() => import('./pages/Upload'));
 const SettingsPage = lazy(() => import('./pages/Settings'));
+const SubtitleEditorPage = lazy(() => import('./pages/SubtitleEditor'));
 
 function LoadingFallback() {
   return (
@@ -25,6 +26,7 @@ function App() {
             <Route index element={<DashboardPage />} />
             <Route path="/download" element={<DownloadTranscribePage />} />
             <Route path="/process" element={<SubtitleProcessPage />} />
+            <Route path="/editor/:videoId" element={<SubtitleEditorPage />} />
             <Route path="/upload" element={<UploadPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Route>

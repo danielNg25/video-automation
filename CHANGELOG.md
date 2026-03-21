@@ -24,6 +24,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Process page UI (`ui-app/src/pages/SubtitleProcess.tsx`): video selector, live style preview, platform selector with subtitle language badges, SSE progress, output video preview
 - Phase 2 unit tests (28 tests): SRT parsing, ASS conversion, subtitle merging, FFmpeg mocking, batch processing
 - Phase 2 implementation plan (`plans/phase2-implementation.md`)
+- Subtitle editor page (`ui-app/src/pages/SubtitleEditor.tsx`): video player with live subtitle overlay, inline text editing, SVG timeline with draggable segment edges, style panel with background opacity and position controls
+- Editor API endpoints: `PUT /api/videos/{id}/srt` (save edited SRT), `POST /api/videos/{id}/preview-frame` (render frame with burn-in), `POST /api/videos/{id}/preview-clip` (render clip via SSE)
+- `write_srt()` function in `src/processor/subtitle.py` for writing edited segments back to SRT format
+- `useVideoPlayer` hook for high-frequency video state (60fps via requestAnimationFrame)
+- Editor components: `VideoPlayer`, `SubtitleOverlay` (with drag-to-reposition), `SegmentList` (split/merge/delete), `Timeline` (SVG with draggable edges), `StylePanel` (background opacity, horizontal margin)
+- SRT timestamp utilities (`ui-app/src/utils/srtTime.ts`)
+- "Edit Subtitles" button on Download & Transcribe page for quick navigation to editor
+- Keyboard shortcuts in editor: Space/K (play/pause), J/L (±5s), arrows (±1 frame), Cmd+S (save)
+- Subtitle style extensions: `background_color`, `background_opacity`, `margin_h` in config and ASS generation
 
 ### Changed
 - Phase 2 plan: subtitles are now English/Vietnamese (translated), not Chinese. Removed CJK font handling as unnecessary

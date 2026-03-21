@@ -1,5 +1,7 @@
 """Pydantic request/response models for the API."""
 
+from __future__ import annotations
+
 from pydantic import BaseModel
 
 # --- Requests ---
@@ -24,6 +26,24 @@ class ProcessRequest(BaseModel):
     platforms: list[str]
     subtitle_style: dict | None = None
     subtitle_language_overrides: dict[str, str] | None = None  # {platform: lang_code}
+
+
+class SaveSrtRequest(BaseModel):
+    language: str
+    segments: list[SubtitleSegment]
+
+
+class PreviewFrameRequest(BaseModel):
+    language: str = "en"
+    timestamp: float = 0.0
+    subtitle_style: dict | None = None
+
+
+class PreviewClipRequest(BaseModel):
+    language: str = "en"
+    start: float = 0.0
+    duration: float = 10.0
+    subtitle_style: dict | None = None
 
 
 # --- Responses ---

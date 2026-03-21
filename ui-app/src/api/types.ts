@@ -65,6 +65,24 @@ export interface SubtitleStyleConfig {
   platforms: Record<string, Record<string, unknown>>;
 }
 
+export interface SaveSrtRequest {
+  language: string;
+  segments: SubtitleSegment[];
+}
+
+export interface PreviewFrameRequest {
+  language: string;
+  timestamp: number;
+  subtitle_style?: Record<string, unknown>;
+}
+
+export interface PreviewClipRequest {
+  language: string;
+  start: number;
+  duration: number;
+  subtitle_style?: Record<string, unknown>;
+}
+
 export interface PlatformSpec {
   subtitle_language: string;
   max_duration: number | null;

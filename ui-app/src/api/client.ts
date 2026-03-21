@@ -7,6 +7,8 @@ import type {
   ProcessRequest,
   SubtitleStyleConfig,
   PlatformSpec,
+  SaveSrtRequest,
+  PreviewClipRequest,
 } from './types';
 
 const BASE = '/api';
@@ -87,6 +89,30 @@ export function getPlatforms(): Promise<Record<string, PlatformSpec>> {
 
 export function getProcessedVideoUrl(videoId: string, platform: string): string {
   return `${BASE}/videos/${videoId}/output/${platform}`;
+}
+
+export function putSrt(videoId: string, req: SaveSrtRequest): Promise<SrtResponse> {
+  return request(`/videos/${videoId}/srt`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+}
+
+export function getPreviewFrameUrl(videoId: string, language: string, timestamp: number): string {
+  return `${BASE}/videos/${videoId}/preview-frame?language=${language}&timestamp=${timestamp}`;
+}
+
+export function postPreviewClip(videoId: string, req: PreviewClipRequest): Promise<TaskResponse> {
+  return request(`/videos/${videoId}/preview-clip`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+}
+
+export function getRawVideoUrl(videoId: string): string {
+  return `${BASE}/videos/${videoId}/raw`;
 }
 
 export function subscribeSSE(
