@@ -68,6 +68,24 @@ async def get_subtitle_styles():
         return yaml.safe_load(f)
 
 
+@router.put("/api/subtitle-styles")
+async def update_default_subtitle_style(style: dict):
+    """Update the default subtitle style."""
+    config_path = Path("config/subtitle_styles.yaml")
+    if not config_path.exists():
+        raise HTTPException(status_code=404, detail="Subtitle styles config not found")
+
+    with open(config_path) as f:
+        styles = yaml.safe_load(f)
+
+    styles["default"] = {**styles.get("default", {}), **style}
+
+    with open(config_path, "w") as f:
+        yaml.safe_dump(styles, f, default_flow_style=False)
+
+    return styles
+
+
 @router.put("/api/subtitle-styles/{platform}")
 async def update_subtitle_style(platform: str, style: dict):
     """Update platform-specific subtitle style."""

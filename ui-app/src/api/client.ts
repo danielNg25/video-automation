@@ -83,6 +83,14 @@ export function getSubtitleStyles(): Promise<SubtitleStyleConfig> {
   return request('/subtitle-styles');
 }
 
+export function putSubtitleStyleDefault(style: Record<string, unknown>): Promise<SubtitleStyleConfig> {
+  return request('/subtitle-styles', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(style),
+  });
+}
+
 export function getPlatforms(): Promise<Record<string, PlatformSpec>> {
   return request('/platforms');
 }

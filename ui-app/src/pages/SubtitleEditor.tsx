@@ -18,6 +18,8 @@ import {
   subscribeSSE,
   getProcessedVideoUrl,
   getProxyVideoUrl,
+  getSubtitleStyles,
+  putSubtitleStyleDefault,
 } from '../api/client';
 import type { VideoMetadata, SubtitleSegment } from '../api/types';
 
@@ -61,11 +63,35 @@ function SubtitleEditorPage() {
     backgroundColor: '',
     backgroundOpacity: 0,
   });
+  const [styleSaving, setStyleSaving] = useState(false);
+  const [styleSaveStatus, setStyleSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
 
   const isDirty = useMemo(
     () => JSON.stringify(segments) !== JSON.stringify(originalSegments),
     [segments, originalSegments],
   );
+
+  // Load saved subtitle styles on mount
+  useEffect(() => {
+    getSubtitleStyles()
+      .then((config) => {
+        const d = config.default as Record<string, unknown>;
+        if (d) {
+          setStyle((prev) => ({
+            ...prev,
+            fontName: (d.font_name as string) || prev.fontName,
+            fontSize: (d.font_size as number) || prev.fontSize,
+            outlineWidth: (d.outline_width as number) ?? prev.outlineWidth,
+            marginV: (d.margin_v as number) ?? prev.marginV,
+            marginH: (d.margin_h as number) ?? prev.marginH,
+            bold: d.bold !== undefined ? Boolean(d.bold) : prev.bold,
+            shadow: d.shadow_depth !== undefined ? Number(d.shadow_depth) > 0 : prev.shadow,
+            backgroundOpacity: (d.background_opacity as number) ?? prev.backgroundOpacity,
+          }));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Load video + SRT
   useEffect(() => {
@@ -259,6 +285,31 @@ function SubtitleEditorPage() {
       setSaving(false);
     }
   }, [videoId, activeLang, segments, saving]);
+
+  // --- Save style ---
+  const handleSaveStyle = useCallback(async () => {
+    if (styleSaving) return;
+    setStyleSaving(true);
+    setStyleSaveStatus('idle');
+    try {
+      await putSubtitleStyleDefault({
+        font_name: style.fontName,
+        font_size: style.fontSize,
+        outline_width: style.outlineWidth,
+        margin_v: style.marginV,
+        margin_h: style.marginH,
+        bold: style.bold,
+        shadow_depth: style.shadow ? 1 : 0,
+        background_opacity: style.backgroundOpacity,
+      });
+      setStyleSaveStatus('saved');
+      setTimeout(() => setStyleSaveStatus('idle'), 3000);
+    } catch {
+      setStyleSaveStatus('error');
+    } finally {
+      setStyleSaving(false);
+    }
+  }, [style, styleSaving]);
 
   // --- Preview burn-in ---
   const handlePreviewBurnIn = useCallback(async () => {
@@ -465,8 +516,28 @@ function SubtitleEditorPage() {
                   onAdd={handleAddSegment}
                 />
               ) : (
-                <div className="flex-1 overflow-y-auto">
-                  <StylePanel style={style} onChange={setStyle} />
+                <div className="flex-1 overflow-y-auto flex flex-col">
+                  <div className="flex-1">
+                    <StylePanel style={style} onChange={setStyle} />
+                  </div>
+                  <div className="pt-3 mt-3 border-t border-outline-variant/10 flex items-center gap-2">
+                    <button
+                      onClick={handleSaveStyle}
+                      disabled={styleSaving}
+                      className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-primary text-on-primary text-xs font-medium hover:shadow-lg transition-all disabled:opacity-50"
+                    >
+                      <span className="material-symbols-outlined text-sm">
+                        {styleSaving ? 'progress_activity' : 'save'}
+                      </span>
+                      {styleSaving ? 'Saving...' : 'Save Style'}
+                    </button>
+                    {styleSaveStatus === 'saved' && (
+                      <span className="font-mono text-[9px] text-emerald-400">Saved</span>
+                    )}
+                    {styleSaveStatus === 'error' && (
+                      <span className="font-mono text-[9px] text-red-400">Failed</span>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
