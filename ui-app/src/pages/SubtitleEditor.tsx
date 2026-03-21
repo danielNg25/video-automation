@@ -345,18 +345,15 @@ function SubtitleEditorPage() {
               ))}
             </select>
 
-            {/* Video quality toggle */}
-            <button
-              onClick={() => { setUseProxy((p) => !p); setVideoLoading(true); }}
-              className={`font-mono text-[9px] px-2 py-0.5 rounded border transition-colors ${
-                useProxy
-                  ? 'bg-surface-container-highest border-outline-variant/20 text-on-surface-variant'
-                  : 'bg-primary/15 border-primary/30 text-primary'
-              }`}
-              title={useProxy ? 'Using 360p proxy for faster editing' : 'Using full resolution'}
+            {/* Video quality selector */}
+            <select
+              value={useProxy ? '360p' : 'full'}
+              onChange={(e) => { setUseProxy(e.target.value === '360p'); setVideoLoading(true); }}
+              className="bg-surface-container-lowest border border-outline-variant/20 text-[11px] rounded px-1.5 py-0.5 text-on-surface font-mono"
             >
-              {useProxy ? '360p' : 'Full'}
-            </button>
+              <option value="360p">360p</option>
+              <option value="full">Full Res</option>
+            </select>
           </div>
 
           <div className="flex items-center gap-2">
