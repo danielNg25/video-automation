@@ -269,25 +269,7 @@ function SubtitleEditorPage() {
     setStyle((prev) => ({ ...prev, marginH, marginV }));
   }, []);
 
-  // --- Save ---
-  const handleSave = useCallback(async () => {
-    if (!videoId || saving) return;
-    setSaving(true);
-    setSaveStatus('idle');
-    try {
-      const res = await putSrt(videoId, { language: activeLang, segments });
-      setSegments(res.segments);
-      setOriginalSegments(res.segments);
-      setSaveStatus('saved');
-      setTimeout(() => setSaveStatus('idle'), 3000);
-    } catch {
-      setSaveStatus('error');
-    } finally {
-      setSaving(false);
-    }
-  }, [videoId, activeLang, segments, saving]);
-
-  // --- Save style ---
+  // --- Style payload helper ---
   const stylePayload = useCallback(() => ({
     font_name: style.fontName,
     font_size: style.fontSize,
@@ -299,20 +281,26 @@ function SubtitleEditorPage() {
     background_opacity: style.backgroundOpacity,
   }), [style]);
 
-  const handleSaveStyle = useCallback(async () => {
-    if (!videoId || styleSaving) return;
-    setStyleSaving(true);
-    setStyleSaveStatus('idle');
+  // --- Save (subtitles + style) ---
+  const handleSave = useCallback(async () => {
+    if (!videoId || saving) return;
+    setSaving(true);
+    setSaveStatus('idle');
     try {
-      await putVideoStyle(videoId, stylePayload());
-      setStyleSaveStatus('saved');
-      setTimeout(() => setStyleSaveStatus('idle'), 3000);
+      const [res] = await Promise.all([
+        putSrt(videoId, { language: activeLang, segments }),
+        putVideoStyle(videoId, stylePayload()),
+      ]);
+      setSegments(res.segments);
+      setOriginalSegments(res.segments);
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 3000);
     } catch {
-      setStyleSaveStatus('error');
+      setSaveStatus('error');
     } finally {
-      setStyleSaving(false);
+      setSaving(false);
     }
-  }, [videoId, style, styleSaving, stylePayload]);
+  }, [videoId, activeLang, segments, saving, stylePayload]);
 
   const handleSaveAsDefault = useCallback(async () => {
     if (styleSaving) return;
@@ -538,37 +526,27 @@ function SubtitleEditorPage() {
                   <div className="flex-1">
                     <StylePanel style={style} onChange={setStyle} />
                   </div>
-                  <div className="pt-3 mt-3 border-t border-outline-variant/10 flex flex-col gap-2">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={handleSaveStyle}
-                        disabled={styleSaving}
-                        className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-primary text-on-primary text-xs font-medium hover:shadow-lg transition-all disabled:opacity-50"
-                      >
-                        <span className="material-symbols-outlined text-sm">
-                          {styleSaving ? 'progress_activity' : 'save'}
-                        </span>
-                        {styleSaving ? 'Saving...' : 'Save Style'}
-                      </button>
-                      <button
-                        onClick={handleSaveAsDefault}
-                        disabled={styleSaving}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-highest text-on-surface text-xs hover:bg-surface-container-high transition-all disabled:opacity-50"
-                        title="Save as default style for new videos"
-                      >
-                        <span className="material-symbols-outlined text-sm">bookmark</span>
-                        Save as Default
-                      </button>
-                      {styleSaveStatus === 'saved' && (
-                        <span className="font-mono text-[9px] text-emerald-400">Saved</span>
-                      )}
-                      {styleSaveStatus === 'error' && (
-                        <span className="font-mono text-[9px] text-red-400">Failed</span>
-                      )}
-                    </div>
-                    <p className="font-mono text-[8px] text-on-surface-variant">
-                      Save Style = this video only · Save as Default = all new videos
-                    </p>
+                  <div className="pt-3 mt-3 border-t border-outline-variant/10 flex items-center gap-2">
+                    <button
+                      onClick={handleSaveAsDefault}
+                      disabled={styleSaving}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-highest text-on-surface text-xs hover:bg-surface-container-high transition-all disabled:opacity-50"
+                      title="Save current style as the default for all new videos"
+                    >
+                      <span className="material-symbols-outlined text-sm">
+                        {styleSaving ? 'progress_activity' : 'bookmark'}
+                      </span>
+                      {styleSaving ? 'Saving...' : 'Save as Default'}
+                    </button>
+                    {styleSaveStatus === 'saved' && (
+                      <span className="font-mono text-[9px] text-emerald-400">Saved</span>
+                    )}
+                    {styleSaveStatus === 'error' && (
+                      <span className="font-mono text-[9px] text-red-400">Failed</span>
+                    )}
+                    <span className="font-mono text-[8px] text-on-surface-variant ml-auto">
+                      Save button saves style for this video
+                    </span>
                   </div>
                 </div>
               )}
