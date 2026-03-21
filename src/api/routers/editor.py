@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import subprocess
 import tempfile
 from pathlib import Path
 
+import yaml
 from fastapi import APIRouter, HTTPException
 from starlette.responses import FileResponse
 
@@ -76,6 +78,52 @@ async def serve_proxy_video(video_id: str):
         media_type="video/mp4",
         filename=f"{video_id}_360p.mp4",
     )
+
+
+def _get_video_style_path(video_id: str) -> Path:
+    """Return path to per-video style file."""
+    return get_data_dir() / "srt" / f"{video_id}_style.json"
+
+
+def _load_video_style(video_id: str) -> dict:
+    """Load per-video style, falling back to global default."""
+    style_path = _get_video_style_path(video_id)
+    if style_path.exists():
+        return json.loads(style_path.read_text(encoding="utf-8"))
+
+    # Fall back to global default from subtitle_styles.yaml
+    config_path = Path("config/subtitle_styles.yaml")
+    if config_path.exists():
+        with open(config_path) as f:
+            styles = yaml.safe_load(f) or {}
+        return styles.get("default", {})
+
+    return {}
+
+
+@router.get("/api/videos/{video_id}/style")
+async def get_video_style(video_id: str):
+    """Get subtitle style for a specific video (per-video or global default)."""
+    tm = get_task_manager()
+    if video_id not in tm.video_index:
+        raise HTTPException(status_code=404, detail=f"Video {video_id} not found")
+
+    style = _load_video_style(video_id)
+    return {"video_id": video_id, "style": style, "is_custom": _get_video_style_path(video_id).exists()}
+
+
+@router.put("/api/videos/{video_id}/style")
+async def save_video_style(video_id: str, style: dict):
+    """Save subtitle style for a specific video."""
+    tm = get_task_manager()
+    if video_id not in tm.video_index:
+        raise HTTPException(status_code=404, detail=f"Video {video_id} not found")
+
+    style_path = _get_video_style_path(video_id)
+    style_path.parent.mkdir(parents=True, exist_ok=True)
+    style_path.write_text(json.dumps(style, indent=2), encoding="utf-8")
+
+    return {"video_id": video_id, "style": style, "is_custom": True}
 
 
 @router.put("/api/videos/{video_id}/srt", response_model=SrtResponse)

@@ -18,7 +18,8 @@ import {
   subscribeSSE,
   getProcessedVideoUrl,
   getProxyVideoUrl,
-  getSubtitleStyles,
+  getVideoStyle,
+  putVideoStyle,
   putSubtitleStyleDefault,
 } from '../api/client';
 import type { VideoMetadata, SubtitleSegment } from '../api/types';
@@ -71,11 +72,11 @@ function SubtitleEditorPage() {
     [segments, originalSegments],
   );
 
-  // Load saved subtitle styles on mount
+  // Load per-video style (falls back to global default on backend)
   useEffect(() => {
-    getSubtitleStyles()
-      .then((config) => {
-        const d = config.default as Record<string, unknown>;
+    if (!videoId) return;
+    getVideoStyle(videoId)
+      .then(({ style: d }) => {
         if (d) {
           setStyle((prev) => ({
             ...prev,
@@ -91,7 +92,7 @@ function SubtitleEditorPage() {
         }
       })
       .catch(() => {});
-  }, []);
+  }, [videoId]);
 
   // Load video + SRT
   useEffect(() => {
@@ -287,21 +288,23 @@ function SubtitleEditorPage() {
   }, [videoId, activeLang, segments, saving]);
 
   // --- Save style ---
+  const stylePayload = useCallback(() => ({
+    font_name: style.fontName,
+    font_size: style.fontSize,
+    outline_width: style.outlineWidth,
+    margin_v: style.marginV,
+    margin_h: style.marginH,
+    bold: style.bold,
+    shadow_depth: style.shadow ? 1 : 0,
+    background_opacity: style.backgroundOpacity,
+  }), [style]);
+
   const handleSaveStyle = useCallback(async () => {
-    if (styleSaving) return;
+    if (!videoId || styleSaving) return;
     setStyleSaving(true);
     setStyleSaveStatus('idle');
     try {
-      await putSubtitleStyleDefault({
-        font_name: style.fontName,
-        font_size: style.fontSize,
-        outline_width: style.outlineWidth,
-        margin_v: style.marginV,
-        margin_h: style.marginH,
-        bold: style.bold,
-        shadow_depth: style.shadow ? 1 : 0,
-        background_opacity: style.backgroundOpacity,
-      });
+      await putVideoStyle(videoId, stylePayload());
       setStyleSaveStatus('saved');
       setTimeout(() => setStyleSaveStatus('idle'), 3000);
     } catch {
@@ -309,7 +312,22 @@ function SubtitleEditorPage() {
     } finally {
       setStyleSaving(false);
     }
-  }, [style, styleSaving]);
+  }, [videoId, style, styleSaving, stylePayload]);
+
+  const handleSaveAsDefault = useCallback(async () => {
+    if (styleSaving) return;
+    setStyleSaving(true);
+    setStyleSaveStatus('idle');
+    try {
+      await putSubtitleStyleDefault(stylePayload());
+      setStyleSaveStatus('saved');
+      setTimeout(() => setStyleSaveStatus('idle'), 3000);
+    } catch {
+      setStyleSaveStatus('error');
+    } finally {
+      setStyleSaving(false);
+    }
+  }, [style, styleSaving, stylePayload]);
 
   // --- Preview burn-in ---
   const handlePreviewBurnIn = useCallback(async () => {
@@ -520,23 +538,37 @@ function SubtitleEditorPage() {
                   <div className="flex-1">
                     <StylePanel style={style} onChange={setStyle} />
                   </div>
-                  <div className="pt-3 mt-3 border-t border-outline-variant/10 flex items-center gap-2">
-                    <button
-                      onClick={handleSaveStyle}
-                      disabled={styleSaving}
-                      className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-primary text-on-primary text-xs font-medium hover:shadow-lg transition-all disabled:opacity-50"
-                    >
-                      <span className="material-symbols-outlined text-sm">
-                        {styleSaving ? 'progress_activity' : 'save'}
-                      </span>
-                      {styleSaving ? 'Saving...' : 'Save Style'}
-                    </button>
-                    {styleSaveStatus === 'saved' && (
-                      <span className="font-mono text-[9px] text-emerald-400">Saved</span>
-                    )}
-                    {styleSaveStatus === 'error' && (
-                      <span className="font-mono text-[9px] text-red-400">Failed</span>
-                    )}
+                  <div className="pt-3 mt-3 border-t border-outline-variant/10 flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleSaveStyle}
+                        disabled={styleSaving}
+                        className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-primary text-on-primary text-xs font-medium hover:shadow-lg transition-all disabled:opacity-50"
+                      >
+                        <span className="material-symbols-outlined text-sm">
+                          {styleSaving ? 'progress_activity' : 'save'}
+                        </span>
+                        {styleSaving ? 'Saving...' : 'Save Style'}
+                      </button>
+                      <button
+                        onClick={handleSaveAsDefault}
+                        disabled={styleSaving}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-highest text-on-surface text-xs hover:bg-surface-container-high transition-all disabled:opacity-50"
+                        title="Save as default style for new videos"
+                      >
+                        <span className="material-symbols-outlined text-sm">bookmark</span>
+                        Save as Default
+                      </button>
+                      {styleSaveStatus === 'saved' && (
+                        <span className="font-mono text-[9px] text-emerald-400">Saved</span>
+                      )}
+                      {styleSaveStatus === 'error' && (
+                        <span className="font-mono text-[9px] text-red-400">Failed</span>
+                      )}
+                    </div>
+                    <p className="font-mono text-[8px] text-on-surface-variant">
+                      Save Style = this video only · Save as Default = all new videos
+                    </p>
                   </div>
                 </div>
               )}

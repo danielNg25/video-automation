@@ -91,6 +91,18 @@ export function putSubtitleStyleDefault(style: Record<string, unknown>): Promise
   });
 }
 
+export function getVideoStyle(videoId: string): Promise<{ video_id: string; style: Record<string, unknown>; is_custom: boolean }> {
+  return request(`/videos/${videoId}/style`);
+}
+
+export function putVideoStyle(videoId: string, style: Record<string, unknown>): Promise<{ video_id: string; style: Record<string, unknown>; is_custom: boolean }> {
+  return request(`/videos/${videoId}/style`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(style),
+  });
+}
+
 export function getPlatforms(): Promise<Record<string, PlatformSpec>> {
   return request('/platforms');
 }
