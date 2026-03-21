@@ -36,6 +36,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Low-res 480p video proxy for subtitle editor (`generate_proxy()` in FFmpegProcessor)
 - Video serving endpoints: `GET /api/videos/{id}/raw` and `GET /api/videos/{id}/proxy` (on-demand transcoding with caching)
 - Quality toggle in subtitle editor header (480p proxy vs full resolution)
+- Phase 5 plan: TTS dubbing with Edge TTS (free), OpenAI TTS, Google Cloud TTS providers
+- Voice profiles system (`config/tts_voices.yaml`) with per-platform voice/volume config
+- TTS audio assembler with segment-level duration fitting via ffmpeg `atempo`
 
 ### Changed
 - Phase 2 plan: subtitles are now English/Vietnamese (translated), not Chinese. Removed CJK font handling as unnecessary

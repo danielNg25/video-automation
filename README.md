@@ -379,6 +379,42 @@ douyin-automation/
 
 ---
 
+### Phase 5 — TTS Dubbing (Week 5-6)
+
+> Detailed plan: [`plans/phase5-tts-dubbing.md`](plans/phase5-tts-dubbing.md)
+
+- [ ] **5.1** TTS base class — `src/tts/base.py`
+- [ ] **5.2** Edge TTS provider — `src/tts/edge.py` (free, default)
+- [ ] **5.3** OpenAI TTS provider — `src/tts/openai_tts.py`
+- [ ] **5.4** Google Cloud TTS provider — `src/tts/google_tts.py`
+- [ ] **5.5** TTS factory — `src/tts/__init__.py`
+- [ ] **5.6** Voice profiles config — `config/tts_voices.yaml`
+- [ ] **5.7** TTS audio assembler — `src/tts/assembler.py`
+- [ ] **5.8** Audio mixing in ffmpeg — `src/processor/ffmpeg.py`
+- [ ] **5.9** Update batch processor — `src/processor/__init__.py`
+- [ ] **5.10** Config + infra updates — pyproject.toml, .gitignore, config
+- [ ] **5.11** TTS unit tests — `tests/test_tts.py`
+- [ ] **5.12** TTS API models — `src/api/models.py`
+- [ ] **5.13** TTS router — `src/api/routers/tts.py`
+- [ ] **5.14** Task manager + app registration
+- [ ] **5.15** TTS TypeScript types
+- [ ] **5.16** TTS API client
+- [ ] **5.17** TTS section on Process page
+- [ ] **5.18** TTS preview component
+
+**Verification:**
+- [ ] V5.1 — Edge TTS installed and importable
+- [ ] V5.2 — Voice list API returns Vietnamese voices
+- [ ] V5.3 — Voice preview returns playable audio
+- [ ] V5.4 — TTS generation produces WAV matching video duration (±0.5s)
+- [ ] V5.5 — Audio mixing: dubbed video has correct volume levels
+- [ ] V5.6 — Per-platform voice: TikTok/FB get Vietnamese, YouTube/X get English
+- [ ] V5.7 — UI: enable TTS → select voice → preview → generate → process
+- [ ] V5.8 — Segment duration fitting: long TTS clips speed up to fit time window
+- [ ] V5.9 — Unit tests pass
+
+---
+
 ### One-Time Setup Checklist
 
 - [ ] Docker installed, Douyin API container running
