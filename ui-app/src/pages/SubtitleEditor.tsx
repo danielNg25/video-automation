@@ -64,12 +64,15 @@ function SubtitleEditorPage() {
     backgroundColor: '',
     backgroundOpacity: 0,
   });
+  const [originalStyle, setOriginalStyle] = useState<SubtitleStyle | null>(null);
   const [styleSaving, setStyleSaving] = useState(false);
   const [styleSaveStatus, setStyleSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
 
   const isDirty = useMemo(
-    () => JSON.stringify(segments) !== JSON.stringify(originalSegments),
-    [segments, originalSegments],
+    () =>
+      JSON.stringify(segments) !== JSON.stringify(originalSegments) ||
+      (originalStyle !== null && JSON.stringify(style) !== JSON.stringify(originalStyle)),
+    [segments, originalSegments, style, originalStyle],
   );
 
   // Load per-video style (falls back to global default on backend)
@@ -78,17 +81,19 @@ function SubtitleEditorPage() {
     getVideoStyle(videoId)
       .then(({ style: d }) => {
         if (d) {
-          setStyle((prev) => ({
-            ...prev,
-            fontName: (d.font_name as string) || prev.fontName,
-            fontSize: (d.font_size as number) || prev.fontSize,
-            outlineWidth: (d.outline_width as number) ?? prev.outlineWidth,
-            marginV: (d.margin_v as number) ?? prev.marginV,
-            marginH: (d.margin_h as number) ?? prev.marginH,
-            bold: d.bold !== undefined ? Boolean(d.bold) : prev.bold,
-            shadow: d.shadow_depth !== undefined ? Number(d.shadow_depth) > 0 : prev.shadow,
-            backgroundOpacity: (d.background_opacity as number) ?? prev.backgroundOpacity,
-          }));
+          const loaded: SubtitleStyle = {
+            fontName: (d.font_name as string) || 'Arial',
+            fontSize: (d.font_size as number) || 24,
+            outlineWidth: (d.outline_width as number) ?? 2,
+            marginV: (d.margin_v as number) ?? 30,
+            marginH: (d.margin_h as number) ?? 0,
+            bold: d.bold !== undefined ? Boolean(d.bold) : true,
+            shadow: d.shadow_depth !== undefined ? Number(d.shadow_depth) > 0 : true,
+            backgroundColor: (d.background_color as string) || '',
+            backgroundOpacity: (d.background_opacity as number) ?? 0,
+          };
+          setStyle(loaded);
+          setOriginalStyle(loaded);
         }
       })
       .catch(() => {});
@@ -293,6 +298,7 @@ function SubtitleEditorPage() {
       ]);
       setSegments(res.segments);
       setOriginalSegments(res.segments);
+      setOriginalStyle({ ...style });
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 3000);
     } catch {
