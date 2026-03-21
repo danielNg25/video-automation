@@ -7,18 +7,21 @@ interface VideoPlayerProps {
   state: VideoPlayerState;
   controls: VideoPlayerControls;
   children?: React.ReactNode;
+  loading?: boolean;
+  onLoadStart?: () => void;
+  onCanPlay?: () => void;
 }
 
 const RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
 
 export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
-  ({ src, state, controls, children }, ref) => {
+  ({ src, state, controls, children, loading, onLoadStart, onCanPlay }, ref) => {
     const { isPlaying, currentTime, duration, playbackRate, volume, isMuted } = state;
 
     return (
       <div className="relative bg-black rounded-lg overflow-hidden group">
         {/* Video element */}
-        <div className="relative">
+        <div className="relative min-h-[200px]">
           <video
             ref={ref}
             src={src}
@@ -26,12 +29,22 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
             playsInline
             preload="auto"
             onClick={controls.togglePlay}
+            onLoadStart={onLoadStart}
+            onCanPlay={onCanPlay}
           />
           {/* Subtitle overlay (passed as children) */}
           {children}
 
+          {/* Loading overlay */}
+          {loading && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 gap-3">
+              <span className="material-symbols-outlined text-primary text-3xl animate-spin">progress_activity</span>
+              <span className="text-xs text-zinc-400 font-mono">Generating preview video...</span>
+            </div>
+          )}
+
           {/* Play/pause overlay icon */}
-          {!isPlaying && (
+          {!isPlaying && !loading && (
             <div
               className="absolute inset-0 flex items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
               onClick={controls.togglePlay}

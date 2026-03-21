@@ -60,7 +60,7 @@ async def serve_proxy_video(video_id: str):
         raise HTTPException(status_code=404, detail="Video file not found on disk")
 
     data_dir = get_data_dir()
-    proxy_path = data_dir / "proxy" / f"{video_id}_480p.mp4"
+    proxy_path = data_dir / "proxy" / f"{video_id}_360p.mp4"
 
     if not proxy_path.exists():
         from src.processor.ffmpeg import FFmpegProcessor
@@ -74,7 +74,7 @@ async def serve_proxy_video(video_id: str):
     return FileResponse(
         path=str(proxy_path),
         media_type="video/mp4",
-        filename=f"{video_id}_480p.mp4",
+        filename=f"{video_id}_360p.mp4",
     )
 
 

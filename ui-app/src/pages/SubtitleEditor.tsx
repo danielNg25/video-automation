@@ -47,6 +47,7 @@ function SubtitleEditorPage() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [useProxy, setUseProxy] = useState(true);
+  const [videoLoading, setVideoLoading] = useState(true);
 
   // Style
   const [style, setStyle] = useState<SubtitleStyle>({
@@ -346,15 +347,15 @@ function SubtitleEditorPage() {
 
             {/* Video quality toggle */}
             <button
-              onClick={() => setUseProxy((p) => !p)}
+              onClick={() => { setUseProxy((p) => !p); setVideoLoading(true); }}
               className={`font-mono text-[9px] px-2 py-0.5 rounded border transition-colors ${
                 useProxy
                   ? 'bg-surface-container-highest border-outline-variant/20 text-on-surface-variant'
                   : 'bg-primary/15 border-primary/30 text-primary'
               }`}
-              title={useProxy ? 'Using 480p proxy for faster editing' : 'Using full resolution'}
+              title={useProxy ? 'Using 360p proxy for faster editing' : 'Using full resolution'}
             >
-              {useProxy ? '480p' : 'Full'}
+              {useProxy ? '360p' : 'Full'}
             </button>
           </div>
 
@@ -409,6 +410,9 @@ function SubtitleEditorPage() {
               src={videoSrc}
               state={playerState}
               controls={playerControls}
+              loading={videoLoading}
+              onLoadStart={() => setVideoLoading(true)}
+              onCanPlay={() => setVideoLoading(false)}
             >
               <SubtitleOverlay
                 segments={segments}

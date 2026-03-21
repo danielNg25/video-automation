@@ -115,7 +115,7 @@ class FFmpegProcessor:
         self,
         video_path: Path,
         output_path: Path,
-        max_height: int = 480,
+        max_height: int = 360,
     ) -> Path:
         """Generate a low-resolution proxy video for editing.
 
