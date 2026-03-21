@@ -33,6 +33,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - "Edit Subtitles" button on Download & Transcribe page for quick navigation to editor
 - Keyboard shortcuts in editor: Space/K (play/pause), J/L (±5s), arrows (±1 frame), Cmd+S (save)
 - Subtitle style extensions: `background_color`, `background_opacity`, `margin_h` in config and ASS generation
+- Low-res 480p video proxy for subtitle editor (`generate_proxy()` in FFmpegProcessor)
+- Video serving endpoints: `GET /api/videos/{id}/raw` and `GET /api/videos/{id}/proxy` (on-demand transcoding with caching)
+- Quality toggle in subtitle editor header (480p proxy vs full resolution)
 
 ### Changed
 - Phase 2 plan: subtitles are now English/Vietnamese (translated), not Chinese. Removed CJK font handling as unnecessary

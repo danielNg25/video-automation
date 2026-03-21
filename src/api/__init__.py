@@ -35,6 +35,11 @@ def create_app() -> FastAPI:
             StaticFiles(directory=str(data_dir / "output")),
             name="output_videos",
         )
+        app.mount(
+            "/files/proxy",
+            StaticFiles(directory=str(data_dir / "proxy")),
+            name="proxy_videos",
+        )
 
         tm = get_task_manager()
         await tm.scan_existing_videos()

@@ -115,6 +115,10 @@ export function getRawVideoUrl(videoId: string): string {
   return `${BASE}/videos/${videoId}/raw`;
 }
 
+export function getProxyVideoUrl(videoId: string): string {
+  return `${BASE}/videos/${videoId}/proxy`;
+}
+
 export function subscribeSSE(
   taskId: string,
   onEvent: (eventType: string, data: Record<string, unknown>) => void,

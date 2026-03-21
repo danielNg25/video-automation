@@ -28,6 +28,56 @@ from src.processor.subtitle import (
 router = APIRouter()
 
 
+@router.get("/api/videos/{video_id}/raw")
+async def serve_raw_video(video_id: str):
+    """Serve the full-resolution raw video file."""
+    tm = get_task_manager()
+    video = tm.video_index.get(video_id)
+    if not video:
+        raise HTTPException(status_code=404, detail=f"Video {video_id} not found")
+
+    video_path = Path(video.file_path)
+    if not video_path.exists():
+        raise HTTPException(status_code=404, detail="Video file not found on disk")
+
+    return FileResponse(
+        path=str(video_path),
+        media_type="video/mp4",
+        filename=f"{video_id}.mp4",
+    )
+
+
+@router.get("/api/videos/{video_id}/proxy")
+async def serve_proxy_video(video_id: str):
+    """Serve a cached 480p proxy video, generating on first request."""
+    tm = get_task_manager()
+    video = tm.video_index.get(video_id)
+    if not video:
+        raise HTTPException(status_code=404, detail=f"Video {video_id} not found")
+
+    video_path = Path(video.file_path)
+    if not video_path.exists():
+        raise HTTPException(status_code=404, detail="Video file not found on disk")
+
+    data_dir = get_data_dir()
+    proxy_path = data_dir / "proxy" / f"{video_id}_480p.mp4"
+
+    if not proxy_path.exists():
+        from src.processor.ffmpeg import FFmpegProcessor
+
+        proc = FFmpegProcessor()
+        try:
+            await asyncio.to_thread(proc.generate_proxy, video_path, proxy_path)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Proxy generation failed: {e}")
+
+    return FileResponse(
+        path=str(proxy_path),
+        media_type="video/mp4",
+        filename=f"{video_id}_480p.mp4",
+    )
+
+
 @router.put("/api/videos/{video_id}/srt", response_model=SrtResponse)
 async def save_srt(video_id: str, request: SaveSrtRequest):
     """Save edited subtitle segments back to SRT file."""

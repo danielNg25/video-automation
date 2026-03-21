@@ -111,6 +111,39 @@ class FFmpegProcessor:
             "size_bytes": int(fmt.get("size", 0)),
         }
 
+    def generate_proxy(
+        self,
+        video_path: Path,
+        output_path: Path,
+        max_height: int = 480,
+    ) -> Path:
+        """Generate a low-resolution proxy video for editing.
+
+        Transcodes to 480p with ultrafast preset for quick generation.
+        Timestamps remain accurate for subtitle sync.
+        """
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(video_path),
+            "-vf", f"scale=-2:{max_height}",
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-crf", "28",
+            "-c:a", "aac",
+            "-b:a", "64k",
+            "-movflags", "+faststart",
+            str(output_path),
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if result.returncode != 0:
+            raise RuntimeError(f"Proxy generation failed: {result.stderr[-500:]}")
+
+        logger.info(f"Generated proxy: {output_path}")
+        return output_path
+
     def _build_style_string(self, style: dict) -> str:
         """Convert style dict to ffmpeg ASS force_style string.
 

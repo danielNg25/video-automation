@@ -17,6 +17,7 @@ import {
   postPreviewClip,
   subscribeSSE,
   getProcessedVideoUrl,
+  getProxyVideoUrl,
 } from '../api/client';
 import type { VideoMetadata, SubtitleSegment } from '../api/types';
 
@@ -45,6 +46,7 @@ function SubtitleEditorPage() {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [useProxy, setUseProxy] = useState(true);
 
   // Style
   const [style, setStyle] = useState<SubtitleStyle>({
@@ -304,7 +306,9 @@ function SubtitleEditorPage() {
 
   if (!videoId) return <div className="p-6 text-on-surface">No video ID</div>;
 
-  const videoSrc = video ? getRawVideoUrl(videoId) : '';
+  const videoSrc = video
+    ? (useProxy ? getProxyVideoUrl(videoId!) : getRawVideoUrl(videoId!))
+    : '';
 
   return (
     <div className="flex flex-col h-full bg-surface">
@@ -339,6 +343,19 @@ function SubtitleEditorPage() {
                 </option>
               ))}
             </select>
+
+            {/* Video quality toggle */}
+            <button
+              onClick={() => setUseProxy((p) => !p)}
+              className={`font-mono text-[9px] px-2 py-0.5 rounded border transition-colors ${
+                useProxy
+                  ? 'bg-surface-container-highest border-outline-variant/20 text-on-surface-variant'
+                  : 'bg-primary/15 border-primary/30 text-primary'
+              }`}
+              title={useProxy ? 'Using 480p proxy for faster editing' : 'Using full resolution'}
+            >
+              {useProxy ? '480p' : 'Full'}
+            </button>
           </div>
 
           <div className="flex items-center gap-2">
