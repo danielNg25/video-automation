@@ -8,14 +8,13 @@ interface VideoPlayerProps {
   controls: VideoPlayerControls;
   children?: React.ReactNode;
   loading?: boolean;
-  onLoadStart?: () => void;
-  onCanPlay?: () => void;
+  onLoadingChange?: (loading: boolean) => void;
 }
 
 const RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
 
 export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
-  ({ src, state, controls, children, loading, onLoadStart, onCanPlay }, ref) => {
+  ({ src, state, controls, children, loading, onLoadingChange }, ref) => {
     const { isPlaying, currentTime, duration, playbackRate, volume, isMuted } = state;
 
     return (
@@ -29,8 +28,10 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
             playsInline
             preload="auto"
             onClick={controls.togglePlay}
-            onLoadStart={onLoadStart}
-            onCanPlay={onCanPlay}
+            onLoadStart={() => onLoadingChange?.(true)}
+            onLoadedData={() => onLoadingChange?.(false)}
+            onCanPlay={() => onLoadingChange?.(false)}
+            onError={() => onLoadingChange?.(false)}
           />
           {/* Subtitle overlay (passed as children) */}
           {children}

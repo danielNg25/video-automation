@@ -408,8 +408,7 @@ function SubtitleEditorPage() {
               state={playerState}
               controls={playerControls}
               loading={videoLoading}
-              onLoadStart={() => setVideoLoading(true)}
-              onCanPlay={() => setVideoLoading(false)}
+              onLoadingChange={setVideoLoading}
             >
               <SubtitleOverlay
                 segments={segments}
