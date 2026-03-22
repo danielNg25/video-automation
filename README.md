@@ -415,6 +415,34 @@ douyin-automation/
 
 ---
 
+### Phase 6 — OCR Subtitle Extraction (Week 6-7)
+
+> Detailed plan: [`plans/phase6-ocr-subtitle-extraction.md`](plans/phase6-ocr-subtitle-extraction.md)
+
+- [ ] **6.1** PaddleOCR dependencies — `pyproject.toml`
+- [ ] **6.2** Frame extraction — `src/processor/ffmpeg.py` (`extract_frames` with crop region)
+- [ ] **6.3** OCR transcriber — `src/transcriber/ocr.py` (PaddleOCR + dedup)
+- [ ] **6.4** Transcriber factory — `src/transcriber/__init__.py` (add "ocr" backend)
+- [ ] **6.5** OCR config — `config/config.example.yaml`
+- [ ] **6.6** API models — `src/api/models.py` (method + ocr_region fields)
+- [ ] **6.7** Router + task manager — sample-frame endpoint, OCR routing
+- [ ] **6.8** UI types + client — `ui-app/src/api/`
+- [ ] **6.9** Region picker component — `ui-app/src/components/OcrRegionPicker.tsx`
+- [ ] **6.10** DownloadTranscribe page — method toggle + region picker integration
+- [ ] **6.11** Unit tests — OCR dedup logic, factory, frame extraction
+
+**Verification:**
+- [ ] V6.1 — PaddleOCR installed and importable
+- [ ] V6.2 — Frame extraction produces correct frame count
+- [ ] V6.3 — OCR transcription produces SRT with Chinese text from burned-in subtitles
+- [ ] V6.4 — Whisper still works (backward compat, no `method` field defaults to audio)
+- [ ] V6.5 — Sample frame endpoint returns JPEG
+- [ ] V6.6 — Region picker: draw rectangle → OCR runs on selected region only
+- [ ] V6.7 — UI: toggle to OCR → see region picker → transcribe → SRT preview
+- [ ] V6.8 — Unit tests pass
+
+---
+
 ### One-Time Setup Checklist
 
 - [ ] Docker installed, Douyin API container running

@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Phase 6 plan: OCR subtitle extraction from burned-in Douyin subtitles via PaddleOCR
 - Translation profile system (`src/translator/profiles.py`): load, list, save, delete profiles
 - Built-in translation profiles: funny-casual-vi, neutral-vi, dramatic-vi
 - Profile YAML config directory (`config/translation_profiles/`) with example template
