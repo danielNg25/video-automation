@@ -44,10 +44,26 @@ async def start_translate(request: TranslateRequest):
             status_code=404, detail=f"Profile '{request.profile_name}' not found"
         )
 
+    # Apply overrides to config copy
+    effective_config = dict(config)
+    if request.backend or request.model or request.api_key:
+        trans_cfg = dict(effective_config.get("translation", {}))
+        if request.backend:
+            trans_cfg["backend"] = request.backend
+        if request.model:
+            trans_cfg["model"] = request.model
+        if request.api_key:
+            trans_cfg["api_key"] = request.api_key
+        effective_config["translation"] = trans_cfg
+
     task = tm.create_task("translate")
     asyncio.create_task(
         tm.run_translate(
-            task.task_id, request.video_id, request.profile_name, request.source_language, config
+            task.task_id,
+            request.video_id,
+            request.profile_name,
+            request.source_language,
+            effective_config,
         )
     )
     return TaskResponse(task_id=task.task_id, status=task.status)

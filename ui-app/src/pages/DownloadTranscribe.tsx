@@ -34,6 +34,9 @@ function DownloadTranscribePage() {
     name: '', description: '', target_language: 'vi', source_language: 'zh',
     style_guide: '', example_pairs: [],
   });
+  const [llmBackend, setLlmBackend] = useState('anthropic');
+  const [llmModel, setLlmModel] = useState('claude-sonnet-4-20250514');
+  const [llmApiKey, setLlmApiKey] = useState('');
 
   const loadProfiles = useCallback(async () => {
     try {
@@ -208,7 +211,11 @@ function DownloadTranscribePage() {
         : videoMeta.srt_languages[0] || 'zh';
 
     try {
-      const { task_id } = await postTranslate(videoMeta.video_id, selectedProfile, sourceLang);
+      const overrides: { backend?: string; model?: string; api_key?: string } = {};
+      if (llmBackend) overrides.backend = llmBackend;
+      if (llmModel) overrides.model = llmModel;
+      if (llmApiKey) overrides.api_key = llmApiKey;
+      const { task_id } = await postTranslate(videoMeta.video_id, selectedProfile, sourceLang, overrides);
       const es = subscribeSSE(task_id, (eventType, data) => {
         if (eventType === 'progress') {
           setTranslateProgress((data.progress as number) * 100);
@@ -550,6 +557,43 @@ function DownloadTranscribePage() {
                       <span>{isTranslating ? 'Translating...' : 'Translate'}</span>
                       <span className="material-symbols-outlined text-sm">translate</span>
                     </button>
+                  </div>
+
+                  {/* Model & API Key */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">Backend</label>
+                      <select
+                        value={llmBackend}
+                        onChange={(e) => {
+                          setLlmBackend(e.target.value);
+                          setLlmModel(e.target.value === 'anthropic' ? 'claude-sonnet-4-20250514' : 'gpt-4o');
+                        }}
+                        className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
+                      >
+                        <option value="anthropic">Anthropic</option>
+                        <option value="openai">OpenAI</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">Model</label>
+                      <input
+                        value={llmModel}
+                        onChange={(e) => setLlmModel(e.target.value)}
+                        className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary"
+                        placeholder={llmBackend === 'anthropic' ? 'claude-sonnet-4-20250514' : 'gpt-4o'}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">API Key</label>
+                      <input
+                        type="password"
+                        value={llmApiKey}
+                        onChange={(e) => setLlmApiKey(e.target.value)}
+                        className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary"
+                        placeholder="Uses env var if empty"
+                      />
+                    </div>
                   </div>
 
                   {/* Profile Description */}

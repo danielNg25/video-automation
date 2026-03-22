@@ -22,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Content-Disposition attachment header on raw video download endpoint
 - Download MP4 button on video result card
 - SRT export button wired to download endpoint in SRT preview header
+- LLM backend/model/API key selector on translation panel (overrides config per-request)
 
 ## [1.1.0] — 2026-03-22
 

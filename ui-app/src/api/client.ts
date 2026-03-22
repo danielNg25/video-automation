@@ -175,11 +175,17 @@ export function postTranslate(
   videoId: string,
   profileName: string,
   sourceLang: string = 'zh',
+  overrides?: { backend?: string; model?: string; api_key?: string },
 ): Promise<TaskResponse> {
   return request('/translate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ video_id: videoId, profile_name: profileName, source_language: sourceLang }),
+    body: JSON.stringify({
+      video_id: videoId,
+      profile_name: profileName,
+      source_language: sourceLang,
+      ...overrides,
+    }),
   });
 }
 
