@@ -223,7 +223,7 @@ douyin-automation/
 - [x] **1.23** React frontend foundation — `ui-app/` scaffold
 - [x] **1.24** Download & Transcribe page — `ui-app/src/pages/DownloadTranscribe.tsx`
 - [x] **1.25** Backend dependencies — `pyproject.toml` + `Makefile` updates
-- [ ] **1.26** Translation profile system — `src/translator/profiles.py` + `config/translation_profiles/`
+- [x] **1.26** Translation profile system — `src/translator/profiles.py` + `config/translation_profiles/`
 - [ ] **1.27** LLM translator — `src/translator/llm.py` (Anthropic/OpenAI/local backends)
 - [ ] **1.28** Translator factory — `src/translator/__init__.py`
 - [ ] **1.29** Translation API — `src/api/routers/translate.py` (profiles CRUD + translate endpoint)
