@@ -24,12 +24,14 @@ class LLMTranslator:
         backend: str = "anthropic",
         model: str = "claude-sonnet-4-20250514",
         api_key: str | None = None,
+        base_url: str | None = None,
         max_segments_per_batch: int = 8,
         temperature: float = 0.7,
     ):
         self.backend = backend
         self.model = model
         self.api_key = api_key
+        self.base_url = base_url
         self.max_segments_per_batch = max_segments_per_batch
         self.temperature = temperature
         self._client = None
@@ -107,6 +109,8 @@ class LLMTranslator:
             kwargs = {}
             if self.api_key:
                 kwargs["api_key"] = self.api_key
+            if self.base_url:
+                kwargs["base_url"] = self.base_url
             self._client = openai.AsyncOpenAI(**kwargs)
 
         response = await self._client.chat.completions.create(

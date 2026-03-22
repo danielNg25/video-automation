@@ -37,6 +37,7 @@ function DownloadTranscribePage() {
   const [llmBackend, setLlmBackend] = useState('anthropic');
   const [llmModel, setLlmModel] = useState('claude-sonnet-4-20250514');
   const [llmApiKey, setLlmApiKey] = useState('');
+  const [llmBaseUrl, setLlmBaseUrl] = useState('');
 
   const loadProfiles = useCallback(async () => {
     try {
@@ -211,10 +212,11 @@ function DownloadTranscribePage() {
         : videoMeta.srt_languages[0] || 'zh';
 
     try {
-      const overrides: { backend?: string; model?: string; api_key?: string } = {};
+      const overrides: { backend?: string; model?: string; api_key?: string; base_url?: string } = {};
       if (llmBackend) overrides.backend = llmBackend;
       if (llmModel) overrides.model = llmModel;
       if (llmApiKey) overrides.api_key = llmApiKey;
+      if (llmBaseUrl) overrides.base_url = llmBaseUrl;
       const { task_id } = await postTranslate(videoMeta.video_id, selectedProfile, sourceLang, overrides);
       const es = subscribeSSE(task_id, (eventType, data) => {
         if (eventType === 'progress') {
@@ -560,19 +562,24 @@ function DownloadTranscribePage() {
                   </div>
 
                   {/* Model & API Key */}
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">Backend</label>
                       <select
                         value={llmBackend}
                         onChange={(e) => {
                           setLlmBackend(e.target.value);
-                          setLlmModel(e.target.value === 'anthropic' ? 'claude-sonnet-4-20250514' : 'gpt-4o');
+                          if (e.target.value === 'anthropic') {
+                            setLlmModel('claude-sonnet-4-20250514');
+                            setLlmBaseUrl('');
+                          } else {
+                            setLlmModel('gpt-4o');
+                          }
                         }}
                         className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
                       >
                         <option value="anthropic">Anthropic</option>
-                        <option value="openai">OpenAI</option>
+                        <option value="openai">OpenAI / Compatible</option>
                       </select>
                     </div>
                     <div>
@@ -592,6 +599,16 @@ function DownloadTranscribePage() {
                         onChange={(e) => setLlmApiKey(e.target.value)}
                         className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary"
                         placeholder="Uses env var if empty"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">Base URL <span className="normal-case text-zinc-600">(local models)</span></label>
+                      <input
+                        value={llmBaseUrl}
+                        onChange={(e) => setLlmBaseUrl(e.target.value)}
+                        className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary"
+                        placeholder={llmBackend === 'openai' ? 'http://localhost:11434/v1' : ''}
+                        disabled={llmBackend === 'anthropic'}
                       />
                     </div>
                   </div>

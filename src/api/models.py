@@ -25,9 +25,10 @@ class TranslateRequest(BaseModel):
     video_id: str
     profile_name: str = "funny-casual-vi"
     source_language: str = "zh"
-    backend: str | None = None   # override config: "anthropic" | "openai"
-    model: str | None = None     # override config: model ID
-    api_key: str | None = None   # override config: API key
+    backend: str | None = None    # override config: "anthropic" | "openai"
+    model: str | None = None      # override config: model ID
+    api_key: str | None = None    # override config: API key
+    base_url: str | None = None   # override config: custom API base URL (for local models)
 
 
 class TranslationProfileCreate(BaseModel):

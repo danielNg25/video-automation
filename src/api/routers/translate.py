@@ -46,7 +46,7 @@ async def start_translate(request: TranslateRequest):
 
     # Apply overrides to config copy
     effective_config = dict(config)
-    if request.backend or request.model or request.api_key:
+    if request.backend or request.model or request.api_key or request.base_url:
         trans_cfg = dict(effective_config.get("translation", {}))
         if request.backend:
             trans_cfg["backend"] = request.backend
@@ -54,6 +54,8 @@ async def start_translate(request: TranslateRequest):
             trans_cfg["model"] = request.model
         if request.api_key:
             trans_cfg["api_key"] = request.api_key
+        if request.base_url:
+            trans_cfg["base_url"] = request.base_url
         effective_config["translation"] = trans_cfg
 
     task = tm.create_task("translate")

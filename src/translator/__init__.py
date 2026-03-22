@@ -19,6 +19,7 @@ def get_translator(config: dict) -> LLMTranslator:
         backend=trans_cfg.get("backend", "anthropic"),
         model=trans_cfg.get("model", "claude-sonnet-4-20250514"),
         api_key=trans_cfg.get("api_key"),
+        base_url=trans_cfg.get("base_url"),
         max_segments_per_batch=trans_cfg.get("max_segments_per_batch", 8),
         temperature=trans_cfg.get("temperature", 0.7),
     )
