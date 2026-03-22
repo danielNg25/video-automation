@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Cookie management UI on Settings page: view status, paste new cookie, test against Douyin API
+- Settings API router (`src/api/routers/settings.py`): `GET/PUT /api/settings/cookie`, `POST /api/settings/cookie/test`
 - LLM translation with profiles system (tasks 1.26-1.30): translate SRT via Anthropic/OpenAI with style-controlled profiles
 - Translation profile config (`config/translation_profiles/`): funny-casual-vi, neutral-vi, dramatic-vi
 - Profile CRUD API: `GET/POST/PUT/DELETE /api/profiles`

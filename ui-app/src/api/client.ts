@@ -139,6 +139,36 @@ export function getProxyVideoUrl(videoId: string): string {
   return `${BASE}/videos/${videoId}/proxy`;
 }
 
+// --- Cookie management ---
+
+export interface CookieStatus {
+  exists: boolean;
+  preview: string;
+  length: number;
+  file_path: string;
+}
+
+export interface CookieTestResult {
+  success: boolean;
+  message: string;
+}
+
+export function getCookieStatus(): Promise<CookieStatus> {
+  return request('/settings/cookie');
+}
+
+export function putCookie(cookie: string): Promise<CookieStatus> {
+  return request('/settings/cookie', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cookie }),
+  });
+}
+
+export function testCookie(): Promise<CookieTestResult> {
+  return request('/settings/cookie/test', { method: 'POST' });
+}
+
 export function subscribeSSE(
   taskId: string,
   onEvent: (eventType: string, data: Record<string, unknown>) => void,
