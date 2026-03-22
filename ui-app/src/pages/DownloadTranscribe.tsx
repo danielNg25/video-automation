@@ -52,11 +52,11 @@ function DownloadTranscribePage() {
       { label: 'GPT-4.1 Mini', value: 'gpt-4.1-mini' },
     ],
     local: [
-      { label: 'Qwen 2.5 14B', value: 'qwen2.5:14b' },
-      { label: 'Qwen 2.5 7B', value: 'qwen2.5:7b' },
-      { label: 'Qwen 2.5 32B', value: 'qwen2.5:32b' },
-      { label: 'Llama 3.1 8B', value: 'llama3.1:8b' },
-      { label: 'Mistral 7B', value: 'mistral:7b' },
+      { label: 'Qwen 2.5 14B (4-bit)', value: 'mlx-community/Qwen2.5-14B-Instruct-4bit' },
+      { label: 'Qwen 2.5 7B (4-bit)', value: 'mlx-community/Qwen2.5-7B-Instruct-4bit' },
+      { label: 'Qwen 2.5 32B (4-bit)', value: 'mlx-community/Qwen2.5-32B-Instruct-4bit' },
+      { label: 'Llama 3.1 8B (4-bit)', value: 'mlx-community/Meta-Llama-3.1-8B-Instruct-4bit' },
+      { label: 'Mistral 7B (4-bit)', value: 'mlx-community/Mistral-7B-Instruct-v0.3-4bit' },
     ],
   };
 
@@ -234,13 +234,10 @@ function DownloadTranscribePage() {
 
     try {
       const overrides: { backend?: string; model?: string; api_key?: string; base_url?: string } = {};
-      // "local" uses the OpenAI-compatible API under the hood
-      overrides.backend = llmBackend === 'local' ? 'openai' : llmBackend;
+      overrides.backend = llmBackend;
       if (llmModel) overrides.model = llmModel;
       if (llmApiKey) overrides.api_key = llmApiKey;
       if (llmBaseUrl) overrides.base_url = llmBaseUrl;
-      // Local models don't need an API key — set a dummy to avoid SDK error
-      if (llmBackend === 'local' && !llmApiKey) overrides.api_key = 'local';
       const { task_id } = await postTranslate(videoMeta.video_id, selectedProfile, sourceLang, overrides);
       const es = subscribeSSE(task_id, (eventType, data) => {
         if (eventType === 'progress') {
@@ -596,12 +593,8 @@ function DownloadTranscribePage() {
                           setLlmBackend(val);
                           const models = MODEL_OPTIONS[val];
                           if (models?.length) setLlmModel(models[0].value);
-                          if (val === 'local') {
-                            setLlmBaseUrl('http://localhost:11434/v1');
-                            setLlmApiKey('');
-                          } else {
-                            setLlmBaseUrl('');
-                          }
+                          setLlmBaseUrl('');
+                          if (val === 'local') setLlmApiKey('');
                         }}
                         className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
                       >
@@ -637,14 +630,8 @@ function DownloadTranscribePage() {
                       </div>
                     )}
                     {llmBackend === 'local' && (
-                      <div>
-                        <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">Base URL</label>
-                        <input
-                          value={llmBaseUrl}
-                          onChange={(e) => setLlmBaseUrl(e.target.value)}
-                          className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary"
-                          placeholder="http://localhost:11434/v1"
-                        />
+                      <div className="flex items-end">
+                        <span className="text-[10px] text-zinc-500 py-2">Runs in-process via mlx-lm (Apple Silicon)</span>
                       </div>
                     )}
                   </div>

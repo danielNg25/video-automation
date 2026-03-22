@@ -123,11 +123,56 @@ class LLMTranslator:
         )
         return response.choices[0].message.content
 
+    async def _call_local(self, system: str, user: str) -> str:
+        """Run inference on a local model via mlx-lm (macOS) or transformers."""
+        import sys
+
+        if sys.platform == "darwin":
+            return await self._call_mlx(system, user)
+        else:
+            raise NotImplementedError(
+                "Local backend currently requires macOS with Apple Silicon (mlx-lm). "
+                "On Linux, use the 'openai' backend with a local vLLM/Ollama server."
+            )
+
+    async def _call_mlx(self, system: str, user: str) -> str:
+        from mlx_lm import generate, load
+
+        # Lazy-load model on first call
+        if self._client is None:
+            logger.info(f"Loading local model: {self.model} (this may take a moment)...")
+            model, tokenizer = load(self.model)
+            self._client = (model, tokenizer)
+
+        model, tokenizer = self._client
+
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]
+        prompt = tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+
+        # Run CPU/GPU-bound generation in a thread
+        response = await asyncio.to_thread(
+            generate,
+            model,
+            tokenizer,
+            prompt=prompt,
+            max_tokens=4096,
+            temp=self.temperature,
+            verbose=False,
+        )
+        return response
+
     async def _call_llm(self, system: str, user: str) -> str:
         if self.backend == "anthropic":
             return await self._call_anthropic(system, user)
         elif self.backend == "openai":
             return await self._call_openai(system, user)
+        elif self.backend == "local":
+            return await self._call_local(system, user)
         else:
             raise ValueError(f"Unsupported backend: {self.backend}")
 
@@ -230,8 +275,8 @@ class LLMTranslator:
                         f"Missing translation for segment {orig_idx + 1}, using original"
                     )
 
-            # Rate limiting between batches
-            if batch_num < total_batches:
+            # Rate limiting between batches (skip for local models)
+            if batch_num < total_batches and self.backend != "local":
                 await asyncio.sleep(1)
 
         # Reassemble all segments with translations
