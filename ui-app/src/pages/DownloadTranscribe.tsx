@@ -72,6 +72,10 @@ function DownloadTranscribePage() {
       { label: 'GPT-4.1', value: 'gpt-4.1' },
       { label: 'GPT-4.1 Mini', value: 'gpt-4.1-mini' },
     ],
+    deepseek: [
+      { label: 'DeepSeek V3', value: 'deepseek-chat' },
+      { label: 'DeepSeek R1', value: 'deepseek-reasoner' },
+    ],
     local: serverPlatform === 'darwin' ? LOCAL_MODELS_MACOS : LOCAL_MODELS_LINUX,
   };
 
@@ -249,7 +253,8 @@ function DownloadTranscribePage() {
 
     try {
       const overrides: { backend?: string; model?: string; api_key?: string; base_url?: string } = {};
-      overrides.backend = llmBackend;
+      // DeepSeek uses the OpenAI-compatible API
+      overrides.backend = llmBackend === 'deepseek' ? 'openai' : llmBackend;
       if (llmModel) overrides.model = llmModel;
       if (llmApiKey) overrides.api_key = llmApiKey;
       if (llmBaseUrl) overrides.base_url = llmBaseUrl;
@@ -609,14 +614,19 @@ function DownloadTranscribePage() {
                           setLlmBackend(val);
                           const models = MODEL_OPTIONS[val];
                           if (models?.length) setLlmModel(models[0].value);
-                          setLlmBaseUrl('');
+                          if (val === 'deepseek') {
+                            setLlmBaseUrl('https://api.deepseek.com');
+                          } else {
+                            setLlmBaseUrl('');
+                          }
                           if (val === 'local') setLlmApiKey('');
                         }}
                         className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
                       >
                         <option value="anthropic">Anthropic</option>
                         <option value="openai">OpenAI</option>
-                        <option value="local">Local (Ollama / vLLM)</option>
+                        <option value="deepseek">DeepSeek</option>
+                        <option value="local">Local (mlx-lm / llama.cpp)</option>
                       </select>
                     </div>
                     <div>
