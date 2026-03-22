@@ -10,6 +10,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Translation profile system (`src/translator/profiles.py`): load, list, save, delete profiles
 - Built-in translation profiles: funny-casual-vi, neutral-vi, dramatic-vi
 - Profile YAML config directory (`config/translation_profiles/`) with example template
+- LLM translator (`src/translator/llm.py`): batch SRT translation via Anthropic/OpenAI with retry, rate limiting, context carryover
+- Translation config section in `config/config.example.yaml`
+- `anthropic` and `openai` SDK dependencies in `pyproject.toml`
 
 ## [1.1.0] — 2026-03-22
 
