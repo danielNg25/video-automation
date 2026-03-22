@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - LLM translator (`src/translator/llm.py`): batch SRT translation via Anthropic/OpenAI with retry, rate limiting, context carryover
 - Translation config section in `config/config.example.yaml`
 - `anthropic` and `openai` SDK dependencies in `pyproject.toml`
+- Translator factory (`src/translator/__init__.py`): `get_translator()` + `translate_with_profile()` convenience function
 
 ## [1.1.0] — 2026-03-22
 
