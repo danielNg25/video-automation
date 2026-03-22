@@ -39,6 +39,27 @@ function DownloadTranscribePage() {
   const [llmApiKey, setLlmApiKey] = useState('');
   const [llmBaseUrl, setLlmBaseUrl] = useState('');
 
+  const MODEL_OPTIONS: Record<string, { label: string; value: string }[]> = {
+    anthropic: [
+      { label: 'Claude Sonnet 4', value: 'claude-sonnet-4-20250514' },
+      { label: 'Claude Haiku 3.5', value: 'claude-3-5-haiku-20241022' },
+      { label: 'Claude Opus 4', value: 'claude-opus-4-20250514' },
+    ],
+    openai: [
+      { label: 'GPT-4o', value: 'gpt-4o' },
+      { label: 'GPT-4o Mini', value: 'gpt-4o-mini' },
+      { label: 'GPT-4.1', value: 'gpt-4.1' },
+      { label: 'GPT-4.1 Mini', value: 'gpt-4.1-mini' },
+    ],
+    local: [
+      { label: 'Qwen 2.5 14B', value: 'qwen2.5:14b' },
+      { label: 'Qwen 2.5 7B', value: 'qwen2.5:7b' },
+      { label: 'Qwen 2.5 32B', value: 'qwen2.5:32b' },
+      { label: 'Llama 3.1 8B', value: 'llama3.1:8b' },
+      { label: 'Mistral 7B', value: 'mistral:7b' },
+    ],
+  };
+
   const loadProfiles = useCallback(async () => {
     try {
       const p = await getProfiles();
@@ -213,10 +234,13 @@ function DownloadTranscribePage() {
 
     try {
       const overrides: { backend?: string; model?: string; api_key?: string; base_url?: string } = {};
-      if (llmBackend) overrides.backend = llmBackend;
+      // "local" uses the OpenAI-compatible API under the hood
+      overrides.backend = llmBackend === 'local' ? 'openai' : llmBackend;
       if (llmModel) overrides.model = llmModel;
       if (llmApiKey) overrides.api_key = llmApiKey;
       if (llmBaseUrl) overrides.base_url = llmBaseUrl;
+      // Local models don't need an API key — set a dummy to avoid SDK error
+      if (llmBackend === 'local' && !llmApiKey) overrides.api_key = 'local';
       const { task_id } = await postTranslate(videoMeta.video_id, selectedProfile, sourceLang, overrides);
       const es = subscribeSSE(task_id, (eventType, data) => {
         if (eventType === 'progress') {
@@ -568,49 +592,61 @@ function DownloadTranscribePage() {
                       <select
                         value={llmBackend}
                         onChange={(e) => {
-                          setLlmBackend(e.target.value);
-                          if (e.target.value === 'anthropic') {
-                            setLlmModel('claude-sonnet-4-20250514');
-                            setLlmBaseUrl('');
+                          const val = e.target.value;
+                          setLlmBackend(val);
+                          const models = MODEL_OPTIONS[val];
+                          if (models?.length) setLlmModel(models[0].value);
+                          if (val === 'local') {
+                            setLlmBaseUrl('http://localhost:11434/v1');
+                            setLlmApiKey('');
                           } else {
-                            setLlmModel('gpt-4o');
+                            setLlmBaseUrl('');
                           }
                         }}
                         className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
                       >
                         <option value="anthropic">Anthropic</option>
-                        <option value="openai">OpenAI / Compatible</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="local">Local (Ollama / vLLM)</option>
                       </select>
                     </div>
                     <div>
                       <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">Model</label>
-                      <input
+                      <select
                         value={llmModel}
                         onChange={(e) => setLlmModel(e.target.value)}
-                        className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary"
-                        placeholder={llmBackend === 'anthropic' ? 'claude-sonnet-4-20250514' : 'gpt-4o'}
-                      />
+                        className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
+                      >
+                        {(MODEL_OPTIONS[llmBackend] || []).map((m) => (
+                          <option key={m.value} value={m.value}>
+                            {m.label}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                    <div>
-                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">API Key</label>
-                      <input
-                        type="password"
-                        value={llmApiKey}
-                        onChange={(e) => setLlmApiKey(e.target.value)}
-                        className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary"
-                        placeholder="Uses env var if empty"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">Base URL <span className="normal-case text-zinc-600">(local models)</span></label>
-                      <input
-                        value={llmBaseUrl}
-                        onChange={(e) => setLlmBaseUrl(e.target.value)}
-                        className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary"
-                        placeholder={llmBackend === 'openai' ? 'http://localhost:11434/v1' : ''}
-                        disabled={llmBackend === 'anthropic'}
-                      />
-                    </div>
+                    {llmBackend !== 'local' && (
+                      <div>
+                        <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">API Key</label>
+                        <input
+                          type="password"
+                          value={llmApiKey}
+                          onChange={(e) => setLlmApiKey(e.target.value)}
+                          className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary"
+                          placeholder="Uses env var if empty"
+                        />
+                      </div>
+                    )}
+                    {llmBackend === 'local' && (
+                      <div>
+                        <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">Base URL</label>
+                        <input
+                          value={llmBaseUrl}
+                          onChange={(e) => setLlmBaseUrl(e.target.value)}
+                          className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary"
+                          placeholder="http://localhost:11434/v1"
+                        />
+                      </div>
+                    )}
                   </div>
 
                   {/* Profile Description */}
