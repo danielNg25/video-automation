@@ -27,7 +27,7 @@ def get_config() -> dict:
 def get_data_dir() -> Path:
     """Return the data directory, creating subdirs if needed."""
     data = Path("data")
-    for sub in ("raw", "srt", "output", "logs"):
+    for sub in ("raw", "srt", "output", "logs", "proxy"):
         (data / sub).mkdir(parents=True, exist_ok=True)
     return data
 

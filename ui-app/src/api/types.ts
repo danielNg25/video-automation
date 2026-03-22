@@ -46,3 +46,50 @@ export interface DashboardStats {
   successRate: number;
   activeTasks: number;
 }
+
+export interface ProcessRequest {
+  video_id: string;
+  platforms: string[];
+  subtitle_style?: Record<string, unknown>;
+  subtitle_language_overrides?: Record<string, string>;
+}
+
+export interface ProcessResult {
+  video_id: string;
+  outputs: Record<string, string>;
+  subtitle_languages: Record<string, string>;
+}
+
+export interface SubtitleStyleConfig {
+  default: Record<string, unknown>;
+  platforms: Record<string, Record<string, unknown>>;
+}
+
+export interface SaveSrtRequest {
+  language: string;
+  segments: SubtitleSegment[];
+}
+
+export interface PreviewFrameRequest {
+  language: string;
+  timestamp: number;
+  subtitle_style?: Record<string, unknown>;
+}
+
+export interface PreviewClipRequest {
+  language: string;
+  start: number;
+  duration: number;
+  subtitle_style?: Record<string, unknown>;
+}
+
+export interface PlatformSpec {
+  subtitle_language: string;
+  max_duration: number | null;
+  max_file_size_mb: number;
+  resolution: string;
+  max_bitrate: string;
+  crf: number;
+  title_max_length: number;
+  hashtag_limit: number;
+}

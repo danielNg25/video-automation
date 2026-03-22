@@ -13,7 +13,9 @@ data/raw/*.mp4
 data/raw/*.json
 data/raw/*.jpg
 data/srt/*.srt
+data/srt/*_style.json
 data/output/*.mp4
+data/proxy/*.mp4
 data/logs/*.log
 data/logs/*.json
 

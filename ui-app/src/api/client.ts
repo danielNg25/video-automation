@@ -4,6 +4,11 @@ import type {
   VideoListResponse,
   SrtResponse,
   DashboardStats,
+  ProcessRequest,
+  SubtitleStyleConfig,
+  PlatformSpec,
+  SaveSrtRequest,
+  PreviewClipRequest,
 } from './types';
 
 const BASE = '/api';
@@ -64,6 +69,104 @@ export async function deleteVideo(videoId: string): Promise<void> {
 
 export function getStats(): Promise<DashboardStats> {
   return request('/stats');
+}
+
+export function postProcess(req: ProcessRequest): Promise<TaskResponse> {
+  return request('/process', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+}
+
+export function getSubtitleStyles(): Promise<SubtitleStyleConfig> {
+  return request('/subtitle-styles');
+}
+
+export function putSubtitleStyleDefault(style: Record<string, unknown>): Promise<SubtitleStyleConfig> {
+  return request('/subtitle-styles', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(style),
+  });
+}
+
+export function getVideoStyle(videoId: string): Promise<{ video_id: string; style: Record<string, unknown>; is_custom: boolean }> {
+  return request(`/videos/${videoId}/style`);
+}
+
+export function putVideoStyle(videoId: string, style: Record<string, unknown>): Promise<{ video_id: string; style: Record<string, unknown>; is_custom: boolean }> {
+  return request(`/videos/${videoId}/style`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(style),
+  });
+}
+
+export function getPlatforms(): Promise<Record<string, PlatformSpec>> {
+  return request('/platforms');
+}
+
+export function getProcessedVideoUrl(videoId: string, platform: string): string {
+  return `${BASE}/videos/${videoId}/output/${platform}`;
+}
+
+export function putSrt(videoId: string, req: SaveSrtRequest): Promise<SrtResponse> {
+  return request(`/videos/${videoId}/srt`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+}
+
+export function getPreviewFrameUrl(videoId: string, language: string, timestamp: number): string {
+  return `${BASE}/videos/${videoId}/preview-frame?language=${language}&timestamp=${timestamp}`;
+}
+
+export function postPreviewClip(videoId: string, req: PreviewClipRequest): Promise<TaskResponse> {
+  return request(`/videos/${videoId}/preview-clip`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+}
+
+export function getRawVideoUrl(videoId: string): string {
+  return `${BASE}/videos/${videoId}/raw`;
+}
+
+export function getProxyVideoUrl(videoId: string): string {
+  return `${BASE}/videos/${videoId}/proxy`;
+}
+
+// --- Cookie management ---
+
+export interface CookieStatus {
+  exists: boolean;
+  preview: string;
+  length: number;
+  file_path: string;
+}
+
+export interface CookieTestResult {
+  success: boolean;
+  message: string;
+}
+
+export function getCookieStatus(): Promise<CookieStatus> {
+  return request('/settings/cookie');
+}
+
+export function putCookie(cookie: string): Promise<CookieStatus> {
+  return request('/settings/cookie', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cookie }),
+  });
+}
+
+export function testCookie(): Promise<CookieTestResult> {
+  return request('/settings/cookie/test', { method: 'POST' });
 }
 
 export function subscribeSSE(

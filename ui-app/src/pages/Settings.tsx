@@ -1,11 +1,29 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { TopBar } from '../components/TopBar';
+import {
+  getCookieStatus,
+  putCookie,
+  testCookie,
+} from '../api/client';
+import type { CookieStatus, CookieTestResult } from '../api/client';
 
 function SettingsPage() {
   const [activeSection, setActiveSection] = useState('douyin');
   const [vadFilter, setVadFilter] = useState(true);
   const [crfValue, setCrfValue] = useState(23);
   const [skipExisting, setSkipExisting] = useState(true);
+
+  // Cookie management state
+  const [cookie, setCookie] = useState<CookieStatus | null>(null);
+  const [cookieInput, setCookieInput] = useState('');
+  const [cookieSaving, setCookieSaving] = useState(false);
+  const [cookieTesting, setCookieTesting] = useState(false);
+  const [cookieTestResult, setCookieTestResult] = useState<CookieTestResult | null>(null);
+  const [cookieSaveMsg, setCookieSaveMsg] = useState('');
+
+  useEffect(() => {
+    getCookieStatus().then(setCookie).catch(() => {});
+  }, []);
 
   const scrollToSection = (id: string) => {
     setActiveSection(id);
@@ -55,27 +73,106 @@ function SettingsPage() {
             <section className="space-y-6" id="douyin">
               <div className="border-b border-zinc-800/30 pb-4">
                 <h2 className="text-xl font-semibold text-on-surface">Douyin API</h2>
-                <p className="text-xs text-on-surface-variant font-mono mt-1 opacity-70">Configuration for local scraper and signature services.</p>
+                <p className="text-xs text-on-surface-variant font-mono mt-1 opacity-70">Cookie and service configuration.</p>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Service URL</label>
-                  <input className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono text-primary" type="text" defaultValue="http://localhost:8080/api/v1" />
+
+              {/* Service URL */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Service URL</label>
+                <input className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono text-primary" type="text" defaultValue="http://localhost:8080" />
+              </div>
+
+              {/* Cookie Management */}
+              <div className="bg-surface-container-low p-5 rounded-lg space-y-4">
+                {/* Status header */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">Cookie</span>
+                    {cookie?.exists ? (
+                      <span className="text-[10px] font-mono bg-emerald-900/30 text-emerald-400 px-2 py-0.5 rounded">
+                        ACTIVE ({cookie.length} chars)
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-mono bg-red-900/30 text-red-400 px-2 py-0.5 rounded">
+                        {cookie === null ? 'LOADING...' : 'MISSING'}
+                      </span>
+                    )}
+                  </div>
+                  {cookie?.preview && (
+                    <span className="text-xs font-mono text-zinc-500">{cookie.preview}</span>
+                  )}
                 </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Cookie Path</label>
-                  <input className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono" type="text" defaultValue="./auth/douyin.cookies" />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Request Timeout (ms)</label>
-                  <input className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono" type="number" defaultValue={30000} />
-                </div>
-                <div className="flex items-end pb-1">
-                  <button className="flex items-center gap-2 px-4 py-3 bg-surface-container-high hover:bg-surface-variant rounded text-xs font-bold uppercase tracking-widest transition-colors w-full justify-center">
-                    <span className="material-symbols-outlined text-emerald-500" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-                    Docker Status: Healthy
+
+                {/* File path */}
+                {cookie?.file_path && (
+                  <p className="text-[10px] font-mono text-zinc-600">{cookie.file_path}</p>
+                )}
+
+                {/* Paste new cookie */}
+                <textarea
+                  className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono resize-none text-on-surface"
+                  rows={3}
+                  placeholder="Paste new cookie string here..."
+                  value={cookieInput}
+                  onChange={(e) => setCookieInput(e.target.value)}
+                />
+
+                {/* Action buttons */}
+                <div className="flex items-center gap-3">
+                  <button
+                    disabled={!cookieInput.trim() || cookieSaving}
+                    onClick={async () => {
+                      setCookieSaving(true);
+                      setCookieSaveMsg('');
+                      try {
+                        const updated = await putCookie(cookieInput);
+                        setCookie(updated);
+                        setCookieInput('');
+                        setCookieSaveMsg('Saved');
+                        setCookieTestResult(null);
+                        setTimeout(() => setCookieSaveMsg(''), 3000);
+                      } catch (e: unknown) {
+                        setCookieSaveMsg(e instanceof Error ? e.message : 'Save failed');
+                      } finally {
+                        setCookieSaving(false);
+                      }
+                    }}
+                    className="px-5 py-2.5 bg-primary text-on-primary-fixed text-xs font-bold uppercase tracking-widest rounded disabled:opacity-40 transition-all"
+                  >
+                    {cookieSaving ? 'Saving...' : 'Save Cookie'}
                   </button>
+                  <button
+                    disabled={!cookie?.exists || cookieTesting}
+                    onClick={async () => {
+                      setCookieTesting(true);
+                      setCookieTestResult(null);
+                      try {
+                        const result = await testCookie();
+                        setCookieTestResult(result);
+                      } catch (e: unknown) {
+                        setCookieTestResult({ success: false, message: e instanceof Error ? e.message : 'Test failed' });
+                      } finally {
+                        setCookieTesting(false);
+                      }
+                    }}
+                    className="px-5 py-2.5 bg-surface-container-high hover:bg-surface-variant text-xs font-bold uppercase tracking-widest rounded disabled:opacity-40 transition-colors"
+                  >
+                    {cookieTesting ? 'Testing...' : 'Test Cookie'}
+                  </button>
+                  {cookieSaveMsg && (
+                    <span className="text-xs font-mono text-emerald-400">{cookieSaveMsg}</span>
+                  )}
                 </div>
+
+                {/* Test result */}
+                {cookieTestResult && (
+                  <div className={`flex items-center gap-2 text-xs font-mono ${cookieTestResult.success ? 'text-emerald-400' : 'text-red-400'}`}>
+                    <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>
+                      {cookieTestResult.success ? 'check_circle' : 'error'}
+                    </span>
+                    {cookieTestResult.message}
+                  </div>
+                )}
               </div>
             </section>
 

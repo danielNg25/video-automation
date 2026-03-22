@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Cookie management UI on Settings page: view status, paste new cookie, test against Douyin API
+- Settings API router (`src/api/routers/settings.py`): `GET/PUT /api/settings/cookie`, `POST /api/settings/cookie/test`
 - LLM translation with profiles system (tasks 1.26-1.30): translate SRT via Anthropic/OpenAI with style-controlled profiles
 - Translation profile config (`config/translation_profiles/`): funny-casual-vi, neutral-vi, dramatic-vi
 - Profile CRUD API: `GET/POST/PUT/DELETE /api/profiles`
@@ -14,6 +16,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Raw video download endpoint: `GET /api/videos/{video_id}/raw`
 - SRT export from UI with multi-language support
 - Updated README checklist with new tasks (1.26-1.32) and verification items (V1.18-V1.25)
+- SRT-to-ASS converter with configurable styling (`src/processor/subtitle.py`)
+- Dual-line subtitle merging (English + Vietnamese) for bilingual burn-in
+- Per-platform subtitle language selection with fallback chain (vi/en/zh)
+- Line-breaking for long subtitle text at word boundaries
+- FFmpeg processor (`src/processor/ffmpeg.py`): burn subtitles, reformat per platform, single-pass burn+reformat
+- Batch processor (`src/processor/__init__.py`): process one video for all platforms in one call
+- Process API endpoints: `POST /api/process`, `GET /api/subtitle-styles`, `GET /api/platforms`, `GET /api/videos/{id}/output/{platform}`
+- Process page UI (`ui-app/src/pages/SubtitleProcess.tsx`): video selector, live style preview, platform selector with subtitle language badges, SSE progress, output video preview
+- Phase 2 unit tests (28 tests): SRT parsing, ASS conversion, subtitle merging, FFmpeg mocking, batch processing
+- Phase 2 implementation plan (`plans/phase2-implementation.md`)
+- Subtitle editor page (`ui-app/src/pages/SubtitleEditor.tsx`): video player with live subtitle overlay, inline text editing, SVG timeline with draggable segment edges, style panel with background opacity and position controls
+- Editor API endpoints: `PUT /api/videos/{id}/srt` (save edited SRT), `POST /api/videos/{id}/preview-frame` (render frame with burn-in), `POST /api/videos/{id}/preview-clip` (render clip via SSE)
+- `write_srt()` function in `src/processor/subtitle.py` for writing edited segments back to SRT format
+- `useVideoPlayer` hook for high-frequency video state (60fps via requestAnimationFrame)
+- Editor components: `VideoPlayer`, `SubtitleOverlay` (with drag-to-reposition), `SegmentList` (split/merge/delete), `Timeline` (SVG with draggable edges), `StylePanel` (background opacity, horizontal margin)
+- SRT timestamp utilities (`ui-app/src/utils/srtTime.ts`)
+- "Edit Subtitles" button on Download & Transcribe page for quick navigation to editor
+- Keyboard shortcuts in editor: Space/K (play/pause), J/L (±5s), arrows (±1 frame), Cmd+S (save)
+- Subtitle style extensions: `background_color`, `background_opacity`, `margin_h` in config and ASS generation
+- Low-res 480p video proxy for subtitle editor (`generate_proxy()` in FFmpegProcessor)
+- Video serving endpoints: `GET /api/videos/{id}/raw` and `GET /api/videos/{id}/proxy` (on-demand transcoding with caching)
+- Quality toggle in subtitle editor header (480p proxy vs full resolution)
+- Phase 5 plan: TTS dubbing with Edge TTS (free), OpenAI TTS, Google Cloud TTS providers
+- Voice profiles system (`config/tts_voices.yaml`) with per-platform voice/volume config
+- TTS audio assembler with segment-level duration fitting via ffmpeg `atempo`
 
 ### Changed
 - Phase 2 plan: subtitles are now English/Vietnamese (translated), not Chinese. Removed CJK font handling as unnecessary

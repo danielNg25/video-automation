@@ -85,33 +85,56 @@ __pycache__/
 ### 1.8 Douyin Downloader — `src/downloader/douyin.py`
 
 - Class `DouyinDownloader`
-- `async download(share_url: str, output_dir: Path) -> VideoMetadata`
+- `async download(share_url: str, output_dir: Path, progress_callback: Callable | None = None) -> VideoMetadata`
 - Uses `httpx.AsyncClient` to call self-hosted API at `/api/hybrid/video_data`
 - Stream-download MP4 to `data/raw/{video_id}.mp4`
+- **Progress reporting**: During stream download, call `progress_callback(downloaded_bytes, total_bytes, speed_bps)` after each chunk. Get `total_bytes` from `Content-Length` header. Calculate speed from `bytes_since_last / time_delta`.
+  ```python
+  async for chunk in response.aiter_bytes(chunk_size=8192):
+      f.write(chunk)
+      downloaded += len(chunk)
+      if progress_callback:
+          await progress_callback(downloaded, total_bytes, speed)
+  ```
 - Error handling: API unreachable, cookie expired, invalid URL format
 - **Dependencies**: 1.5, 1.6, 1.7
 
 ### 1.9 yt-dlp Fallback — `src/downloader/ytdlp.py`
 
 - Class `YtDlpDownloader`
-- `async download(url: str, output_dir: Path) -> VideoMetadata`
+- `async download(url: str, output_dir: Path, progress_callback: Callable | None = None) -> VideoMetadata`
 - Wraps `yt-dlp` via subprocess (CLI, not Python import)
 - Output template: `{output_dir}/{video_id}.mp4`
 - Extracts metadata from `yt-dlp --dump-json`
+- **Progress reporting**: Parse yt-dlp stderr output for download progress. yt-dlp prints lines like `[download]  45.2% of 12.34MiB at 2.10MiB/s ETA 00:03`. Parse with regex to extract percentage, file size, speed, and ETA:
+  ```python
+  # Run with --newline flag for line-by-line progress
+  process = await asyncio.create_subprocess_exec(
+      'yt-dlp', '--newline', '--progress', ...
+  )
+  async for line in process.stderr:
+      match = re.search(r'(\d+\.?\d*)% of (~?\d+\.\d+\w+) at (\d+\.\d+\w+/s)', line)
+      if match and progress_callback:
+          await progress_callback(percent, total_size, speed)
+  ```
 - **Dependencies**: 1.5, 1.6, 1.7
 
 ### 1.10 Downloader Factory — `src/downloader/__init__.py`
 
 - `get_downloader(config: dict) -> DouyinDownloader | YtDlpDownloader`
-- `download_with_fallback(url, output_dir, config)` — tries Douyin API first, falls back to yt-dlp on failure
+- `download_with_fallback(url, output_dir, config, progress_callback=None)` — tries Douyin API first, falls back to yt-dlp on failure. Passes `progress_callback` to whichever downloader is used. Emits a log/callback event when fallback activates.
 - **Dependencies**: 1.8, 1.9
 
 ### 1.11 Base Transcriber — `src/transcriber/base.py`
 
 - Abstract class `BaseTranscriber`:
-  - `transcribe(video_path: str, language: str, task: str) -> list[dict]` (abstract)
+  - `transcribe(video_path: str, language: str, task: str, progress_callback: Callable | None = None) -> list[dict]` (abstract)
   - `generate_srt(segments: list[dict], output_path: Path) -> Path` (concrete, shared)
   - `_format_timestamp(seconds: float) -> str` (static, shared)
+- **Progress callback signature**: `progress_callback(stage: str, progress: float, message: str)` where:
+  - `stage`: `"loading_model"` | `"transcribing"` | `"generating_srt"`
+  - `progress`: 0.0–1.0 (or -1 for indeterminate)
+  - `message`: human-readable status text
 - Factory: `get_transcriber(config: dict) -> BaseTranscriber` — checks `sys.platform`
 - **Dependencies**: 1.6
 
@@ -121,6 +144,18 @@ __pycache__/
 - Uses `faster_whisper.WhisperModel`
 - VAD filtering: `vad_filter=True`, `vad_parameters=dict(min_silence_duration_ms=500)`
 - Supports `task="transcribe"` (Chinese) and `task="translate"` (zh→en)
+- **Progress reporting**: faster-whisper's `transcribe()` returns a generator of segments. Track progress by comparing last segment's end timestamp to total audio duration (from `info.duration`):
+  ```python
+  segments_gen, info = model.transcribe(audio, ...)
+  total_duration = info.duration
+
+  for segment in segments_gen:
+      all_segments.append(segment)
+      if progress_callback:
+          progress = segment.end / total_duration
+          progress_callback("transcribing", progress,
+              f"Transcribing... {segment.end:.0f}s / {total_duration:.0f}s")
+  ```
 - **Dependencies**: 1.11
 
 ### 1.13 mlx-whisper Backend — `src/transcriber/mlx.py`
@@ -128,6 +163,18 @@ __pycache__/
 - Class `MLXWhisperTranscriber(BaseTranscriber)`
 - Uses `mlx_whisper` package
 - Same interface, adapted to MLX API differences
+- **Progress reporting**: mlx-whisper returns all segments at once (no streaming). Report coarse progress:
+  ```python
+  if progress_callback:
+      progress_callback("loading_model", -1, "Loading Whisper model...")
+
+  # mlx_whisper.transcribe() blocks until complete
+  result = mlx_whisper.transcribe(audio, ...)
+
+  if progress_callback:
+      progress_callback("transcribing", 1.0, f"Transcribed {len(result['segments'])} segments")
+  ```
+  For better UX, wrap in `asyncio.to_thread()` and emit a "transcribing" event with indeterminate progress before the blocking call.
 - **Dependencies**: 1.11
 
 ### 1.14 Transcriber Factory — `src/transcriber/__init__.py`
@@ -404,8 +451,13 @@ In-memory async task tracking with SSE support:
 
 **Service layer** (`download_service.py`):
 - Wraps `download_with_fallback()` from `src/downloader/__init__.py`
-- Adds progress tracking: intercepts the httpx stream to count bytes vs content-length
-- Spawns download as `asyncio.Task`, pushes progress events to task manager
+- Passes a `progress_callback` that converts native download progress into SSE events:
+  ```python
+  async def on_progress(downloaded, total, speed):
+      pct = downloaded / total if total else 0
+      await task_manager.update_progress(task_id, pct, "downloading",
+          f"{downloaded/1e6:.1f} MB / {total/1e6:.1f} MB — {speed/1e6:.1f} MB/s")
+  ```
 - Reports fallback activation: emits `stage_change` event when switching to yt-dlp
 - **Dependencies**: 1.10, 1.19, 1.20
 
@@ -422,7 +474,15 @@ In-memory async task tracking with SSE support:
 **Service layer** (`transcribe_service.py`):
 - Wraps `get_transcriber()` from `src/transcriber/__init__.py`
 - Runs transcription in thread via `asyncio.to_thread()` (CPU-bound)
-- Progress: faster-whisper returns a generator (incremental progress possible); mlx-whisper returns all at once (0% → 100%)
+- Passes a `progress_callback` that converts native transcriber progress into SSE events:
+  ```python
+  def on_progress(stage, progress, message):
+      # thread-safe: schedule SSE update on event loop
+      loop.call_soon_threadsafe(
+          task_manager.update_progress, task_id, progress, stage, message)
+  ```
+- faster-whisper: real-time progress (segment timestamp / total duration)
+- mlx-whisper: indeterminate progress during transcription, then 100% on completion
 - **Dependencies**: 1.14, 1.19, 1.20
 
 ### 1.23 React Frontend Foundation — `web/`

@@ -21,9 +21,10 @@ Automated pipeline to download videos from Douyin, generate AI subtitles (Chines
 4. [Phase 2 — Subtitle Burn-in + Reformat](#4-phase-2--subtitle-burn-in--reformat-week-2-3)
 5. [Phase 3 — Platform Upload Integrations](#5-phase-3--platform-upload-integrations-week-3-4)
 6. [Phase 4 — Orchestration + Batch Processing](#6-phase-4--orchestration--batch-processing-week-4-5)
-7. [Platform API Reference](#7-platform-api-reference)
-8. [Configuration](#8-configuration)
-9. [Dependencies](#9-dependencies)
+7. [Phase 5 — TTS Dubbing](#7-phase-5--tts-dubbing-week-5-6)
+8. [Platform API Reference](#8-platform-api-reference)
+9. [Configuration](#9-configuration)
+10. [Dependencies](#10-dependencies)
 10. [Web UI + API Layer](#10-web-ui--api-layer)
 11. [Risks & Mitigations](#11-risks--mitigations)
 
@@ -651,7 +652,25 @@ def map_metadata(douyin_meta: dict, platform: str, overrides: dict = None) -> Vi
 
 ---
 
-## 7. Platform API Reference
+## 7. Phase 5 — TTS Dubbing (Week 5-6)
+
+Generate voiceover audio from translated subtitles and mix into video.
+
+**Pipeline**: Download → Transcribe → Translate → **TTS Dubbing** → Process (burn subs + mix audio) → Upload
+
+**Architecture**: `src/tts/` module with ABC + Edge TTS (free, default) + OpenAI TTS + Google Cloud TTS. Voice profiles in `config/tts_voices.yaml`. Audio mixing via ffmpeg `amix` filter.
+
+**Key tasks** (18 total — see `plans/phase5-tts-dubbing.md`):
+- TTS provider abstraction (base + 3 backends + factory)
+- Audio assembler: segment-by-segment TTS → duration fitting → full-track concatenation
+- Audio mixing in ffmpeg: configurable volume levels (e.g., 30% original + 100% TTS)
+- Per-platform voice selection (Vietnamese for TikTok/FB, English for YouTube/X)
+- Voice preview + profile management API
+- TTS UI section on Process page with voice selector, volume sliders, preview playback
+
+---
+
+## 8. Platform API Reference
 
 Quick reference for API endpoints and auth:
 

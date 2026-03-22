@@ -268,30 +268,33 @@ douyin-automation/
 
 > Detailed plan: [`plans/phase2-subtitle-burnin-reformat.md`](plans/phase2-subtitle-burnin-reformat.md)
 
-- [ ] **2.1** SRT parser + ASS converter — `src/processor/subtitle.py`
-- [ ] **2.2** FFmpeg processor — `src/processor/ffmpeg.py`
-- [ ] **2.3** Platform specs — `config/platforms.yaml` + subtitle language per platform
-- [ ] **2.4** Subtitle style config — `config/subtitle_styles.yaml` (Arial default, per-platform overrides)
-- [ ] **2.5** Batch processor — `src/processor/__init__.py` (selects correct translated SRT per platform)
-- [ ] **2.6** Phase 2 tests — `tests/test_processor.py`
-- [ ] **2.7** Process router + service — `server/routers/process.py`
-- [ ] **2.8** Process page — `web/src/pages/ProcessPage.tsx`
+- [x] **2.1** SRT parser + ASS converter — `src/processor/subtitle.py`
+- [x] **2.2** FFmpeg processor — `src/processor/ffmpeg.py`
+- [x] **2.3** Platform specs — `config/platforms.yaml` + subtitle language per platform
+- [x] **2.4** Subtitle style config — `config/subtitle_styles.yaml` (Arial default, per-platform overrides)
+- [x] **2.5** Batch processor — `src/processor/__init__.py` (selects correct translated SRT per platform)
+- [x] **2.6** Phase 2 tests — `tests/test_processor.py`
+- [x] **2.7** Process router + service — `src/api/routers/process.py`
+- [x] **2.8** Process page — `ui-app/src/pages/SubtitleProcess.tsx`
+- [x] **2.9** Subtitle editor — `ui-app/src/pages/SubtitleEditor.tsx` (video player, inline editing, timeline, style panel)
+- [x] **2.10** Editor API — `src/api/routers/editor.py` (save SRT, preview frame, preview clip)
+- [x] **2.11** Editor entry point — "Edit Subtitles" button on Download & Transcribe page
 
 **Verification (Backend):**
-- [ ] V2.1 — ffmpeg and ffprobe available
-- [ ] V2.2 — SRT parsing produces correct segments
-- [ ] V2.3 — SRT → ASS conversion has valid `[Script Info]`, `[V4+ Styles]`, `[Events]`
+- [x] V2.1 — ffmpeg and ffprobe available
+- [x] V2.2 — SRT parsing produces correct segments
+- [x] V2.3 — SRT → ASS conversion has valid `[Script Info]`, `[V4+ Styles]`, `[Events]`
 - [ ] V2.4 — English subtitle burn-in produces viewable video
 - [ ] V2.5 — Vietnamese subtitle burn-in renders diacritics correctly (ă, ơ, ư, etc.)
 - [ ] V2.6 — X/Twitter reformatted output meets constraints (≤140s, ≤512MB, H.264)
-- [ ] V2.7 — Batch processing: TikTok/Facebook get Vietnamese subs, YouTube/X get English subs
-- [ ] V2.8 — Dual-line subtitle merge (English + Vietnamese) works
-- [ ] V2.9 — Unit tests pass
+- [x] V2.7 — Batch processing: TikTok/Facebook get Vietnamese subs, YouTube/X get English subs
+- [x] V2.8 — Dual-line subtitle merge (English + Vietnamese) works
+- [x] V2.9 — Unit tests pass
 
 **Verification (Web UI):**
-- [ ] V2.10 — Process API: correct subtitle language per platform in progress events
-- [ ] V2.11 — Subtitle styles and platform specs API (with subtitle_language field)
-- [ ] V2.12 — Serve processed video via API
+- [x] V2.10 — Process API: correct subtitle language per platform in progress events
+- [x] V2.11 — Subtitle styles and platform specs API (with subtitle_language field)
+- [x] V2.12 — Serve processed video via API
 - [ ] V2.13 — Process page: select video → see subtitle language per platform → process → preview
 
 ---
@@ -373,6 +376,42 @@ douyin-automation/
 - [ ] V4.17 — Batch processing UI: paste URLs → track per-video progress
 - [ ] V4.18 — Settings UI: edit config → save → persists
 - [ ] V4.19 — React Router: all routes work, sidebar highlights active page
+
+---
+
+### Phase 5 — TTS Dubbing (Week 5-6)
+
+> Detailed plan: [`plans/phase5-tts-dubbing.md`](plans/phase5-tts-dubbing.md)
+
+- [ ] **5.1** TTS base class — `src/tts/base.py`
+- [ ] **5.2** Edge TTS provider — `src/tts/edge.py` (free, default)
+- [ ] **5.3** OpenAI TTS provider — `src/tts/openai_tts.py`
+- [ ] **5.4** Google Cloud TTS provider — `src/tts/google_tts.py`
+- [ ] **5.5** TTS factory — `src/tts/__init__.py`
+- [ ] **5.6** Voice profiles config — `config/tts_voices.yaml`
+- [ ] **5.7** TTS audio assembler — `src/tts/assembler.py`
+- [ ] **5.8** Audio mixing in ffmpeg — `src/processor/ffmpeg.py`
+- [ ] **5.9** Update batch processor — `src/processor/__init__.py`
+- [ ] **5.10** Config + infra updates — pyproject.toml, .gitignore, config
+- [ ] **5.11** TTS unit tests — `tests/test_tts.py`
+- [ ] **5.12** TTS API models — `src/api/models.py`
+- [ ] **5.13** TTS router — `src/api/routers/tts.py`
+- [ ] **5.14** Task manager + app registration
+- [ ] **5.15** TTS TypeScript types
+- [ ] **5.16** TTS API client
+- [ ] **5.17** TTS section on Process page
+- [ ] **5.18** TTS preview component
+
+**Verification:**
+- [ ] V5.1 — Edge TTS installed and importable
+- [ ] V5.2 — Voice list API returns Vietnamese voices
+- [ ] V5.3 — Voice preview returns playable audio
+- [ ] V5.4 — TTS generation produces WAV matching video duration (±0.5s)
+- [ ] V5.5 — Audio mixing: dubbed video has correct volume levels
+- [ ] V5.6 — Per-platform voice: TikTok/FB get Vietnamese, YouTube/X get English
+- [ ] V5.7 — UI: enable TTS → select voice → preview → generate → process
+- [ ] V5.8 — Segment duration fitting: long TTS clips speed up to fit time window
+- [ ] V5.9 — Unit tests pass
 
 ---
 
