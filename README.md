@@ -226,7 +226,7 @@ douyin-automation/
 - [x] **1.26** Translation profile system — `src/translator/profiles.py` + `config/translation_profiles/`
 - [x] **1.27** LLM translator — `src/translator/llm.py` (Anthropic/OpenAI/local backends)
 - [x] **1.28** Translator factory — `src/translator/__init__.py`
-- [ ] **1.29** Translation API — `src/api/routers/translate.py` (profiles CRUD + translate endpoint)
+- [x] **1.29** Translation API — `src/api/routers/translate.py` (profiles CRUD + translate endpoint)
 - [ ] **1.30** Translation UI — profile selector, translation progress, multi-language SRT preview
 - [ ] **1.31** Raw video download endpoint — `GET /api/videos/{video_id}/raw`
 - [ ] **1.32** Download raw video UI — download button on VideoCard + SRT export

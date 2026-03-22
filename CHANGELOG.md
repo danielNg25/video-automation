@@ -14,6 +14,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Translation config section in `config/config.example.yaml`
 - `anthropic` and `openai` SDK dependencies in `pyproject.toml`
 - Translator factory (`src/translator/__init__.py`): `get_translator()` + `translate_with_profile()` convenience function
+- Translation API router (`src/api/routers/translate.py`): `POST /api/translate` with SSE progress, profile CRUD endpoints
+- Translation request/response models in `src/api/models.py`
+- `run_translate()` in task manager with batch-level SSE progress events
 
 ## [1.1.0] — 2026-03-22
 

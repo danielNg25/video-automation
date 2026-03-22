@@ -340,6 +340,83 @@ class TaskManager:
             self._emit(task_id, "error", {"message": str(e)})
             logger.error(f"Transcribe task {task_id} failed: {e}")
 
+    async def run_translate(
+        self, task_id: str, video_id: str, profile_name: str, source_language: str, config: dict
+    ):
+        """Execute a translation task in the background."""
+        from src.translator import translate_with_profile
+        from src.translator.profiles import load_profile
+
+        task = self.tasks[task_id]
+        task.status = "running"
+        task.video_id = video_id
+        task.message = "Loading translation profile..."
+        self._emit(
+            task_id, "progress", {"progress": 0.0, "message": "Loading translation profile..."}
+        )
+
+        try:
+            video_info = self.video_index.get(video_id)
+            if not video_info:
+                raise ValueError(f"Video {video_id} not found")
+
+            srt_dir = Path("data/srt")
+            srt_path = srt_dir / f"{video_id}_{source_language}.srt"
+            if not srt_path.exists():
+                raise FileNotFoundError(
+                    f"Source SRT not found: {srt_path}. "
+                    f"Transcribe the video first with language='{source_language}'."
+                )
+
+            profile = load_profile(profile_name)
+
+            # Progress callback bridges LLM batch progress to SSE events
+            def on_progress(batch_num: int, total_batches: int, message: str):
+                pct = batch_num / total_batches if total_batches else 1.0
+                task.progress = pct
+                task.message = message
+                self._emit(
+                    task_id,
+                    "progress",
+                    {"progress": pct, "message": message},
+                )
+
+            output_path = await translate_with_profile(
+                srt_path, profile_name, config, srt_dir, progress_callback=on_progress
+            )
+
+            # Update video index with new language
+            target_lang = profile.target_language
+            if target_lang not in video_info.srt_languages:
+                video_info.srt_languages.append(target_lang)
+                video_info.srt_languages.sort()
+            video_info.has_srt = True
+            self.video_index[video_id] = video_info
+
+            # Count segments
+            from src.processor.subtitle import parse_srt
+
+            segments = parse_srt(output_path)
+
+            task.status = "completed"
+            task.progress = 1.0
+            task.message = "Translation complete"
+            task.result = {
+                "video_id": video_id,
+                "srt_path": str(output_path),
+                "segment_count": len(segments),
+                "target_language": target_lang,
+                "profile_used": profile_name,
+            }
+            self._emit(task_id, "complete", task.result)
+
+        except Exception as e:
+            task.status = "failed"
+            task.error = str(e)
+            task.message = f"Translation failed: {e}"
+            self._emit(task_id, "error", {"message": str(e)})
+            logger.error(f"Translate task {task_id} failed: {e}")
+
     async def run_process(
         self,
         task_id: str,
