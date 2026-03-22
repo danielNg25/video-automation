@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-03-22
+
 ### Added
 - Cookie management UI on Settings page: view status, paste new cookie, test against Douyin API
 - Settings API router (`src/api/routers/settings.py`): `GET/PUT /api/settings/cookie`, `POST /api/settings/cookie/test`
@@ -35,9 +37,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - "Edit Subtitles" button on Download & Transcribe page for quick navigation to editor
 - Keyboard shortcuts in editor: Space/K (play/pause), J/L (±5s), arrows (±1 frame), Cmd+S (save)
 - Subtitle style extensions: `background_color`, `background_opacity`, `margin_h` in config and ASS generation
-- Low-res 480p video proxy for subtitle editor (`generate_proxy()` in FFmpegProcessor)
+- Low-res 360p video proxy for subtitle editor (`generate_proxy()` in FFmpegProcessor)
 - Video serving endpoints: `GET /api/videos/{id}/raw` and `GET /api/videos/{id}/proxy` (on-demand transcoding with caching)
-- Quality toggle in subtitle editor header (480p proxy vs full resolution)
+- Quality toggle in subtitle editor header (360p proxy vs full resolution)
+- Per-video subtitle style storage (`data/srt/{video_id}_style.json`) with global default fallback
 - Phase 5 plan: TTS dubbing with Edge TTS (free), OpenAI TTS, Google Cloud TTS providers
 - Voice profiles system (`config/tts_voices.yaml`) with per-platform voice/volume config
 - TTS audio assembler with segment-level duration fitting via ffmpeg `atempo`
