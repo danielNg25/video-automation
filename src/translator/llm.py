@@ -134,6 +134,7 @@ class LLMTranslator:
 
     async def _call_mlx(self, system: str, user: str) -> str:
         from mlx_lm import generate, load
+        from mlx_lm.sample_utils import make_sampler
 
         # Lazy-load model on first call
         if self._client is None:
@@ -151,6 +152,8 @@ class LLMTranslator:
             messages, tokenize=False, add_generation_prompt=True
         )
 
+        sampler = make_sampler(temp=self.temperature)
+
         # Run CPU/GPU-bound generation in a thread
         response = await asyncio.to_thread(
             generate,
@@ -158,7 +161,7 @@ class LLMTranslator:
             tokenizer,
             prompt=prompt,
             max_tokens=4096,
-            temp=self.temperature,
+            sampler=sampler,
             verbose=False,
         )
         return response
