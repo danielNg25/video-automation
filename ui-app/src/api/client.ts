@@ -195,6 +195,12 @@ export function getSrtDownloadUrl(videoId: string, language: string): string {
   return `${BASE}/videos/${videoId}/srt/download?language=${language}`;
 }
 
+// --- System info ---
+
+export function getPlatform(): Promise<{ platform: string }> {
+  return request('/settings/platform');
+}
+
 // --- Cookie management ---
 
 export interface CookieStatus {

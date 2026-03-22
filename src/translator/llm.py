@@ -124,16 +124,13 @@ class LLMTranslator:
         return response.choices[0].message.content
 
     async def _call_local(self, system: str, user: str) -> str:
-        """Run inference on a local model via mlx-lm (macOS) or transformers."""
+        """Run inference on a local model via mlx-lm (macOS) or llama-cpp-python (Linux)."""
         import sys
 
         if sys.platform == "darwin":
             return await self._call_mlx(system, user)
         else:
-            raise NotImplementedError(
-                "Local backend currently requires macOS with Apple Silicon (mlx-lm). "
-                "On Linux, use the 'openai' backend with a local vLLM/Ollama server."
-            )
+            return await self._call_llama_cpp(system, user)
 
     async def _call_mlx(self, system: str, user: str) -> str:
         from mlx_lm import generate, load
@@ -165,6 +162,46 @@ class LLMTranslator:
             verbose=False,
         )
         return response
+
+    async def _call_llama_cpp(self, system: str, user: str) -> str:
+        from llama_cpp import Llama
+
+        # Lazy-load model on first call
+        if self._client is None:
+            logger.info(f"Loading local model: {self.model} (this may take a moment)...")
+
+            # Model can be a HuggingFace repo with GGUF files
+            # Format: "repo_id/filename.gguf" or just "repo_id" (auto-picks best file)
+            if "/" in self.model and ".gguf" in self.model:
+                # Explicit file: "Qwen/Qwen2.5-14B-Instruct-GGUF/qwen2.5-14b-instruct-q4_k_m.gguf"
+                parts = self.model.rsplit("/", 1)
+                repo_id, filename = parts[0], parts[1]
+            else:
+                # Repo ID only — use from_pretrained with auto-select
+                repo_id = self.model
+                filename = "*q4_k_m.gguf"  # prefer Q4_K_M quantization
+
+            self._client = Llama.from_pretrained(
+                repo_id=repo_id,
+                filename=filename,
+                n_ctx=4096,
+                n_gpu_layers=-1,  # offload all layers to GPU
+                verbose=False,
+            )
+
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]
+
+        # Run CPU/GPU-bound generation in a thread
+        response = await asyncio.to_thread(
+            self._client.create_chat_completion,
+            messages=messages,
+            max_tokens=4096,
+            temperature=self.temperature,
+        )
+        return response["choices"][0]["message"]["content"]
 
     async def _call_llm(self, system: str, user: str) -> str:
         if self.backend == "anthropic":

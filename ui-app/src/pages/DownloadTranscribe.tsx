@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
-import { postDownload, postTranscribe, getVideos, getVideo, getSrt, subscribeSSE, patchVideoTitle, deleteVideo, getProfiles, getProfile, postTranslate, createProfile, updateProfile, deleteProfileApi, getRawVideoUrl, getSrtDownloadUrl } from '../api/client';
+import { postDownload, postTranscribe, getVideos, getVideo, getSrt, subscribeSSE, patchVideoTitle, deleteVideo, getProfiles, getProfile, postTranslate, createProfile, updateProfile, deleteProfileApi, getRawVideoUrl, getSrtDownloadUrl, getPlatform } from '../api/client';
 import type { VideoMetadata, SubtitleSegment, TranslationProfileSummary, TranslationProfile } from '../api/types';
 
 function DownloadTranscribePage() {
@@ -38,6 +38,27 @@ function DownloadTranscribePage() {
   const [llmModel, setLlmModel] = useState('claude-sonnet-4-20250514');
   const [llmApiKey, setLlmApiKey] = useState('');
   const [llmBaseUrl, setLlmBaseUrl] = useState('');
+  const [serverPlatform, setServerPlatform] = useState('darwin');
+
+  useEffect(() => {
+    getPlatform().then((r) => setServerPlatform(r.platform)).catch(() => {});
+  }, []);
+
+  const LOCAL_MODELS_MACOS = [
+    { label: 'Qwen 2.5 14B (4-bit)', value: 'mlx-community/Qwen2.5-14B-Instruct-4bit' },
+    { label: 'Qwen 2.5 7B (4-bit)', value: 'mlx-community/Qwen2.5-7B-Instruct-4bit' },
+    { label: 'Qwen 2.5 32B (4-bit)', value: 'mlx-community/Qwen2.5-32B-Instruct-4bit' },
+    { label: 'Llama 3.1 8B (4-bit)', value: 'mlx-community/Meta-Llama-3.1-8B-Instruct-4bit' },
+    { label: 'Mistral 7B (4-bit)', value: 'mlx-community/Mistral-7B-Instruct-v0.3-4bit' },
+  ];
+
+  const LOCAL_MODELS_LINUX = [
+    { label: 'Qwen 2.5 14B (Q4)', value: 'Qwen/Qwen2.5-14B-Instruct-GGUF' },
+    { label: 'Qwen 2.5 7B (Q4)', value: 'Qwen/Qwen2.5-7B-Instruct-GGUF' },
+    { label: 'Qwen 2.5 32B (Q4)', value: 'Qwen/Qwen2.5-32B-Instruct-GGUF' },
+    { label: 'Llama 3.1 8B (Q4)', value: 'meta-llama/Llama-3.1-8B-Instruct-GGUF' },
+    { label: 'Mistral 7B (Q4)', value: 'mistralai/Mistral-7B-Instruct-v0.3-GGUF' },
+  ];
 
   const MODEL_OPTIONS: Record<string, { label: string; value: string }[]> = {
     anthropic: [
@@ -51,13 +72,7 @@ function DownloadTranscribePage() {
       { label: 'GPT-4.1', value: 'gpt-4.1' },
       { label: 'GPT-4.1 Mini', value: 'gpt-4.1-mini' },
     ],
-    local: [
-      { label: 'Qwen 2.5 14B (4-bit)', value: 'mlx-community/Qwen2.5-14B-Instruct-4bit' },
-      { label: 'Qwen 2.5 7B (4-bit)', value: 'mlx-community/Qwen2.5-7B-Instruct-4bit' },
-      { label: 'Qwen 2.5 32B (4-bit)', value: 'mlx-community/Qwen2.5-32B-Instruct-4bit' },
-      { label: 'Llama 3.1 8B (4-bit)', value: 'mlx-community/Meta-Llama-3.1-8B-Instruct-4bit' },
-      { label: 'Mistral 7B (4-bit)', value: 'mlx-community/Mistral-7B-Instruct-v0.3-4bit' },
-    ],
+    local: serverPlatform === 'darwin' ? LOCAL_MODELS_MACOS : LOCAL_MODELS_LINUX,
   };
 
   const loadProfiles = useCallback(async () => {
@@ -631,7 +646,11 @@ function DownloadTranscribePage() {
                     )}
                     {llmBackend === 'local' && (
                       <div className="flex items-end">
-                        <span className="text-[10px] text-zinc-500 py-2">Runs in-process via mlx-lm (Apple Silicon)</span>
+                        <span className="text-[10px] text-zinc-500 py-2">
+                          {serverPlatform === 'darwin'
+                            ? 'Runs in-process via mlx-lm (Apple Silicon)'
+                            : 'Runs in-process via llama-cpp-python (CPU/CUDA)'}
+                        </span>
                       </div>
                     )}
                   </div>
