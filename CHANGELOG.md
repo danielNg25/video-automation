@@ -20,6 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Translation UI on Download & Transcribe page: profile selector, translate button with SSE progress, profile editor (create/edit/delete)
 - SRT file download endpoint: `GET /api/videos/{video_id}/srt/download`
 - Content-Disposition attachment header on raw video download endpoint
+- Download MP4 button on video result card
+- SRT export button wired to download endpoint in SRT preview header
 
 ## [1.1.0] — 2026-03-22
 

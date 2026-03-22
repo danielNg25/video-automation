@@ -229,7 +229,7 @@ douyin-automation/
 - [x] **1.29** Translation API — `src/api/routers/translate.py` (profiles CRUD + translate endpoint)
 - [x] **1.30** Translation UI — profile selector, translation progress, multi-language SRT preview
 - [x] **1.31** Raw video download endpoint — `GET /api/videos/{video_id}/raw`
-- [ ] **1.32** Download raw video UI — download button on VideoCard + SRT export
+- [x] **1.32** Download raw video UI — download button on VideoCard + SRT export
 
 **Verification (Backend):**
 - [x] V1.1 — `pip install -e ".[macos]"` completes without errors
@@ -253,14 +253,14 @@ douyin-automation/
 - [x] V1.17 — End-to-end: paste URL → download → transcribe → see SRT preview in browser
 
 **Verification (Translation + Download):**
-- [ ] V1.18 — Translation profiles load from `config/translation_profiles/`
+- [x] V1.18 — Translation profiles load from `config/translation_profiles/`
 - [ ] V1.19 — LLM translation produces Vietnamese SRT with profile-guided style
-- [ ] V1.20 — Profile CRUD API: create, list, update, delete profiles
-- [ ] V1.21 — Translation API with batch progress via SSE
-- [ ] V1.22 — UI: select profile → translate → see multi-language SRT preview
-- [ ] V1.23 — UI: create/edit custom translation profile
-- [ ] V1.24 — Raw video download: browser downloads MP4 file
-- [ ] V1.25 — SRT export: download SRT file from UI
+- [x] V1.20 — Profile CRUD API: create, list, update, delete profiles
+- [x] V1.21 — Translation API with batch progress via SSE
+- [x] V1.22 — UI: select profile → translate → see multi-language SRT preview
+- [x] V1.23 — UI: create/edit custom translation profile
+- [x] V1.24 — Raw video download: browser downloads MP4 file
+- [x] V1.25 — SRT export: download SRT file from UI
 
 ---
 

@@ -183,6 +183,12 @@ export function postTranslate(
   });
 }
 
+// --- Download URLs ---
+
+export function getSrtDownloadUrl(videoId: string, language: string): string {
+  return `${BASE}/videos/${videoId}/srt/download?language=${language}`;
+}
+
 // --- Cookie management ---
 
 export interface CookieStatus {

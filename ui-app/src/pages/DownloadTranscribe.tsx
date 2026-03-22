@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
-import { postDownload, postTranscribe, getVideos, getVideo, getSrt, subscribeSSE, patchVideoTitle, deleteVideo, getProfiles, getProfile, postTranslate, createProfile, updateProfile, deleteProfileApi } from '../api/client';
+import { postDownload, postTranscribe, getVideos, getVideo, getSrt, subscribeSSE, patchVideoTitle, deleteVideo, getProfiles, getProfile, postTranslate, createProfile, updateProfile, deleteProfileApi, getRawVideoUrl, getSrtDownloadUrl } from '../api/client';
 import type { VideoMetadata, SubtitleSegment, TranslationProfileSummary, TranslationProfile } from '../api/types';
 
 function DownloadTranscribePage() {
@@ -451,6 +451,14 @@ function DownloadTranscribePage() {
                         <span className="material-symbols-outlined text-sm">edit_note</span>
                       </button>
                     )}
+                    <a
+                      href={getRawVideoUrl(videoMeta.video_id)}
+                      download
+                      className="bg-surface-container-highest text-on-surface px-3 py-2 rounded-md font-bold text-xs flex items-center gap-1.5 whitespace-nowrap active:scale-95 transition-all hover:bg-surface-container-high"
+                      title="Download MP4"
+                    >
+                      <span className="material-symbols-outlined text-sm">save_alt</span>
+                    </a>
                   </div>
                 </div>
               </div>
@@ -738,9 +746,16 @@ function DownloadTranscribePage() {
                   {videoMeta && videoMeta.srt_languages.length === 1 && (
                     <span className="text-[10px] font-mono text-zinc-500 uppercase">{previewLanguage}</span>
                   )}
-                  <button className="p-1.5 hover:bg-surface-container-highest rounded transition-colors text-zinc-400" title="Export SRT">
-                    <span className="material-symbols-outlined text-sm">download</span>
-                  </button>
+                  {videoMeta && previewLanguage && (
+                    <a
+                      href={getSrtDownloadUrl(videoMeta.video_id, previewLanguage)}
+                      download
+                      className="p-1.5 hover:bg-surface-container-highest rounded transition-colors text-zinc-400"
+                      title="Export SRT"
+                    >
+                      <span className="material-symbols-outlined text-sm">download</span>
+                    </a>
+                  )}
                   <button className="p-1.5 hover:bg-surface-container-highest rounded transition-colors text-zinc-400" title="Copy Text">
                     <span className="material-symbols-outlined text-sm">content_copy</span>
                   </button>
