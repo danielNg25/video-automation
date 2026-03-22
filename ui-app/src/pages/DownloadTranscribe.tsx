@@ -263,12 +263,13 @@ function DownloadTranscribePage() {
           setTranslateProgress(100);
           setTranslateMessage('Translation complete');
           const targetLang = data.target_language as string;
-          if (targetLang) loadSrt(videoMeta.video_id, targetLang);
-          // Refresh video metadata to get updated srt_languages
-          loadVideos().then(async () => {
-            const updated = await getVideo(videoMeta.video_id);
+          // Refresh video metadata first so language dropdown updates
+          getVideo(videoMeta.video_id).then((updated) => {
             setVideoMeta(updated);
+            // Then load the translated SRT into preview
+            if (targetLang) loadSrt(videoMeta.video_id, targetLang);
           });
+          loadVideos();
           es.close();
         } else if (eventType === 'error') {
           setIsTranslating(false);
@@ -662,7 +663,7 @@ function DownloadTranscribePage() {
                     </div>
                   )}
 
-                  {/* Translation Progress */}
+                  {/* Translation Progress / Result */}
                   {isTranslating && (
                     <div className="space-y-2">
                       <div className="flex justify-between items-center">
@@ -675,6 +676,15 @@ function DownloadTranscribePage() {
                           style={{ width: `${translateProgress}%` }}
                         />
                       </div>
+                    </div>
+                  )}
+                  {!isTranslating && translateMessage === 'Translation complete' && (
+                    <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs p-3 rounded-lg flex items-center gap-2">
+                      <span className="material-symbols-outlined text-sm">check_circle</span>
+                      Translation complete — see translated subtitles in the SRT Preview panel
+                      <button onClick={() => setTranslateMessage('')} className="ml-auto text-emerald-500/50 hover:text-emerald-400">
+                        <span className="material-symbols-outlined text-sm">close</span>
+                      </button>
                     </div>
                   )}
 

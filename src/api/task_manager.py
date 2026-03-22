@@ -371,8 +371,9 @@ class TaskManager:
             profile = load_profile(profile_name)
 
             # Progress callback bridges LLM batch progress to SSE events
+            # batch_num fires before processing, so use (batch_num-1) for accurate %
             def on_progress(batch_num: int, total_batches: int, message: str):
-                pct = batch_num / total_batches if total_batches else 1.0
+                pct = (batch_num - 1) / total_batches if total_batches else 0.0
                 task.progress = pct
                 task.message = message
                 self._emit(
