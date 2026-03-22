@@ -228,7 +228,7 @@ douyin-automation/
 - [x] **1.28** Translator factory — `src/translator/__init__.py`
 - [x] **1.29** Translation API — `src/api/routers/translate.py` (profiles CRUD + translate endpoint)
 - [x] **1.30** Translation UI — profile selector, translation progress, multi-language SRT preview
-- [ ] **1.31** Raw video download endpoint — `GET /api/videos/{video_id}/raw`
+- [x] **1.31** Raw video download endpoint — `GET /api/videos/{video_id}/raw`
 - [ ] **1.32** Download raw video UI — download button on VideoCard + SRT export
 
 **Verification (Backend):**

@@ -46,6 +46,7 @@ async def serve_raw_video(video_id: str):
         path=str(video_path),
         media_type="video/mp4",
         filename=f"{video_id}.mp4",
+        headers={"Content-Disposition": f'attachment; filename="{video_id}.mp4"'},
     )
 
 
