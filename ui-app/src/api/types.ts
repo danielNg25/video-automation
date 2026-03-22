@@ -83,6 +83,21 @@ export interface PreviewClipRequest {
   subtitle_style?: Record<string, unknown>;
 }
 
+export interface TranslationProfileSummary {
+  name: string;
+  description: string;
+  target_language: string;
+}
+
+export interface TranslationProfile {
+  name: string;
+  description: string;
+  target_language: string;
+  source_language: string;
+  style_guide: string;
+  example_pairs: { source: string; target: string }[];
+}
+
 export interface PlatformSpec {
   subtitle_language: string;
   max_duration: number | null;

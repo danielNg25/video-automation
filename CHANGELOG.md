@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Translation API router (`src/api/routers/translate.py`): `POST /api/translate` with SSE progress, profile CRUD endpoints
 - Translation request/response models in `src/api/models.py`
 - `run_translate()` in task manager with batch-level SSE progress events
+- Translation UI on Download & Transcribe page: profile selector, translate button with SSE progress, profile editor (create/edit/delete)
 
 ## [1.1.0] — 2026-03-22
 
