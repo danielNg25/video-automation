@@ -332,8 +332,8 @@ douyin-automation/
 
 - [x] **4.1** TTS base class — `src/tts/base.py`
 - [x] **4.2** Edge TTS provider — `src/tts/edge.py` (free, default)
-- [ ] **4.3** OpenAI TTS provider — `src/tts/openai_tts.py`
-- [ ] **4.4** Google Cloud TTS provider — `src/tts/google_tts.py`
+- [x] **4.3** OpenAI TTS provider — `src/tts/openai_tts.py`
+- [x] **4.4** Google Cloud TTS provider — `src/tts/google_tts.py`
 - [x] **4.5** TTS factory — `src/tts/__init__.py`
 - [x] **4.6** Voice profiles config — `config/tts_voices.yaml`
 - [x] **4.7** TTS audio assembler — `src/tts/assembler.py`
@@ -350,7 +350,7 @@ douyin-automation/
 - [x] **4.18** TTS preview component
 
 **Verification:**
-- [ ] V4.1 — Edge TTS installed and importable
+- [x] V4.1 — Edge TTS installed and importable
 - [ ] V4.2 — Voice list API returns Vietnamese voices
 - [ ] V4.3 — Voice preview returns playable audio
 - [ ] V4.4 — TTS generation produces WAV matching video duration (±0.5s)
