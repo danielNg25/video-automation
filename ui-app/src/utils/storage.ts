@@ -50,8 +50,8 @@ export function saveApiKey(provider: string, key: string): void {
 
 export function loadLLMPrefs(): { backend: string; model: string } {
   return {
-    backend: storageGet('llm_backend') || 'anthropic',
-    model: storageGet('llm_model') || 'claude-sonnet-4-20250514',
+    backend: storageGet('llm_backend') || 'deepseek',
+    model: storageGet('llm_model') || 'deepseek-chat',
   };
 }
 
