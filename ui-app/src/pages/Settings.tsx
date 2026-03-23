@@ -425,46 +425,6 @@ function SettingsPage() {
                   <p className="text-[10px] text-zinc-600">Text at same position in more than this % of frames is classified as watermark</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3 pt-2 border-t border-zinc-800/20">
-                <button
-                  onClick={() => {
-                    localStorage.setItem('douyin_pipeline_ocr_fps', ocrFps);
-                    localStorage.setItem('douyin_pipeline_ocr_crop_bottom', ocrCropBottom);
-                    localStorage.setItem('douyin_pipeline_ocr_confidence', ocrConfidence);
-                    localStorage.setItem('douyin_pipeline_ocr_similarity', ocrSimilarity);
-                    localStorage.setItem('douyin_pipeline_ocr_min_y', ocrMinY);
-                    localStorage.setItem('douyin_pipeline_ocr_watermark_freq', ocrWatermarkFreq);
-                    setOcrSaveMsg('OCR settings saved');
-                    setTimeout(() => setOcrSaveMsg(''), 5000);
-                  }}
-                  className="px-5 py-2.5 bg-primary text-on-primary-fixed text-xs font-bold uppercase tracking-widest rounded hover:brightness-110 active:scale-95 transition-all"
-                >
-                  Save OCR Settings
-                </button>
-                <button
-                  onClick={() => {
-                    setOcrFps('2.0'); setOcrCropBottom('0'); setOcrConfidence('0.7'); setOcrSimilarity('0.85');
-                    setOcrMinY('0.65'); setOcrWatermarkFreq('0.80');
-                    localStorage.removeItem('douyin_pipeline_ocr_fps');
-                    localStorage.removeItem('douyin_pipeline_ocr_crop_bottom');
-                    localStorage.removeItem('douyin_pipeline_ocr_confidence');
-                    localStorage.removeItem('douyin_pipeline_ocr_similarity');
-                    localStorage.removeItem('douyin_pipeline_ocr_min_y');
-                    localStorage.removeItem('douyin_pipeline_ocr_watermark_freq');
-                    setOcrSaveMsg('Reset to defaults');
-                    setTimeout(() => setOcrSaveMsg(''), 3000);
-                  }}
-                  className="px-4 py-2 bg-surface-container-high text-xs font-bold uppercase tracking-widest rounded hover:bg-surface-container-highest transition-colors"
-                >
-                  Reset Defaults
-                </button>
-                {ocrSaveMsg && (
-                  <span className="text-xs font-mono text-emerald-400 flex items-center gap-1">
-                    <span className="material-symbols-outlined text-sm">check_circle</span>
-                    {ocrSaveMsg}
-                  </span>
-                )}
-              </div>
             </section>
 
             {/* Video Processing */}
@@ -655,11 +615,41 @@ function SettingsPage() {
       <div className="absolute bottom-0 left-0 right-0 bg-surface/80 backdrop-blur-md border-t border-zinc-800/30 px-8 py-4 flex justify-between items-center z-50">
         <div className="flex items-center gap-2">
           <span className="material-symbols-outlined text-emerald-500 text-sm">cloud_done</span>
-          <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">All local changes are cached</span>
+          <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
+            {ocrSaveMsg || 'All local changes are cached'}
+          </span>
         </div>
         <div className="flex gap-4">
-          <button className="px-6 py-2 rounded text-xs font-bold uppercase tracking-widest text-zinc-400 hover:text-on-surface transition-colors">Discard</button>
-          <button className="px-8 py-2.5 bg-gradient-to-br from-primary to-primary-container text-on-primary-fixed font-bold text-xs uppercase tracking-widest rounded shadow-lg shadow-primary/20 active:scale-95 transition-all">
+          <button
+            onClick={() => {
+              setOcrFps('2.0'); setOcrCropBottom('0'); setOcrConfidence('0.7'); setOcrSimilarity('0.85');
+              setOcrMinY('0.65'); setOcrWatermarkFreq('0.80');
+              localStorage.removeItem('douyin_pipeline_ocr_fps');
+              localStorage.removeItem('douyin_pipeline_ocr_crop_bottom');
+              localStorage.removeItem('douyin_pipeline_ocr_confidence');
+              localStorage.removeItem('douyin_pipeline_ocr_similarity');
+              localStorage.removeItem('douyin_pipeline_ocr_min_y');
+              localStorage.removeItem('douyin_pipeline_ocr_watermark_freq');
+              setOcrSaveMsg('Reset to defaults');
+              setTimeout(() => setOcrSaveMsg(''), 3000);
+            }}
+            className="px-6 py-2 rounded text-xs font-bold uppercase tracking-widest text-zinc-400 hover:text-on-surface transition-colors"
+          >
+            Reset Defaults
+          </button>
+          <button
+            onClick={() => {
+              localStorage.setItem('douyin_pipeline_ocr_fps', ocrFps);
+              localStorage.setItem('douyin_pipeline_ocr_crop_bottom', ocrCropBottom);
+              localStorage.setItem('douyin_pipeline_ocr_confidence', ocrConfidence);
+              localStorage.setItem('douyin_pipeline_ocr_similarity', ocrSimilarity);
+              localStorage.setItem('douyin_pipeline_ocr_min_y', ocrMinY);
+              localStorage.setItem('douyin_pipeline_ocr_watermark_freq', ocrWatermarkFreq);
+              setOcrSaveMsg('Settings saved');
+              setTimeout(() => setOcrSaveMsg(''), 3000);
+            }}
+            className="px-8 py-2.5 bg-gradient-to-br from-primary to-primary-container text-on-primary-fixed font-bold text-xs uppercase tracking-widest rounded shadow-lg shadow-primary/20 active:scale-95 transition-all"
+          >
             Save Changes
           </button>
         </div>
