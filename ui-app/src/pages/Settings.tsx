@@ -13,6 +13,7 @@ import { loadApiKeys, saveApiKey } from '../utils/storage';
 function SettingsPage() {
   const [activeSection, setActiveSection] = useState('douyin');
   const [vadFilter, setVadFilter] = useState(true);
+  const [skipExisting, setSkipExisting] = useState(true);
 
   // Cookie management state
   const [cookie, setCookie] = useState<CookieStatus | null>(null);
