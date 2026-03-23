@@ -128,14 +128,16 @@ class TaskManager:
         return video
 
     def delete_video(self, video_id: str) -> bool:
-        """Delete a video and all associated files (MP4, JSON, SRTs)."""
+        """Delete a video and all associated files."""
         if video_id not in self.video_index:
             return False
 
-        # Delete files
         raw_dir = Path("data/raw")
         srt_dir = Path("data/srt")
+        proxy_dir = Path("data/proxy")
+        output_dir = Path("data/output")
 
+        # Raw files
         for path in [
             raw_dir / f"{video_id}.mp4",
             raw_dir / f"{video_id}.json",
@@ -144,8 +146,20 @@ class TaskManager:
             if path.exists():
                 path.unlink()
 
+        # SRT files + subtitle style
         for srt in srt_dir.glob(f"{video_id}_*.srt"):
             srt.unlink()
+        style_path = srt_dir / f"{video_id}_style.json"
+        if style_path.exists():
+            style_path.unlink()
+
+        # Proxy video
+        for proxy in proxy_dir.glob(f"{video_id}*"):
+            proxy.unlink()
+
+        # Output videos (per-platform)
+        for output in output_dir.glob(f"{video_id}_*"):
+            output.unlink()
 
         # Remove from index
         del self.video_index[video_id]
