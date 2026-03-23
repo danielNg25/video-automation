@@ -5,7 +5,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from src.api.deps import get_data_dir, get_task_manager
-from src.api.routers import download, editor, events, process, settings, transcribe, translate
+from src.api.routers import (
+    download,
+    editor,
+    events,
+    pipeline,
+    process,
+    settings,
+    transcribe,
+    translate,
+)
 
 
 def create_app() -> FastAPI:
@@ -25,6 +34,7 @@ def create_app() -> FastAPI:
     app.include_router(process.router)
     app.include_router(editor.router)
     app.include_router(settings.router)
+    app.include_router(pipeline.router)
     app.include_router(events.router)
 
     @app.on_event("startup")

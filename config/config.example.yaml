@@ -59,6 +59,18 @@ translation:
     temperature: 0.7
     default_profile: 'funny-casual-vi'
 
+# OCR Subtitle Extraction
+ocr:
+    fps: 2.0                          # Frames per second to extract
+    crop_bottom_pct: 0.25             # Pre-crop to bottom 25% of frame (0 = disabled)
+    confidence_threshold: 0.7         # Minimum PaddleOCR confidence
+    similarity_threshold: 0.85        # SequenceMatcher ratio for dedup
+    subtitle_region:
+        min_y: 0.65                   # Only text below 65% of frame height
+        max_watermark_frequency: 0.80 # Text in >80% of frames = watermark
+        min_text_height: 0.02        # Min text height as fraction of frame
+        horizontal_margin: 0.10       # Ignore text in outer 10% left/right
+
 # Pipeline
 pipeline:
     data_dir: './data'

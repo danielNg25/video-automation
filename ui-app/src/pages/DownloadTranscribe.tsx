@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
-import { postDownload, postTranscribe, getVideos, getVideo, getSrt, subscribeSSE, patchVideoTitle, deleteVideo, getProfiles, getProfile, postTranslate, createProfile, updateProfile, deleteProfileApi, getRawVideoUrl, getSrtDownloadUrl, getPlatform } from '../api/client';
-import type { VideoMetadata, SubtitleSegment, TranslationProfileSummary, TranslationProfile } from '../api/types';
+import { postDownload, postTranscribe, getVideos, getVideo, getSrt, subscribeSSE, patchVideoTitle, deleteVideo, getProfiles, postTranslate, postPipeline, getRawVideoUrl, getSrtDownloadUrl } from '../api/client';
+import type { VideoMetadata, SubtitleSegment, TranslationProfileSummary } from '../api/types';
 import { loadApiKeys, loadLLMPrefs, saveLLMPrefs } from '../utils/storage';
 
 function DownloadTranscribePage() {
@@ -22,6 +22,13 @@ function DownloadTranscribePage() {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [transcribeMethod, setTranscribeMethod] = useState<'audio' | 'ocr'>('ocr');
+
+  // Pipeline state
+  const [isPipeline, setIsPipeline] = useState(false);
+  const [pipelineStage, setPipelineStage] = useState('');
+  const [pipelineProgress, setPipelineProgress] = useState(0);
+  const [pipelineMessage, setPipelineMessage] = useState('');
 
   // Translation state
   const [profiles, setProfiles] = useState<TranslationProfileSummary[]>([]);
@@ -29,12 +36,6 @@ function DownloadTranscribePage() {
   const [isTranslating, setIsTranslating] = useState(false);
   const [translateMessage, setTranslateMessage] = useState('');
   const [translateProgress, setTranslateProgress] = useState(0);
-  const [showProfileEditor, setShowProfileEditor] = useState(false);
-  const [editingProfile, setEditingProfile] = useState<TranslationProfile | null>(null);
-  const [profileDraft, setProfileDraft] = useState<TranslationProfile>({
-    name: '', description: '', target_language: 'vi', source_language: 'zh',
-    style_guide: '', example_pairs: [],
-  });
   const [savedPrefs] = useState(loadLLMPrefs);
   const [llmBackend, setLlmBackend] = useState(savedPrefs.backend);
   const [llmModel, setLlmModel] = useState(savedPrefs.model);
@@ -47,31 +48,14 @@ function DownloadTranscribePage() {
     const keyMap: Record<string, string> = { anthropic: keys.anthropic, openai: keys.openai, deepseek: keys.deepseek };
     setLlmApiKey(keyMap[llmBackend] || '');
     if (llmBackend === 'deepseek') setLlmBaseUrl('https://api.deepseek.com');
-    else if (llmBackend !== 'local') setLlmBaseUrl('');
+    else setLlmBaseUrl('');
   }, [llmBackend]);
-  const [serverPlatform, setServerPlatform] = useState('darwin');
-
-  useEffect(() => {
-    getPlatform().then((r) => setServerPlatform(r.platform)).catch(() => {});
-  }, []);
-
-  const LOCAL_MODELS_MACOS = [
-    { label: 'Qwen 2.5 14B (4-bit)', value: 'mlx-community/Qwen2.5-14B-Instruct-4bit' },
-    { label: 'Qwen 2.5 7B (4-bit)', value: 'mlx-community/Qwen2.5-7B-Instruct-4bit' },
-    { label: 'Qwen 2.5 32B (4-bit)', value: 'mlx-community/Qwen2.5-32B-Instruct-4bit' },
-    { label: 'Llama 3.1 8B (4-bit)', value: 'mlx-community/Meta-Llama-3.1-8B-Instruct-4bit' },
-    { label: 'Mistral 7B (4-bit)', value: 'mlx-community/Mistral-7B-Instruct-v0.3-4bit' },
-  ];
-
-  const LOCAL_MODELS_LINUX = [
-    { label: 'Qwen 2.5 14B (Q4)', value: 'Qwen/Qwen2.5-14B-Instruct-GGUF' },
-    { label: 'Qwen 2.5 7B (Q4)', value: 'Qwen/Qwen2.5-7B-Instruct-GGUF' },
-    { label: 'Qwen 2.5 32B (Q4)', value: 'Qwen/Qwen2.5-32B-Instruct-GGUF' },
-    { label: 'Llama 3.1 8B (Q4)', value: 'meta-llama/Llama-3.1-8B-Instruct-GGUF' },
-    { label: 'Mistral 7B (Q4)', value: 'mistralai/Mistral-7B-Instruct-v0.3-GGUF' },
-  ];
 
   const MODEL_OPTIONS: Record<string, { label: string; value: string }[]> = {
+    deepseek: [
+      { label: 'DeepSeek V3', value: 'deepseek-chat' },
+      { label: 'DeepSeek R1', value: 'deepseek-reasoner' },
+    ],
     anthropic: [
       { label: 'Claude Sonnet 4', value: 'claude-sonnet-4-20250514' },
       { label: 'Claude Haiku 3.5', value: 'claude-3-5-haiku-20241022' },
@@ -83,11 +67,6 @@ function DownloadTranscribePage() {
       { label: 'GPT-4.1', value: 'gpt-4.1' },
       { label: 'GPT-4.1 Mini', value: 'gpt-4.1-mini' },
     ],
-    deepseek: [
-      { label: 'DeepSeek V3', value: 'deepseek-chat' },
-      { label: 'DeepSeek R1', value: 'deepseek-reasoner' },
-    ],
-    local: serverPlatform === 'darwin' ? LOCAL_MODELS_MACOS : LOCAL_MODELS_LINUX,
   };
 
   const loadProfiles = useCallback(async () => {
@@ -177,18 +156,70 @@ function DownloadTranscribePage() {
     }
   };
 
+  const handlePipeline = async () => {
+    if (!url.trim()) return;
+    setError('');
+    setIsPipeline(true);
+    setPipelineStage('download');
+    setPipelineProgress(0);
+    setPipelineMessage('Starting download...');
+    setVideoMeta(null);
+    setSrtSegments([]);
+
+    try {
+      const { task_id } = await postPipeline(
+        url.trim(),
+        transcribeMethod,
+        selectedProfile || undefined,
+      );
+      const es = subscribeSSE(task_id, (eventType, data) => {
+        if (eventType === 'progress') {
+          setPipelineStage((data.stage as string) || '');
+          setPipelineProgress((data.progress as number) * 100);
+          setPipelineMessage(data.message as string);
+        } else if (eventType === 'complete') {
+          setIsPipeline(false);
+          setPipelineProgress(100);
+          setPipelineMessage('Pipeline complete');
+          const result = data as Record<string, unknown>;
+          const video = result.video as VideoMetadata | undefined;
+          if (video) setVideoMeta(video);
+          const videoId = result.video_id as string;
+          if (videoId) {
+            getVideo(videoId).then((v) => {
+              setVideoMeta(v);
+              if (v.srt_languages.length > 0) {
+                loadSrt(videoId, v.srt_languages[v.srt_languages.length - 1]);
+              }
+            });
+          }
+          loadVideos();
+          es.close();
+        } else if (eventType === 'error') {
+          setIsPipeline(false);
+          setError(data.message as string);
+          es.close();
+        }
+      });
+    } catch (e) {
+      setIsPipeline(false);
+      setError(e instanceof Error ? e.message : 'Pipeline failed');
+    }
+  };
+
   const handleTranscribe = async () => {
     if (!videoMeta) return;
     setError('');
     setIsTranscribing(true);
-    setTranscribeMessage('Loading transcription model...');
+    setTranscribeMessage(transcribeMethod === 'ocr' ? 'Initializing OCR engine...' : 'Loading transcription model...');
     setSrtSegments([]);
 
     const task = selectedLanguage === 'en' ? 'translate' : 'transcribe';
-    const lang = selectedLanguage === 'en' ? 'zh' : selectedLanguage;
+    const lang = transcribeMethod === 'ocr' ? 'zh' : (selectedLanguage === 'en' ? 'zh' : selectedLanguage);
 
     try {
-      const { task_id } = await postTranscribe(videoMeta.video_id, lang, task);
+      // OCR config is now read from server-side config.yaml — no overrides needed
+      const { task_id } = await postTranscribe(videoMeta.video_id, lang, task, transcribeMethod);
       const es = subscribeSSE(task_id, (eventType, data) => {
         if (eventType === 'progress') {
           setTranscribeMessage(data.message as string);
@@ -299,50 +330,14 @@ function DownloadTranscribePage() {
     }
   };
 
-  const handleSaveProfile = async () => {
-    try {
-      if (editingProfile) {
-        await updateProfile(editingProfile.name, profileDraft);
-      } else {
-        await createProfile(profileDraft);
-      }
-      setShowProfileEditor(false);
-      setEditingProfile(null);
-      loadProfiles();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save profile');
-    }
-  };
-
-  const handleEditProfile = async (name: string) => {
-    try {
-      const full = await getProfile(name);
-      setEditingProfile(full);
-      setProfileDraft(full);
-      setShowProfileEditor(true);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load profile');
-    }
-  };
-
-  const handleDeleteProfile = async (name: string) => {
-    try {
-      await deleteProfileApi(name);
-      loadProfiles();
-      if (selectedProfile === name) setSelectedProfile('');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to delete profile');
-    }
-  };
-
   return (
     <div className="flex flex-col h-full bg-surface">
       <TopBar breadcrumb="Transcribe" />
 
       <section className="flex-1 overflow-y-auto p-6 space-y-6">
-        {/* URL Input Section */}
-        <div className="bg-surface-container-low p-1 rounded-xl shadow-sm">
-          <div className="flex items-center bg-surface-container-lowest p-2 rounded-lg gap-3 focus-within:ring-1 focus-within:ring-primary/40 transition-shadow">
+        {/* URL Input + Pipeline Config */}
+        <div className="bg-surface-container-low rounded-xl shadow-sm overflow-hidden">
+          <div className="flex items-center bg-surface-container-lowest p-2 rounded-t-lg gap-3 focus-within:ring-1 focus-within:ring-primary/40 transition-shadow">
             <div className="pl-3 text-on-surface-variant">
               <span className="material-symbols-outlined">link</span>
             </div>
@@ -352,16 +347,98 @@ function DownloadTranscribePage() {
               type="text"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleDownload()}
+              onKeyDown={(e) => e.key === 'Enter' && handlePipeline()}
             />
             <button
-              onClick={handleDownload}
-              disabled={isDownloading || !url.trim()}
+              onClick={handlePipeline}
+              disabled={isDownloading || isPipeline || !url.trim()}
               className="bg-primary text-on-primary-fixed px-6 py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:brightness-110 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <span>{isDownloading ? 'Downloading...' : 'Download'}</span>
+              <span>{isPipeline ? 'Processing...' : 'Process'}</span>
+              <span className="material-symbols-outlined text-sm">play_arrow</span>
+            </button>
+            <button
+              onClick={handleDownload}
+              disabled={isDownloading || isPipeline || !url.trim()}
+              className="bg-surface-container-highest text-on-surface px-4 py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:bg-surface-container-high active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span>{isDownloading ? 'Downloading...' : 'Download Only'}</span>
               <span className="material-symbols-outlined text-sm">download</span>
             </button>
+          </div>
+          {/* Pipeline config row */}
+          <div className="flex items-center gap-4 px-4 py-2.5 border-t border-outline-variant/10">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-zinc-500 uppercase tracking-tighter">Method:</span>
+              <div className="flex gap-px rounded overflow-hidden border border-outline-variant/20">
+                <button
+                  onClick={() => setTranscribeMethod('ocr')}
+                  className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                    transcribeMethod === 'ocr'
+                      ? 'bg-primary text-on-primary-fixed'
+                      : 'bg-surface-container-highest text-on-surface-variant hover:bg-surface-container-high'
+                  }`}
+                >
+                  OCR
+                </button>
+                <button
+                  onClick={() => setTranscribeMethod('audio')}
+                  className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                    transcribeMethod === 'audio'
+                      ? 'bg-primary text-on-primary-fixed'
+                      : 'bg-surface-container-highest text-on-surface-variant hover:bg-surface-container-high'
+                  }`}
+                >
+                  Audio
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-zinc-500 uppercase tracking-tighter">Translate:</span>
+              <select
+                value={selectedProfile}
+                onChange={(e) => setSelectedProfile(e.target.value)}
+                className="bg-surface-container-highest border-none text-[11px] text-on-surface py-1 px-2 rounded focus:ring-0"
+              >
+                <option value="">Skip translation</option>
+                {profiles.map((p) => (
+                  <option key={p.name} value={p.name}>
+                    {p.name} ({p.target_language})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-zinc-500 uppercase tracking-tighter">Backend:</span>
+              <select
+                value={llmBackend}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setLlmBackend(val);
+                  const models = MODEL_OPTIONS[val];
+                  const firstModel = models?.length ? models[0].value : '';
+                  if (firstModel) setLlmModel(firstModel);
+                  saveLLMPrefs(val, firstModel);
+                }}
+                className="bg-surface-container-highest border-none text-[11px] text-on-surface py-1 px-2 rounded focus:ring-0"
+              >
+                <option value="deepseek">DeepSeek</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="openai">OpenAI</option>
+              </select>
+            </div>
+            {selectedProfile && !llmApiKey && (
+              <div className="flex items-center gap-1.5 text-amber-400">
+                <span className="material-symbols-outlined text-xs">warning</span>
+                <span className="text-[10px]">No <strong>{llmBackend}</strong> API key</span>
+                <button
+                  onClick={() => navigate('/settings#apikeys')}
+                  className="text-[10px] font-bold underline ml-1"
+                >
+                  Configure
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -378,7 +455,7 @@ function DownloadTranscribePage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Left Column */}
-          <div className="lg:col-span-7 space-y-6">
+          <div className="lg:col-span-8 space-y-6">
             {/* Active Download Card */}
             {isDownloading && (
               <div className="bg-surface-container-low rounded-xl overflow-hidden">
@@ -411,8 +488,69 @@ function DownloadTranscribePage() {
               </div>
             )}
 
+            {/* Pipeline Progress */}
+            {isPipeline && (
+              <div className="bg-surface-container-low rounded-xl overflow-hidden border border-primary/20">
+                <div className="p-4 border-b border-outline-variant/10 flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary text-lg">rocket_launch</span>
+                    <span className="text-xs font-bold uppercase tracking-widest">Pipeline</span>
+                  </div>
+                  <span className="text-lg font-black font-mono text-primary tracking-tighter">
+                    {pipelineProgress.toFixed(0)}%
+                  </span>
+                </div>
+                <div className="p-5 space-y-4">
+                  {/* Stage indicators */}
+                  <div className="flex items-center gap-2">
+                    {[
+                      { key: 'download', label: 'Download', icon: 'download' },
+                      { key: 'transcribe', label: 'Extract Subtitles', icon: 'document_scanner' },
+                      ...(selectedProfile ? [{ key: 'translate', label: 'Translate', icon: 'translate' }] : []),
+                    ].map((s, i) => {
+                      const isDone = (
+                        (s.key === 'download' && pipelineStage !== 'download') ||
+                        (s.key === 'transcribe' && (pipelineStage === 'translate' || pipelineProgress >= 100)) ||
+                        (s.key === 'translate' && pipelineProgress >= 100)
+                      );
+                      const isActive = pipelineStage === s.key;
+                      return (
+                        <div key={s.key} className="flex items-center gap-2">
+                          {i > 0 && <div className={`w-8 h-px ${isDone || isActive ? 'bg-primary' : 'bg-zinc-700'}`} />}
+                          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                            isDone
+                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                              : isActive
+                                ? 'bg-primary/10 text-primary border border-primary/30'
+                                : 'bg-surface-container-highest text-zinc-600 border border-outline-variant/10'
+                          }`}>
+                            <span className="material-symbols-outlined text-xs">
+                              {isDone ? 'check_circle' : isActive ? 'pending' : s.icon}
+                            </span>
+                            {s.label}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Current stage message */}
+                  <div className="flex items-center gap-3">
+                    <div className="w-6 h-6 rounded-full border-2 border-primary border-t-transparent animate-spin shrink-0"></div>
+                    <span className="text-[11px] font-medium text-emerald-400">{pipelineMessage}</span>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
+                    <div
+                      className="bg-primary h-full transition-all duration-500 shadow-[0_0_8px_rgba(208,188,255,0.4)]"
+                      style={{ width: `${pipelineProgress}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Video Result Card — shown when a video is selected or just downloaded */}
-            {videoMeta && !isDownloading && (
+            {videoMeta && !isDownloading && !isPipeline && (
               <div className="bg-surface-container-low rounded-xl overflow-hidden flex flex-col md:flex-row border border-primary/20">
                 <div className="w-full md:w-64 aspect-video bg-surface-container-highest relative group overflow-hidden">
                   {videoMeta.thumbnail ? (
@@ -484,43 +622,79 @@ function DownloadTranscribePage() {
                       </div>
                     </div>
                   </div>
-                  <div className="mt-6 flex items-center gap-3">
-                    <div className="flex-1 flex gap-px rounded-md overflow-hidden border border-outline-variant/20">
-                      <select
-                        value={selectedLanguage}
-                        onChange={(e) => setSelectedLanguage(e.target.value)}
-                        className="flex-1 bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 focus:ring-0"
-                      >
-                        <option value="zh">Chinese (Mandarin)</option>
-                        <option value="vi">Vietnamese</option>
-                        <option value="en">English (Translate)</option>
-                      </select>
+                  <div className="mt-4 space-y-3">
+                    {/* Method Toggle */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-zinc-500 uppercase tracking-tighter">Method:</span>
+                      <div className="flex gap-px rounded-md overflow-hidden border border-outline-variant/20">
+                        <button
+                          onClick={() => setTranscribeMethod('ocr')}
+                          className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                            transcribeMethod === 'ocr'
+                              ? 'bg-primary text-on-primary-fixed'
+                              : 'bg-surface-container-highest text-on-surface-variant hover:bg-surface-container-high'
+                          }`}
+                        >
+                          OCR (Extract Subtitles)
+                        </button>
+                        <button
+                          onClick={() => setTranscribeMethod('audio')}
+                          className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                            transcribeMethod === 'audio'
+                              ? 'bg-primary text-on-primary-fixed'
+                              : 'bg-surface-container-highest text-on-surface-variant hover:bg-surface-container-high'
+                          }`}
+                        >
+                          Audio (Whisper)
+                        </button>
+                      </div>
                     </div>
-                    <button
-                      onClick={handleTranscribe}
-                      disabled={isTranscribing}
-                      className="bg-primary text-on-primary-fixed px-4 py-2 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap active:scale-95 transition-all disabled:opacity-50"
-                    >
-                      <span>{isTranscribing ? 'Transcribing...' : videoMeta.has_srt ? 'Re-Transcribe' : 'Transcribe'}</span>
-                      <span className="material-symbols-outlined text-sm">neurology</span>
-                    </button>
-                    {videoMeta.has_srt && (
+
+                    <div className="flex items-center gap-3">
+                      {transcribeMethod === 'audio' && (
+                        <div className="flex-1 flex gap-px rounded-md overflow-hidden border border-outline-variant/20">
+                          <select
+                            value={selectedLanguage}
+                            onChange={(e) => setSelectedLanguage(e.target.value)}
+                            className="flex-1 bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 focus:ring-0"
+                          >
+                            <option value="zh">Chinese (Mandarin)</option>
+                            <option value="vi">Vietnamese</option>
+                            <option value="en">English (Translate)</option>
+                          </select>
+                        </div>
+                      )}
+                      {transcribeMethod === 'ocr' && (
+                        <span className="text-[10px] text-zinc-500 font-mono uppercase whitespace-nowrap">
+                          Auto-detect (CN)
+                        </span>
+                      )}
                       <button
-                        onClick={() => navigate(`/editor/${videoMeta.video_id}?lang=${previewLanguage || videoMeta.srt_languages[0] || 'zh'}`)}
-                        className="bg-surface-container-highest text-on-surface px-4 py-2 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap active:scale-95 transition-all hover:bg-surface-container-high"
+                        onClick={handleTranscribe}
+                        disabled={isTranscribing}
+                        className="bg-primary text-on-primary-fixed px-4 py-2 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap active:scale-95 transition-all disabled:opacity-50"
                       >
-                        <span>Edit Subtitles</span>
-                        <span className="material-symbols-outlined text-sm">edit_note</span>
+                        <span>{isTranscribing ? (transcribeMethod === 'ocr' ? 'Extracting...' : 'Transcribing...') : videoMeta.has_srt ? 'Re-Transcribe' : 'Transcribe'}</span>
+                        <span className="material-symbols-outlined text-sm">{transcribeMethod === 'ocr' ? 'document_scanner' : 'neurology'}</span>
                       </button>
-                    )}
-                    <a
-                      href={getRawVideoUrl(videoMeta.video_id)}
-                      download
-                      className="bg-surface-container-highest text-on-surface px-3 py-2 rounded-md font-bold text-xs flex items-center gap-1.5 whitespace-nowrap active:scale-95 transition-all hover:bg-surface-container-high"
-                      title="Download MP4"
-                    >
-                      <span className="material-symbols-outlined text-sm">save_alt</span>
-                    </a>
+                      {videoMeta.has_srt && (
+                        <button
+                          onClick={() => navigate(`/editor/${videoMeta.video_id}?lang=${previewLanguage || videoMeta.srt_languages[0] || 'zh'}`)}
+                          className="bg-surface-container-highest text-on-surface px-4 py-2 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap active:scale-95 transition-all hover:bg-surface-container-high"
+                        >
+                          <span>Edit Subtitles</span>
+                          <span className="material-symbols-outlined text-sm">edit_note</span>
+                        </button>
+                      )}
+                      <a
+                        href={getRawVideoUrl(videoMeta.video_id)}
+                        download
+                        className="bg-surface-container-highest text-on-surface px-3 py-2 rounded-md font-bold text-xs flex items-center gap-1.5 whitespace-nowrap active:scale-95 transition-all hover:bg-surface-container-high"
+                        title="Download MP4"
+                      >
+                        <span className="material-symbols-outlined text-sm">save_alt</span>
+                      </a>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -533,8 +707,8 @@ function DownloadTranscribePage() {
                   <div className="w-10 h-10 rounded-full border-2 border-primary border-t-transparent animate-spin"></div>
                   <div className="flex-1">
                     <div className="flex justify-between items-center mb-1">
-                      <span className="text-xs font-bold uppercase tracking-widest text-primary">Transcribing Audio...</span>
-                      <span className="text-[10px] font-mono text-zinc-500">WHISPER v3 LARGE</span>
+                      <span className="text-xs font-bold uppercase tracking-widest text-primary">{transcribeMethod === 'ocr' ? 'Extracting Subtitles (OCR)...' : 'Transcribing Audio...'}</span>
+                      <span className="text-[10px] font-mono text-zinc-500">{transcribeMethod === 'ocr' ? 'PADDLEOCR' : 'WHISPER v3 LARGE'}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-[11px] text-on-surface-variant font-mono">Current Stage:</span>
@@ -554,17 +728,11 @@ function DownloadTranscribePage() {
                     <span className="text-xs font-bold uppercase tracking-widest">LLM Translation</span>
                   </div>
                   <button
-                    onClick={() => {
-                      setEditingProfile(null);
-                      setProfileDraft({
-                        name: '', description: '', target_language: 'vi', source_language: 'zh',
-                        style_guide: '', example_pairs: [],
-                      });
-                      setShowProfileEditor(!showProfileEditor);
-                    }}
-                    className="text-[10px] font-bold text-primary uppercase tracking-wider hover:underline"
+                    onClick={() => navigate('/profiles')}
+                    className="text-[10px] font-bold text-primary uppercase tracking-wider hover:underline flex items-center gap-1"
                   >
-                    {showProfileEditor ? 'Cancel' : '+ New Profile'}
+                    <span className="material-symbols-outlined text-xs">settings</span>
+                    Manage Profiles
                   </button>
                 </div>
                 <div className="p-5 space-y-4">
@@ -584,24 +752,6 @@ function DownloadTranscribePage() {
                             </option>
                           ))}
                         </select>
-                        {selectedProfile && (
-                          <>
-                            <button
-                              onClick={() => handleEditProfile(selectedProfile)}
-                              className="p-1.5 hover:bg-surface-container-highest rounded transition-colors text-zinc-400"
-                              title="Edit profile"
-                            >
-                              <span className="material-symbols-outlined text-sm">edit</span>
-                            </button>
-                            <button
-                              onClick={() => handleDeleteProfile(selectedProfile)}
-                              className="p-1.5 hover:bg-error/10 rounded transition-colors text-zinc-400 hover:text-error"
-                              title="Delete profile"
-                            >
-                              <span className="material-symbols-outlined text-sm">delete</span>
-                            </button>
-                          </>
-                        )}
                       </div>
                     </div>
                     <button
@@ -614,7 +764,7 @@ function DownloadTranscribePage() {
                     </button>
                   </div>
 
-                  {/* Model & API Key */}
+                  {/* Backend & Model */}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">Backend</label>
@@ -632,14 +782,12 @@ function DownloadTranscribePage() {
                           } else {
                             setLlmBaseUrl('');
                           }
-                          if (val === 'local') setLlmApiKey('');
                         }}
                         className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
                       >
+                        <option value="deepseek">DeepSeek</option>
                         <option value="anthropic">Anthropic</option>
                         <option value="openai">OpenAI</option>
-                        <option value="deepseek">DeepSeek</option>
-                        <option value="local">Local (mlx-lm / llama.cpp)</option>
                       </select>
                     </div>
                     <div>
@@ -656,28 +804,22 @@ function DownloadTranscribePage() {
                         ))}
                       </select>
                     </div>
-                    {llmBackend !== 'local' && (
-                      <div>
-                        <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">API Key</label>
-                        <input
-                          type="password"
-                          value={llmApiKey}
-                          onChange={(e) => setLlmApiKey(e.target.value)}
-                          className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary"
-                          placeholder="Uses env var if empty"
-                        />
-                      </div>
-                    )}
-                    {llmBackend === 'local' && (
-                      <div className="flex items-end">
-                        <span className="text-[10px] text-zinc-500 py-2">
-                          {serverPlatform === 'darwin'
-                            ? 'Runs in-process via mlx-lm (Apple Silicon)'
-                            : 'Runs in-process via llama-cpp-python (CPU/CUDA)'}
-                        </span>
-                      </div>
-                    )}
                   </div>
+
+                  {/* API Key Warning */}
+                  {!llmApiKey && (
+                    <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs p-3 rounded-lg flex items-center gap-2">
+                      <span className="material-symbols-outlined text-sm">warning</span>
+                      <span>No API key configured for <strong>{llmBackend}</strong>.</span>
+                      <button
+                        onClick={() => navigate('/settings#apikeys')}
+                        className="ml-auto text-[10px] font-bold uppercase tracking-wider text-amber-300 hover:text-amber-200 flex items-center gap-1 whitespace-nowrap"
+                      >
+                        <span className="material-symbols-outlined text-xs">settings</span>
+                        Configure
+                      </button>
+                    </div>
+                  )}
 
                   {/* Profile Description */}
                   {selectedProfile && profiles.find((p) => p.name === selectedProfile) && (
@@ -711,133 +853,6 @@ function DownloadTranscribePage() {
                     </div>
                   )}
 
-                  {/* Profile Editor */}
-                  {showProfileEditor && (
-                    <div className="border border-outline-variant/20 rounded-lg p-4 space-y-3 bg-surface-container-lowest">
-                      <h4 className="text-xs font-bold uppercase tracking-widest">
-                        {editingProfile ? 'Edit Profile' : 'New Profile'}
-                      </h4>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-[10px] text-zinc-500 uppercase block mb-1">Name</label>
-                          <input
-                            className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary"
-                            value={profileDraft.name}
-                            onChange={(e) => setProfileDraft({ ...profileDraft, name: e.target.value })}
-                            placeholder="my-profile-vi"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] text-zinc-500 uppercase block mb-1">Target Language</label>
-                          <select
-                            className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
-                            value={profileDraft.target_language}
-                            onChange={(e) => setProfileDraft({ ...profileDraft, target_language: e.target.value })}
-                          >
-                            <option value="vi">Vietnamese</option>
-                            <option value="en">English</option>
-                            <option value="ko">Korean</option>
-                            <option value="ja">Japanese</option>
-                            <option value="es">Spanish</option>
-                          </select>
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-[10px] text-zinc-500 uppercase block mb-1">Description</label>
-                        <input
-                          className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary"
-                          value={profileDraft.description}
-                          onChange={(e) => setProfileDraft({ ...profileDraft, description: e.target.value })}
-                          placeholder="Short description of this translation style"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] text-zinc-500 uppercase block mb-1">Source Language</label>
-                        <select
-                          className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
-                          value={profileDraft.source_language}
-                          onChange={(e) => setProfileDraft({ ...profileDraft, source_language: e.target.value })}
-                        >
-                          <option value="zh">Chinese</option>
-                          <option value="en">English</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-[10px] text-zinc-500 uppercase block mb-1">Style Guide</label>
-                        <textarea
-                          className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary h-32 resize-y"
-                          value={profileDraft.style_guide}
-                          onChange={(e) => setProfileDraft({ ...profileDraft, style_guide: e.target.value })}
-                          placeholder="Describe the personality, tone, and rules for translation..."
-                        />
-                      </div>
-                      <div>
-                        <div className="flex justify-between items-center mb-2">
-                          <label className="text-[10px] text-zinc-500 uppercase">Example Pairs</label>
-                          <button
-                            onClick={() =>
-                              setProfileDraft({
-                                ...profileDraft,
-                                example_pairs: [...profileDraft.example_pairs, { source: '', target: '' }],
-                              })
-                            }
-                            className="text-[10px] text-primary font-bold uppercase hover:underline"
-                          >
-                            + Add
-                          </button>
-                        </div>
-                        {profileDraft.example_pairs.map((pair, i) => (
-                          <div key={i} className="flex gap-2 mb-2 items-center">
-                            <input
-                              className="flex-1 bg-surface-container-highest border-none text-xs text-on-surface py-1.5 px-2 rounded focus:ring-1 focus:ring-primary"
-                              placeholder="Source text"
-                              value={pair.source}
-                              onChange={(e) => {
-                                const pairs = [...profileDraft.example_pairs];
-                                pairs[i] = { ...pairs[i], source: e.target.value };
-                                setProfileDraft({ ...profileDraft, example_pairs: pairs });
-                              }}
-                            />
-                            <span className="text-zinc-600 text-[10px]">→</span>
-                            <input
-                              className="flex-1 bg-surface-container-highest border-none text-xs text-on-surface py-1.5 px-2 rounded focus:ring-1 focus:ring-primary"
-                              placeholder="Target text"
-                              value={pair.target}
-                              onChange={(e) => {
-                                const pairs = [...profileDraft.example_pairs];
-                                pairs[i] = { ...pairs[i], target: e.target.value };
-                                setProfileDraft({ ...profileDraft, example_pairs: pairs });
-                              }}
-                            />
-                            <button
-                              onClick={() => {
-                                const pairs = profileDraft.example_pairs.filter((_, j) => j !== i);
-                                setProfileDraft({ ...profileDraft, example_pairs: pairs });
-                              }}
-                              className="text-zinc-500 hover:text-error"
-                            >
-                              <span className="material-symbols-outlined text-sm">close</span>
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="flex justify-end gap-2 pt-2">
-                        <button
-                          onClick={() => { setShowProfileEditor(false); setEditingProfile(null); }}
-                          className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-zinc-400 hover:text-on-surface"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={handleSaveProfile}
-                          disabled={!profileDraft.name.trim()}
-                          className="bg-primary text-on-primary-fixed px-4 py-2 rounded-md font-bold text-xs uppercase tracking-wider disabled:opacity-50"
-                        >
-                          {editingProfile ? 'Update' : 'Save'} Profile
-                        </button>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
             )}
@@ -853,7 +868,7 @@ function DownloadTranscribePage() {
           </div>
 
           {/* Right Column: SRT Preview */}
-          <div className="lg:col-span-5 flex flex-col max-h-[600px]">
+          <div className="lg:col-span-4 flex flex-col max-h-[600px]">
             <div className="bg-surface-container-low rounded-xl flex-1 flex flex-col border border-outline-variant/10 overflow-hidden">
               <div className="p-4 border-b border-outline-variant/10 flex justify-between items-center bg-surface-container-high/30">
                 <div className="flex items-center gap-2">

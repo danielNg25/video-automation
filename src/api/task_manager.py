@@ -128,14 +128,16 @@ class TaskManager:
         return video
 
     def delete_video(self, video_id: str) -> bool:
-        """Delete a video and all associated files (MP4, JSON, SRTs)."""
+        """Delete a video and all associated files."""
         if video_id not in self.video_index:
             return False
 
-        # Delete files
         raw_dir = Path("data/raw")
         srt_dir = Path("data/srt")
+        proxy_dir = Path("data/proxy")
+        output_dir = Path("data/output")
 
+        # Raw files
         for path in [
             raw_dir / f"{video_id}.mp4",
             raw_dir / f"{video_id}.json",
@@ -144,8 +146,20 @@ class TaskManager:
             if path.exists():
                 path.unlink()
 
+        # SRT files + subtitle style
         for srt in srt_dir.glob(f"{video_id}_*.srt"):
             srt.unlink()
+        style_path = srt_dir / f"{video_id}_style.json"
+        if style_path.exists():
+            style_path.unlink()
+
+        # Proxy video
+        for proxy in proxy_dir.glob(f"{video_id}*"):
+            proxy.unlink()
+
+        # Output videos (per-platform)
+        for output in output_dir.glob(f"{video_id}_*"):
+            output.unlink()
 
         # Remove from index
         del self.video_index[video_id]
@@ -271,7 +285,15 @@ class TaskManager:
             logger.error(f"Download task {task_id} failed: {e}")
 
     async def run_transcribe(
-        self, task_id: str, video_id: str, language: str, task_type: str, config: dict
+        self,
+        task_id: str,
+        video_id: str,
+        language: str,
+        task_type: str,
+        config: dict,
+        method: str = "audio",
+        ocr_region: dict | None = None,
+        ocr_config: dict | None = None,
     ):
         """Execute a transcription task in the background."""
         from src.transcriber import get_transcriber
@@ -279,10 +301,11 @@ class TaskManager:
         task = self.tasks[task_id]
         task.status = "running"
         task.video_id = video_id
-        task.message = "Loading transcription model..."
-        self._emit(
-            task_id, "progress", {"progress": 0.0, "message": "Loading transcription model..."}
-        )
+
+        is_ocr = method == "ocr"
+        init_msg = "Initializing OCR engine..." if is_ocr else "Loading transcription model..."
+        task.message = init_msg
+        self._emit(task_id, "progress", {"progress": 0.0, "message": init_msg})
 
         try:
             video_info = self.video_index.get(video_id)
@@ -290,12 +313,41 @@ class TaskManager:
                 raise ValueError(f"Video {video_id} not found")
 
             video_path = video_info.file_path
-            transcriber = get_transcriber(config.get("whisper", {}))
 
-            task.message = "Transcribing audio..."
-            self._emit(
-                task_id, "progress", {"progress": 0.2, "message": "Transcribing audio..."}
-            )
+            # Build progress callback for OCR (thread-safe via call_soon_threadsafe)
+            loop = asyncio.get_running_loop()
+
+            def ocr_progress(progress: float, message: str):
+                task.progress = progress
+                task.message = message
+                loop.call_soon_threadsafe(
+                    self._emit, task_id, "progress", {"progress": progress, "message": message}
+                )
+
+            if is_ocr:
+                ocr_cfg = config.get("ocr", {})
+                # Merge UI overrides into server config
+                if ocr_config:
+                    ocr_cfg = {**ocr_cfg, **ocr_config}
+                    if "subtitle_region" in ocr_cfg and "subtitle_region" in ocr_config:
+                        ocr_cfg["subtitle_region"] = {
+                            **ocr_cfg.get("subtitle_region", {}),
+                            **ocr_config["subtitle_region"],
+                        }
+                transcriber = get_transcriber(
+                    ocr_cfg,
+                    method="ocr",
+                    ocr_region=ocr_region,
+                    progress_callback=ocr_progress,
+                )
+            else:
+                transcriber = get_transcriber(config.get("whisper", {}))
+                task.message = "Transcribing audio..."
+                self._emit(
+                    task_id,
+                    "progress",
+                    {"progress": 0.2, "message": "Transcribing audio..."},
+                )
 
             # Run CPU-bound transcription in a thread
             segments = await asyncio.to_thread(
@@ -304,7 +356,7 @@ class TaskManager:
 
             task.message = "Generating SRT file..."
             self._emit(
-                task_id, "progress", {"progress": 0.8, "message": "Generating SRT file..."}
+                task_id, "progress", {"progress": 0.9, "message": "Generating SRT file..."}
             )
 
             # Generate SRT
@@ -330,6 +382,7 @@ class TaskManager:
                 "srt_path": str(srt_path),
                 "segment_count": len(segments),
                 "language": lang_suffix,
+                "method": method,
             }
             self._emit(task_id, "complete", task.result)
 
@@ -498,6 +551,180 @@ class TaskManager:
             task.message = f"Processing failed: {e}"
             self._emit(task_id, "error", {"message": str(e)})
             logger.error(f"Process task {task_id} failed: {e}")
+
+    async def run_pipeline(
+        self,
+        task_id: str,
+        url: str,
+        transcribe_method: str,
+        translate_profile: str | None,
+        source_language: str,
+        config: dict,
+    ):
+        """Execute download → transcribe → translate pipeline in one task."""
+        from src.downloader import download_with_fallback
+        from src.transcriber import get_transcriber
+
+        task = self.tasks[task_id]
+        task.status = "running"
+        task.message = "Starting pipeline..."
+
+        def emit(stage: str, progress: float, message: str):
+            task.progress = progress
+            task.message = message
+            self._emit(
+                task_id,
+                "progress",
+                {"stage": stage, "progress": progress, "message": message},
+            )
+
+        try:
+            # ── Stage 1: Download (0.00 – 0.30) ──
+            emit("download", 0.0, "Starting download...")
+
+            output_dir = Path("data/raw")
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            metadata = await download_with_fallback(url, output_dir, config)
+            video_id = metadata.video_id
+
+            # Extract file metadata and register in video index
+            file_path = Path(metadata.file_path)
+            file_meta = extract_metadata_from_file(file_path)
+            size_bytes = file_path.stat().st_size
+            size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
+
+            thumb_path = output_dir / f"{video_id}_thumb.jpg"
+            thumbnail = f"/files/raw/{video_id}_thumb.jpg" if thumb_path.exists() else ""
+
+            video_resp = VideoResponse(
+                video_id=video_id,
+                title=metadata.title,
+                author=metadata.author,
+                duration=metadata.duration or file_meta.get("duration", 0.0),
+                resolution=metadata.resolution or file_meta.get("resolution", ""),
+                size=size_str,
+                codec=file_meta.get("codec", ""),
+                description=metadata.description,
+                hashtags=metadata.hashtags,
+                source_url=metadata.source_url,
+                file_path=str(file_path),
+                thumbnail=thumbnail,
+                has_srt=False,
+                status="downloaded",
+            )
+            self.video_index[video_id] = video_resp
+            task.video_id = video_id
+
+            # Persist metadata
+            meta_path = output_dir / f"{video_id}.json"
+            meta_path.write_text(json.dumps({
+                "title": metadata.title,
+                "author": metadata.author,
+                "duration": metadata.duration,
+                "description": metadata.description,
+                "hashtags": metadata.hashtags,
+                "source_url": metadata.source_url,
+            }, ensure_ascii=False))
+
+            emit("download", 0.30, "Download complete")
+
+            # ── Stage 2: Transcribe (0.30 – 0.70) ──
+            emit("transcribe", 0.30, "Initializing transcriber...")
+
+            loop = asyncio.get_running_loop()
+
+            def transcribe_progress(progress: float, message: str):
+                # Map OCR progress (0-1) to pipeline range (0.30-0.70)
+                pct = 0.30 + progress * 0.40
+                task.progress = pct
+                task.message = message
+                loop.call_soon_threadsafe(
+                    self._emit, task_id, "progress",
+                    {"stage": "transcribe", "progress": pct, "message": message},
+                )
+
+            if transcribe_method == "ocr":
+                ocr_config = config.get("ocr", {})
+                transcriber = get_transcriber(
+                    ocr_config,
+                    method="ocr",
+                    progress_callback=transcribe_progress,
+                )
+            else:
+                transcriber = get_transcriber(config.get("whisper", {}))
+
+            video_path = str(file_path)
+            segments = await asyncio.to_thread(
+                transcriber.transcribe, video_path, source_language, "transcribe"
+            )
+
+            # Generate SRT
+            srt_dir = Path("data/srt")
+            srt_dir.mkdir(parents=True, exist_ok=True)
+            srt_path = srt_dir / f"{video_id}_{source_language}.srt"
+            transcriber.generate_srt(segments, srt_path)
+
+            # Update video index
+            video_resp.has_srt = True
+            if source_language not in video_resp.srt_languages:
+                video_resp.srt_languages.append(source_language)
+                video_resp.srt_languages.sort()
+            video_resp.status = "transcribed"
+            self.video_index[video_id] = video_resp
+
+            emit("transcribe", 0.70, f"Transcription complete ({len(segments)} segments)")
+
+            # ── Stage 3: Translate (0.70 – 1.00) ──
+            if translate_profile:
+                from src.translator import translate_with_profile
+
+                emit("translate", 0.70, "Starting translation...")
+
+                def on_translate_progress(batch_num: int, total_batches: int, message: str):
+                    pct = 0.70 + ((batch_num - 1) / total_batches * 0.28 if total_batches else 0)
+                    task.progress = pct
+                    task.message = message
+                    self._emit(
+                        task_id, "progress",
+                        {"stage": "translate", "progress": pct, "message": message},
+                    )
+
+                await translate_with_profile(
+                    srt_path, translate_profile, config, srt_dir,
+                    progress_callback=on_translate_progress,
+                )
+
+                # Update video index with translated language
+                from src.translator.profiles import load_profile
+
+                profile = load_profile(translate_profile)
+                target_lang = profile.target_language
+                if target_lang not in video_resp.srt_languages:
+                    video_resp.srt_languages.append(target_lang)
+                    video_resp.srt_languages.sort()
+                self.video_index[video_id] = video_resp
+
+                emit("translate", 0.98, "Translation complete")
+
+            # ── Complete ──
+            task.status = "completed"
+            task.progress = 1.0
+            task.message = "Pipeline complete"
+            task.result = {
+                "video_id": video_id,
+                "video": video_resp.model_dump(),
+                "stages_completed": ["download", "transcribe"]
+                + (["translate"] if translate_profile else []),
+            }
+            self._emit(task_id, "complete", task.result)
+
+        except Exception as e:
+            task.status = "failed"
+            task.error = str(e)
+            task.message = f"Pipeline failed: {e}"
+            self._emit(task_id, "error", {"message": str(e)})
+            logger.error(f"Pipeline task {task_id} failed: {e}")
 
     def get_stats(self) -> dict:
         """Compute dashboard statistics."""

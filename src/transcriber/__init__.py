@@ -6,18 +6,40 @@ from src.utils.logger import setup_logger
 logger = setup_logger(__name__)
 
 
-def get_transcriber(config: dict) -> BaseTranscriber:
-    """Factory to create the appropriate transcriber for the current platform.
+def get_transcriber(config: dict, method: str = "audio", **kwargs) -> BaseTranscriber:
+    """Factory to create the appropriate transcriber.
 
-    Auto-selects mlx-whisper on macOS (Apple Silicon) and faster-whisper elsewhere.
-    Config can override with 'backend' key.
+    When method="audio", auto-selects mlx-whisper on macOS and faster-whisper elsewhere.
+    When method="ocr", returns OCRTranscriber for subtitle extraction via PaddleOCR.
 
     Args:
-        config: Whisper config dict (expects 'model_size', optionally 'backend').
+        config: Config dict (whisper or ocr section depending on method).
+        method: "audio" for Whisper transcription, "ocr" for OCR extraction.
+        **kwargs: Extra args forwarded to OCRTranscriber (e.g. ocr_region, progress_callback).
 
     Returns:
         Configured transcriber instance.
     """
+    if method == "ocr":
+        from src.transcriber.ocr import OCRTranscriber
+
+        fps = config.get("fps", 2.0)
+        confidence = config.get("confidence_threshold", 0.7)
+        similarity = config.get("similarity_threshold", 0.85)
+        region_cfg = config.get("subtitle_region", {})
+        crop_bottom_pct = config.get("crop_bottom_pct", 0.0)
+
+        logger.info(f"Using OCR backend (fps={fps}, crop={crop_bottom_pct:.0%})")
+        return OCRTranscriber(
+            fps=fps,
+            confidence_threshold=confidence,
+            similarity_threshold=similarity,
+            subtitle_region_config=region_cfg,
+            crop_bottom_pct=crop_bottom_pct,
+            **kwargs,
+        )
+
+    # Audio (Whisper) backends
     model_size = config.get("model_size", "large-v3")
     backend = config.get("backend")
 

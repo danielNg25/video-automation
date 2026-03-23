@@ -1,6 +1,8 @@
 """Transcription and SRT endpoints."""
 
 import asyncio
+import subprocess
+import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -24,9 +26,57 @@ async def start_transcribe(request: TranscribeRequest):
 
     task = tm.create_task("transcribe")
     asyncio.create_task(
-        tm.run_transcribe(task.task_id, request.video_id, request.language, request.task, config)
+        tm.run_transcribe(
+            task.task_id,
+            request.video_id,
+            request.language,
+            request.task,
+            config,
+            method=request.method,
+            ocr_region=request.ocr_region,
+            ocr_config=request.ocr_config,
+        )
     )
     return TaskResponse(task_id=task.task_id, status=task.status)
+
+
+@router.get("/api/videos/{video_id}/sample-frame")
+async def get_sample_frame(video_id: str, timestamp: float = 1.0):
+    """Extract and return a single JPEG frame at the given timestamp."""
+    tm = get_task_manager()
+    video_info = tm.video_index.get(video_id)
+    if not video_info:
+        raise HTTPException(status_code=404, detail=f"Video {video_id} not found")
+
+    video_path = Path(video_info.file_path)
+    if not video_path.exists():
+        raise HTTPException(status_code=404, detail="Video file not found on disk")
+
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+        tmp_path = tmp.name
+
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-ss", str(timestamp),
+                "-i", str(video_path),
+                "-frames:v", "1",
+                "-q:v", "2",
+                tmp_path,
+            ],
+            capture_output=True,
+            check=True,
+            timeout=15,
+        )
+    except (subprocess.SubprocessError, FileNotFoundError) as e:
+        raise HTTPException(status_code=500, detail=f"Frame extraction failed: {e}")
+
+    return FileResponse(
+        path=tmp_path,
+        media_type="image/jpeg",
+        filename=f"{video_id}_frame.jpg",
+    )
 
 
 @router.get("/api/videos/{video_id}/srt", response_model=SrtResponse)

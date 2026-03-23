@@ -27,6 +27,24 @@ def _walk_and_interpolate(obj):
     return obj
 
 
+def save_config(data: dict, path: str = "config/config.yaml") -> None:
+    """Save config dict to YAML file (without env var interpolation)."""
+    config_path = Path(path)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(config_path, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+
+def load_raw_config(path: str = "config/config.yaml") -> dict:
+    """Load YAML config without env var interpolation (for editing)."""
+    config_path = Path(path)
+    if not config_path.exists():
+        return {}
+    with open(config_path) as f:
+        raw = yaml.safe_load(f)
+    return raw or {}
+
+
 def load_config(path: str = "config/config.yaml") -> dict:
     """Load YAML config with ${ENV_VAR} interpolation.
 

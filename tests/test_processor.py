@@ -396,6 +396,57 @@ class TestFFmpegProcessor:
                 assert "subtitles=" in vf_val
 
 
+# ── TestExtractFrames ────────────────────────────────────────────────
+
+
+class TestExtractFrames:
+    def test_extract_frames_command(self, tmp_path):
+        with patch.object(FFmpegProcessor, "_verify_ffmpeg"):
+            proc = FFmpegProcessor()
+
+        output_dir = tmp_path / "frames"
+
+        with patch.object(FFmpegProcessor, "_run_ffmpeg") as mock_ffmpeg:
+            # Simulate ffmpeg creating frame files
+            def create_frames(cmd):
+                output_dir.mkdir(parents=True, exist_ok=True)
+                for i in range(1, 6):
+                    (output_dir / f"frame_{i:06d}.jpg").touch()
+
+            mock_ffmpeg.side_effect = create_frames
+
+            frames = proc.extract_frames(Path("video.mp4"), output_dir, fps=2.0)
+
+            mock_ffmpeg.assert_called_once()
+            cmd = mock_ffmpeg.call_args[0][0]
+            assert "ffmpeg" == cmd[0]
+            assert "-vf" in cmd
+            vf_idx = cmd.index("-vf")
+            assert "fps=2.0" in cmd[vf_idx + 1]
+
+        assert len(frames) == 5
+        assert all(f.name.startswith("frame_") for f in frames)
+
+    def test_extract_frames_sorted(self, tmp_path):
+        with patch.object(FFmpegProcessor, "_verify_ffmpeg"):
+            proc = FFmpegProcessor()
+
+        output_dir = tmp_path / "frames"
+
+        with patch.object(FFmpegProcessor, "_run_ffmpeg") as mock_ffmpeg:
+            def create_frames(cmd):
+                output_dir.mkdir(parents=True, exist_ok=True)
+                for i in [3, 1, 2]:
+                    (output_dir / f"frame_{i:06d}.jpg").touch()
+
+            mock_ffmpeg.side_effect = create_frames
+
+            frames = proc.extract_frames(Path("video.mp4"), output_dir)
+
+        assert frames[0].name == "frame_000001.jpg"
+        assert frames[-1].name == "frame_000003.jpg"
+
+
 # ── TestProcessForAllPlatforms ───────────────────────────────────────
 
 

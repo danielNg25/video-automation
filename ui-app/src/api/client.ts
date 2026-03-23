@@ -45,12 +45,26 @@ export function postTranscribe(
   videoId: string,
   language: string = 'zh',
   task: string = 'transcribe',
+  transcribeMethod: string = 'audio',
+  ocrRegion?: { x: number; y: number; w: number; h: number },
+  ocrConfig?: Record<string, unknown>,
 ): Promise<TaskResponse> {
   return request('/transcribe', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ video_id: videoId, language, task }),
+    body: JSON.stringify({
+      video_id: videoId,
+      language,
+      task,
+      method: transcribeMethod,
+      ocr_region: ocrRegion ?? null,
+      ocr_config: ocrConfig ?? null,
+    }),
   });
+}
+
+export function getSampleFrameUrl(videoId: string, timestamp: number = 1.0): string {
+  return `${BASE}/videos/${videoId}/sample-frame?timestamp=${timestamp}`;
 }
 
 export function getSrt(videoId: string, language: string = 'zh'): Promise<SrtResponse> {
@@ -186,6 +200,40 @@ export function postTranslate(
       source_language: sourceLang,
       ...overrides,
     }),
+  });
+}
+
+// --- Pipeline ---
+
+export function postPipeline(
+  url: string,
+  transcribeMethod: string = 'ocr',
+  translateProfile?: string,
+  sourceLanguage: string = 'zh',
+): Promise<TaskResponse> {
+  return request('/pipeline', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      url,
+      transcribe_method: transcribeMethod,
+      translate_profile: translateProfile ?? null,
+      source_language: sourceLanguage,
+    }),
+  });
+}
+
+// --- Config ---
+
+export function getConfig(): Promise<Record<string, unknown>> {
+  return request('/settings/config');
+}
+
+export function putConfig(config: Record<string, unknown>): Promise<{ status: string; message: string }> {
+  return request('/settings/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
   });
 }
 
