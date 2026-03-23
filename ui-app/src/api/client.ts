@@ -45,7 +45,7 @@ export function postTranscribe(
   videoId: string,
   language: string = 'zh',
   task: string = 'transcribe',
-  method: string = 'audio',
+  transcribeMethod: string = 'audio',
   ocrRegion?: { x: number; y: number; w: number; h: number },
 ): Promise<TaskResponse> {
   return request('/transcribe', {
@@ -55,7 +55,7 @@ export function postTranscribe(
       video_id: videoId,
       language,
       task,
-      method: method,
+      method: transcribeMethod,
       ocr_region: ocrRegion ?? null,
     }),
   });
