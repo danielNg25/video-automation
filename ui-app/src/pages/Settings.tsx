@@ -28,6 +28,14 @@ function SettingsPage() {
 
   useEffect(() => {
     getCookieStatus().then(setCookie).catch(() => {});
+    // Scroll to section if navigated with hash (e.g., /settings#apikeys)
+    const hash = window.location.hash.replace('#', '');
+    if (hash) {
+      setTimeout(() => {
+        setActiveSection(hash);
+        document.getElementById(hash)?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    }
   }, []);
 
   const scrollToSection = (id: string) => {

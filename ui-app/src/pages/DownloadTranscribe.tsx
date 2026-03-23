@@ -563,7 +563,7 @@ function DownloadTranscribePage() {
                     </button>
                   </div>
 
-                  {/* Model & API Key */}
+                  {/* Backend & Model */}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">Backend</label>
@@ -603,17 +603,22 @@ function DownloadTranscribePage() {
                         ))}
                       </select>
                     </div>
-                    <div>
-                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">API Key</label>
-                      <input
-                        type="password"
-                        value={llmApiKey}
-                        onChange={(e) => setLlmApiKey(e.target.value)}
-                        className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary"
-                        placeholder="Uses env var if empty"
-                      />
-                    </div>
                   </div>
+
+                  {/* API Key Warning */}
+                  {!llmApiKey && (
+                    <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs p-3 rounded-lg flex items-center gap-2">
+                      <span className="material-symbols-outlined text-sm">warning</span>
+                      <span>No API key configured for <strong>{llmBackend}</strong>.</span>
+                      <button
+                        onClick={() => navigate('/settings#apikeys')}
+                        className="ml-auto text-[10px] font-bold uppercase tracking-wider text-amber-300 hover:text-amber-200 flex items-center gap-1 whitespace-nowrap"
+                      >
+                        <span className="material-symbols-outlined text-xs">settings</span>
+                        Configure
+                      </button>
+                    </div>
+                  )}
 
                   {/* Profile Description */}
                   {selectedProfile && profiles.find((p) => p.name === selectedProfile) && (
