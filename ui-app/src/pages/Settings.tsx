@@ -32,6 +32,7 @@ function SettingsPage() {
   const [ocrSimilarity, setOcrSimilarity] = useState(() => Number(localStorage.getItem('douyin_pipeline_ocr_similarity')) || 0.85);
   const [ocrMinY, setOcrMinY] = useState(() => Number(localStorage.getItem('douyin_pipeline_ocr_min_y')) || 0.65);
   const [ocrWatermarkFreq, setOcrWatermarkFreq] = useState(() => Number(localStorage.getItem('douyin_pipeline_ocr_watermark_freq')) || 0.80);
+  const [ocrCropBottom, setOcrCropBottom] = useState(() => Number(localStorage.getItem('douyin_pipeline_ocr_crop_bottom')) || 0);
   const [ocrSaveMsg, setOcrSaveMsg] = useState('');
 
   useEffect(() => {
@@ -346,6 +347,23 @@ function SettingsPage() {
                   <p className="text-[10px] text-zinc-600">Higher FPS = more frames to OCR = slower but catches fast subtitles</p>
                 </div>
                 <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Pre-crop Bottom %</label>
+                  <select
+                    className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono"
+                    value={ocrCropBottom}
+                    onChange={(e) => setOcrCropBottom(Number(e.target.value))}
+                  >
+                    <option value="0">Off (full frame)</option>
+                    <option value="0.20">20% (bottom fifth)</option>
+                    <option value="0.25">25% (recommended)</option>
+                    <option value="0.30">30%</option>
+                    <option value="0.35">35%</option>
+                    <option value="0.40">40%</option>
+                    <option value="0.50">50% (bottom half)</option>
+                  </select>
+                  <p className="text-[10px] text-zinc-600">Crop frame to bottom N% before OCR. Speeds up 3-5x by reducing scan area</p>
+                </div>
+                <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Confidence Threshold</label>
                   <select
                     className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono"
@@ -411,6 +429,7 @@ function SettingsPage() {
                 <button
                   onClick={() => {
                     localStorage.setItem('douyin_pipeline_ocr_fps', String(ocrFps));
+                    localStorage.setItem('douyin_pipeline_ocr_crop_bottom', String(ocrCropBottom));
                     localStorage.setItem('douyin_pipeline_ocr_confidence', String(ocrConfidence));
                     localStorage.setItem('douyin_pipeline_ocr_similarity', String(ocrSimilarity));
                     localStorage.setItem('douyin_pipeline_ocr_min_y', String(ocrMinY));
@@ -424,9 +443,10 @@ function SettingsPage() {
                 </button>
                 <button
                   onClick={() => {
-                    setOcrFps(2.0); setOcrConfidence(0.7); setOcrSimilarity(0.85);
+                    setOcrFps(2.0); setOcrCropBottom(0); setOcrConfidence(0.7); setOcrSimilarity(0.85);
                     setOcrMinY(0.65); setOcrWatermarkFreq(0.80);
                     localStorage.removeItem('douyin_pipeline_ocr_fps');
+                    localStorage.removeItem('douyin_pipeline_ocr_crop_bottom');
                     localStorage.removeItem('douyin_pipeline_ocr_confidence');
                     localStorage.removeItem('douyin_pipeline_ocr_similarity');
                     localStorage.removeItem('douyin_pipeline_ocr_min_y');

@@ -62,6 +62,7 @@ translation:
 # OCR Subtitle Extraction
 ocr:
     fps: 2.0                          # Frames per second to extract
+    crop_bottom_pct: 0.25             # Pre-crop to bottom 25% of frame (0 = disabled)
     confidence_threshold: 0.7         # Minimum PaddleOCR confidence
     similarity_threshold: 0.85        # SequenceMatcher ratio for dedup
     subtitle_region:

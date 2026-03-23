@@ -149,6 +149,7 @@ class FFmpegProcessor:
         video_path: Path,
         output_dir: Path,
         fps: float = 2.0,
+        crop_bottom_pct: float = 0.0,
     ) -> list[Path]:
         """Extract video frames as JPEG images at the given FPS.
 
@@ -156,6 +157,9 @@ class FFmpegProcessor:
             video_path: Source video file.
             output_dir: Directory to write frame images.
             fps: Frames per second to extract (default 2.0).
+            crop_bottom_pct: If >0, crop to only the bottom N% of the frame.
+                E.g., 0.25 extracts only the bottom 25%. Speeds up OCR by
+                reducing the area PaddleOCR needs to scan.
 
         Returns:
             Sorted list of extracted frame file paths.
@@ -163,15 +167,24 @@ class FFmpegProcessor:
         output_dir.mkdir(parents=True, exist_ok=True)
         pattern = str(output_dir / "frame_%06d.jpg")
 
+        if crop_bottom_pct > 0:
+            # crop=w:h:x:y — keep bottom N% of the frame
+            # in_w, in_h are ffmpeg expressions for input width/height
+            crop_h = f"ih*{crop_bottom_pct}"
+            vf = f"fps={fps},crop=iw:{crop_h}:0:ih-{crop_h}"
+        else:
+            vf = f"fps={fps}"
+
         cmd = [
             "ffmpeg", "-y",
             "-i", str(video_path),
-            "-vf", f"fps={fps}",
+            "-vf", vf,
             "-q:v", "2",
             pattern,
         ]
 
-        logger.info(f"Extracting frames at {fps} FPS: {video_path.name}")
+        crop_info = f", crop bottom {crop_bottom_pct:.0%}" if crop_bottom_pct > 0 else ""
+        logger.info(f"Extracting frames at {fps} FPS{crop_info}: {video_path.name}")
         self._run_ffmpeg(cmd)
 
         frames = sorted(output_dir.glob("frame_*.jpg"))

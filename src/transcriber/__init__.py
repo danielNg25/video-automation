@@ -27,13 +27,15 @@ def get_transcriber(config: dict, method: str = "audio", **kwargs) -> BaseTransc
         confidence = config.get("confidence_threshold", 0.7)
         similarity = config.get("similarity_threshold", 0.85)
         region_cfg = config.get("subtitle_region", {})
+        crop_bottom_pct = config.get("crop_bottom_pct", 0.0)
 
-        logger.info(f"Using OCR backend (fps={fps})")
+        logger.info(f"Using OCR backend (fps={fps}, crop={crop_bottom_pct:.0%})")
         return OCRTranscriber(
             fps=fps,
             confidence_threshold=confidence,
             similarity_threshold=similarity,
             subtitle_region_config=region_cfg,
+            crop_bottom_pct=crop_bottom_pct,
             **kwargs,
         )
 

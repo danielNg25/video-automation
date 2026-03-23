@@ -29,12 +29,14 @@ class OCRTranscriber(BaseTranscriber):
         subtitle_region_config: dict | None = None,
         ocr_region: dict | None = None,
         progress_callback=None,
+        crop_bottom_pct: float = 0.0,
     ):
         self.fps = fps
         self.confidence_threshold = confidence_threshold
         self.similarity_threshold = similarity_threshold
         self.ocr_region = ocr_region
         self.progress_callback = progress_callback
+        self.crop_bottom_pct = crop_bottom_pct
 
         region_cfg = subtitle_region_config or {}
         self.min_y = region_cfg.get("min_y", 0.65)
@@ -79,10 +81,26 @@ class OCRTranscriber(BaseTranscriber):
         frame_height = info["height"]
         frame_width = info["width"]
 
-        # Extract frames
-        self._emit_progress(0.05, "Extracting frames...")
+        # Pre-crop: extract only bottom N% of frame if configured
+        crop_pct = self.crop_bottom_pct
+        if crop_pct > 0:
+            self._emit_progress(0.05, f"Extracting frames (crop bottom {crop_pct:.0%})...")
+            # When cropped, the frame dimensions change for filtering
+            cropped_height = int(frame_height * crop_pct)
+            cropped_width = frame_width
+            logger.info(
+                f"Pre-cropping to bottom {crop_pct:.0%}: "
+                f"{frame_width}x{cropped_height} (from {frame_width}x{frame_height})"
+            )
+        else:
+            self._emit_progress(0.05, "Extracting frames...")
+            cropped_height = frame_height
+            cropped_width = frame_width
+
         with tempfile.TemporaryDirectory() as tmpdir:
-            frames = proc.extract_frames(video_path, Path(tmpdir), fps=self.fps)
+            frames = proc.extract_frames(
+                video_path, Path(tmpdir), fps=self.fps, crop_bottom_pct=crop_pct
+            )
 
             if not frames:
                 logger.warning("No frames extracted from video")
@@ -115,7 +133,7 @@ class OCRTranscriber(BaseTranscriber):
 
             # Build watermark position index from samples
             watermark_positions = self._build_watermark_positions(
-                all_sample_detections, len(sample_indices), frame_height
+                all_sample_detections, len(sample_indices), cropped_height
             )
 
             # Pass 2: OCR all frames, skip watermark positions
@@ -131,8 +149,12 @@ class OCRTranscriber(BaseTranscriber):
                 detections = self._parse_ocr_result(result)
 
                 # Filter: keep only subtitle-classified text
+                # When pre-cropped, the entire frame IS the subtitle region,
+                # so use min_y=0 to accept text at any vertical position
+                effective_min_y = 0.0 if crop_pct > 0 else self.min_y
                 subtitle_text = self._filter_subtitle_text(
-                    detections, watermark_positions, frame_height, frame_width
+                    detections, watermark_positions, cropped_height, cropped_width,
+                    min_y_override=effective_min_y,
                 )
                 frame_texts.append(subtitle_text)
 
@@ -303,12 +325,14 @@ class OCRTranscriber(BaseTranscriber):
         watermark_positions: set[int],
         frame_height: int,
         frame_width: int,
+        min_y_override: float | None = None,
     ) -> str:
         """Filter detections to keep only subtitle text.
 
         Applies position, size, centering, and watermark filters.
         """
         bucket_size = max(1, int(frame_height * 0.05))
+        min_y = min_y_override if min_y_override is not None else self.min_y
         texts = []
 
         for bbox, text, conf in detections:
@@ -320,7 +344,7 @@ class OCRTranscriber(BaseTranscriber):
             text_height = abs(bbox[2][1] - bbox[0][1])
 
             # Position: bottom portion of frame
-            if center_y < self.min_y * frame_height:
+            if center_y < min_y * frame_height:
                 continue
 
             # Size: minimum readable text
