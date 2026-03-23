@@ -27,12 +27,12 @@ function SettingsPage() {
   const [apiKeySaveMsg, setApiKeySaveMsg] = useState('');
 
   // OCR settings state (stored in localStorage)
-  const [ocrFps, setOcrFps] = useState(() => Number(localStorage.getItem('douyin_pipeline_ocr_fps')) || 2.0);
-  const [ocrConfidence, setOcrConfidence] = useState(() => Number(localStorage.getItem('douyin_pipeline_ocr_confidence')) || 0.7);
-  const [ocrSimilarity, setOcrSimilarity] = useState(() => Number(localStorage.getItem('douyin_pipeline_ocr_similarity')) || 0.85);
-  const [ocrMinY, setOcrMinY] = useState(() => Number(localStorage.getItem('douyin_pipeline_ocr_min_y')) || 0.65);
-  const [ocrWatermarkFreq, setOcrWatermarkFreq] = useState(() => Number(localStorage.getItem('douyin_pipeline_ocr_watermark_freq')) || 0.80);
-  const [ocrCropBottom, setOcrCropBottom] = useState(() => Number(localStorage.getItem('douyin_pipeline_ocr_crop_bottom')) || 0);
+  const [ocrFps, setOcrFps] = useState(() => localStorage.getItem('douyin_pipeline_ocr_fps') || '2.0');
+  const [ocrConfidence, setOcrConfidence] = useState(() => localStorage.getItem('douyin_pipeline_ocr_confidence') || '0.7');
+  const [ocrSimilarity, setOcrSimilarity] = useState(() => localStorage.getItem('douyin_pipeline_ocr_similarity') || '0.85');
+  const [ocrMinY, setOcrMinY] = useState(() => localStorage.getItem('douyin_pipeline_ocr_min_y') || '0.65');
+  const [ocrWatermarkFreq, setOcrWatermarkFreq] = useState(() => localStorage.getItem('douyin_pipeline_ocr_watermark_freq') || '0.80');
+  const [ocrCropBottom, setOcrCropBottom] = useState(() => localStorage.getItem('douyin_pipeline_ocr_crop_bottom') || '0');
   const [ocrSaveMsg, setOcrSaveMsg] = useState('');
 
   useEffect(() => {
@@ -337,7 +337,7 @@ function SettingsPage() {
                   <select
                     className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono"
                     value={ocrFps}
-                    onChange={(e) => setOcrFps(Number(e.target.value))}
+                    onChange={(e) => setOcrFps(e.target.value)}
                   >
                     <option value="1.0">1.0 (faster)</option>
                     <option value="2.0">2.0 (default)</option>
@@ -351,7 +351,7 @@ function SettingsPage() {
                   <select
                     className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono"
                     value={ocrCropBottom}
-                    onChange={(e) => setOcrCropBottom(Number(e.target.value))}
+                    onChange={(e) => setOcrCropBottom(e.target.value)}
                   >
                     <option value="0">Off (full frame)</option>
                     <option value="0.20">20% (bottom fifth)</option>
@@ -368,7 +368,7 @@ function SettingsPage() {
                   <select
                     className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono"
                     value={ocrConfidence}
-                    onChange={(e) => setOcrConfidence(Number(e.target.value))}
+                    onChange={(e) => setOcrConfidence(e.target.value)}
                   >
                     <option value="0.5">0.5 (loose)</option>
                     <option value="0.6">0.6</option>
@@ -383,7 +383,7 @@ function SettingsPage() {
                   <select
                     className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono"
                     value={ocrSimilarity}
-                    onChange={(e) => setOcrSimilarity(Number(e.target.value))}
+                    onChange={(e) => setOcrSimilarity(e.target.value)}
                   >
                     <option value="0.7">0.7 (loose merge)</option>
                     <option value="0.8">0.8</option>
@@ -398,7 +398,7 @@ function SettingsPage() {
                   <select
                     className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono"
                     value={ocrMinY}
-                    onChange={(e) => setOcrMinY(Number(e.target.value))}
+                    onChange={(e) => setOcrMinY(e.target.value)}
                   >
                     <option value="0.50">50% (wider — top-half subtitles)</option>
                     <option value="0.55">55%</option>
@@ -414,7 +414,7 @@ function SettingsPage() {
                   <select
                     className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono"
                     value={ocrWatermarkFreq}
-                    onChange={(e) => setOcrWatermarkFreq(Number(e.target.value))}
+                    onChange={(e) => setOcrWatermarkFreq(e.target.value)}
                   >
                     <option value="0.70">70%</option>
                     <option value="0.75">75%</option>
@@ -428,12 +428,12 @@ function SettingsPage() {
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => {
-                    localStorage.setItem('douyin_pipeline_ocr_fps', String(ocrFps));
-                    localStorage.setItem('douyin_pipeline_ocr_crop_bottom', String(ocrCropBottom));
-                    localStorage.setItem('douyin_pipeline_ocr_confidence', String(ocrConfidence));
-                    localStorage.setItem('douyin_pipeline_ocr_similarity', String(ocrSimilarity));
-                    localStorage.setItem('douyin_pipeline_ocr_min_y', String(ocrMinY));
-                    localStorage.setItem('douyin_pipeline_ocr_watermark_freq', String(ocrWatermarkFreq));
+                    localStorage.setItem('douyin_pipeline_ocr_fps', ocrFps);
+                    localStorage.setItem('douyin_pipeline_ocr_crop_bottom', ocrCropBottom);
+                    localStorage.setItem('douyin_pipeline_ocr_confidence', ocrConfidence);
+                    localStorage.setItem('douyin_pipeline_ocr_similarity', ocrSimilarity);
+                    localStorage.setItem('douyin_pipeline_ocr_min_y', ocrMinY);
+                    localStorage.setItem('douyin_pipeline_ocr_watermark_freq', ocrWatermarkFreq);
                     setOcrSaveMsg('OCR settings saved');
                     setTimeout(() => setOcrSaveMsg(''), 3000);
                   }}
@@ -443,8 +443,8 @@ function SettingsPage() {
                 </button>
                 <button
                   onClick={() => {
-                    setOcrFps(2.0); setOcrCropBottom(0); setOcrConfidence(0.7); setOcrSimilarity(0.85);
-                    setOcrMinY(0.65); setOcrWatermarkFreq(0.80);
+                    setOcrFps('2.0'); setOcrCropBottom('0'); setOcrConfidence('0.7'); setOcrSimilarity('0.85');
+                    setOcrMinY('0.65'); setOcrWatermarkFreq('0.80');
                     localStorage.removeItem('douyin_pipeline_ocr_fps');
                     localStorage.removeItem('douyin_pipeline_ocr_crop_bottom');
                     localStorage.removeItem('douyin_pipeline_ocr_confidence');
