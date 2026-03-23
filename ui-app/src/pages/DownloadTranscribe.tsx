@@ -540,23 +540,24 @@ function DownloadTranscribePage() {
                         <span>{isTranscribing ? (transcribeMethod === 'ocr' ? 'Extracting...' : 'Transcribing...') : videoMeta.has_srt ? 'Re-Transcribe' : 'Transcribe'}</span>
                         <span className="material-symbols-outlined text-sm">{transcribeMethod === 'ocr' ? 'document_scanner' : 'neurology'}</span>
                       </button>
-                    {videoMeta.has_srt && (
-                      <button
-                        onClick={() => navigate(`/editor/${videoMeta.video_id}?lang=${previewLanguage || videoMeta.srt_languages[0] || 'zh'}`)}
-                        className="bg-surface-container-highest text-on-surface px-4 py-2 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap active:scale-95 transition-all hover:bg-surface-container-high"
+                      {videoMeta.has_srt && (
+                        <button
+                          onClick={() => navigate(`/editor/${videoMeta.video_id}?lang=${previewLanguage || videoMeta.srt_languages[0] || 'zh'}`)}
+                          className="bg-surface-container-highest text-on-surface px-4 py-2 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap active:scale-95 transition-all hover:bg-surface-container-high"
+                        >
+                          <span>Edit Subtitles</span>
+                          <span className="material-symbols-outlined text-sm">edit_note</span>
+                        </button>
+                      )}
+                      <a
+                        href={getRawVideoUrl(videoMeta.video_id)}
+                        download
+                        className="bg-surface-container-highest text-on-surface px-3 py-2 rounded-md font-bold text-xs flex items-center gap-1.5 whitespace-nowrap active:scale-95 transition-all hover:bg-surface-container-high"
+                        title="Download MP4"
                       >
-                        <span>Edit Subtitles</span>
-                        <span className="material-symbols-outlined text-sm">edit_note</span>
-                      </button>
-                    )}
-                    <a
-                      href={getRawVideoUrl(videoMeta.video_id)}
-                      download
-                      className="bg-surface-container-highest text-on-surface px-3 py-2 rounded-md font-bold text-xs flex items-center gap-1.5 whitespace-nowrap active:scale-95 transition-all hover:bg-surface-container-high"
-                      title="Download MP4"
-                    >
-                      <span className="material-symbols-outlined text-sm">save_alt</span>
-                    </a>
+                        <span className="material-symbols-outlined text-sm">save_alt</span>
+                      </a>
+                    </div>
                   </div>
                 </div>
               </div>
