@@ -47,6 +47,7 @@ export function postTranscribe(
   task: string = 'transcribe',
   transcribeMethod: string = 'audio',
   ocrRegion?: { x: number; y: number; w: number; h: number },
+  ocrConfig?: Record<string, unknown>,
 ): Promise<TaskResponse> {
   return request('/transcribe', {
     method: 'POST',
@@ -57,6 +58,7 @@ export function postTranscribe(
       task,
       method: transcribeMethod,
       ocr_region: ocrRegion ?? null,
+      ocr_config: ocrConfig ?? null,
     }),
   });
 }

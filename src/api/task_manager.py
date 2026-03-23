@@ -279,6 +279,7 @@ class TaskManager:
         config: dict,
         method: str = "audio",
         ocr_region: dict | None = None,
+        ocr_config: dict | None = None,
     ):
         """Execute a transcription task in the background."""
         from src.transcriber import get_transcriber
@@ -310,9 +311,17 @@ class TaskManager:
                 )
 
             if is_ocr:
-                ocr_config = config.get("ocr", {})
+                ocr_cfg = config.get("ocr", {})
+                # Merge UI overrides into server config
+                if ocr_config:
+                    ocr_cfg = {**ocr_cfg, **ocr_config}
+                    if "subtitle_region" in ocr_cfg and "subtitle_region" in ocr_config:
+                        ocr_cfg["subtitle_region"] = {
+                            **ocr_cfg.get("subtitle_region", {}),
+                            **ocr_config["subtitle_region"],
+                        }
                 transcriber = get_transcriber(
-                    ocr_config,
+                    ocr_cfg,
                     method="ocr",
                     ocr_region=ocr_region,
                     progress_callback=ocr_progress,

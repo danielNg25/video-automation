@@ -34,6 +34,7 @@ async def start_transcribe(request: TranscribeRequest):
             config,
             method=request.method,
             ocr_region=request.ocr_region,
+            ocr_config=request.ocr_config,
         )
     )
     return TaskResponse(task_id=task.task_id, status=task.status)

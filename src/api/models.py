@@ -17,6 +17,7 @@ class TranscribeRequest(BaseModel):
     task: str = "transcribe"
     method: str = "audio"  # "audio" (Whisper) or "ocr" (PaddleOCR)
     ocr_region: dict | None = None  # Optional manual override: {"x", "y", "w", "h"}
+    ocr_config: dict | None = None  # Optional OCR settings override from UI
 
 
 class UpdateVideoRequest(BaseModel):

@@ -161,7 +161,27 @@ function DownloadTranscribePage() {
     const lang = transcribeMethod === 'ocr' ? 'zh' : (selectedLanguage === 'en' ? 'zh' : selectedLanguage);
 
     try {
-      const { task_id } = await postTranscribe(videoMeta.video_id, lang, task, transcribeMethod);
+      // Read OCR settings from localStorage (configured in Settings page)
+      let ocrConfig: Record<string, unknown> | undefined;
+      if (transcribeMethod === 'ocr') {
+        const fps = localStorage.getItem('douyin_pipeline_ocr_fps');
+        const confidence = localStorage.getItem('douyin_pipeline_ocr_confidence');
+        const similarity = localStorage.getItem('douyin_pipeline_ocr_similarity');
+        const minY = localStorage.getItem('douyin_pipeline_ocr_min_y');
+        const watermarkFreq = localStorage.getItem('douyin_pipeline_ocr_watermark_freq');
+        if (fps || confidence || similarity || minY || watermarkFreq) {
+          ocrConfig = {};
+          if (fps) ocrConfig.fps = Number(fps);
+          if (confidence) ocrConfig.confidence_threshold = Number(confidence);
+          if (similarity) ocrConfig.similarity_threshold = Number(similarity);
+          if (minY || watermarkFreq) {
+            ocrConfig.subtitle_region = {};
+            if (minY) (ocrConfig.subtitle_region as Record<string, number>).min_y = Number(minY);
+            if (watermarkFreq) (ocrConfig.subtitle_region as Record<string, number>).max_watermark_frequency = Number(watermarkFreq);
+          }
+        }
+      }
+      const { task_id } = await postTranscribe(videoMeta.video_id, lang, task, transcribeMethod, undefined, ocrConfig);
       const es = subscribeSSE(task_id, (eventType, data) => {
         if (eventType === 'progress') {
           setTranscribeMessage(data.message as string);

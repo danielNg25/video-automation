@@ -26,6 +26,14 @@ function SettingsPage() {
   const [apiKeys, setApiKeys] = useState(loadApiKeys);
   const [apiKeySaveMsg, setApiKeySaveMsg] = useState('');
 
+  // OCR settings state (stored in localStorage)
+  const [ocrFps, setOcrFps] = useState(() => Number(localStorage.getItem('douyin_pipeline_ocr_fps')) || 2.0);
+  const [ocrConfidence, setOcrConfidence] = useState(() => Number(localStorage.getItem('douyin_pipeline_ocr_confidence')) || 0.7);
+  const [ocrSimilarity, setOcrSimilarity] = useState(() => Number(localStorage.getItem('douyin_pipeline_ocr_similarity')) || 0.85);
+  const [ocrMinY, setOcrMinY] = useState(() => Number(localStorage.getItem('douyin_pipeline_ocr_min_y')) || 0.65);
+  const [ocrWatermarkFreq, setOcrWatermarkFreq] = useState(() => Number(localStorage.getItem('douyin_pipeline_ocr_watermark_freq')) || 0.80);
+  const [ocrSaveMsg, setOcrSaveMsg] = useState('');
+
   useEffect(() => {
     getCookieStatus().then(setCookie).catch(() => {});
     // Scroll to section if navigated with hash (e.g., /settings#apikeys)
@@ -47,6 +55,7 @@ function SettingsPage() {
     { id: 'douyin', icon: 'api', label: 'Douyin API' },
     { id: 'apikeys', icon: 'key', label: 'API Keys' },
     { id: 'transcription', icon: 'description', label: 'Transcription' },
+    { id: 'ocr', icon: 'document_scanner', label: 'OCR Subtitles' },
     { id: 'video', icon: 'movie_filter', label: 'Video Processing' },
     { id: 'platforms', icon: 'hub', label: 'Platforms' },
     { id: 'pipeline', icon: 'account_tree', label: 'Pipeline' },
@@ -312,6 +321,129 @@ function SettingsPage() {
                   <span className="text-xs font-bold uppercase tracking-widest text-zinc-400">Models</span>
                   <span className="text-[10px] font-mono bg-emerald-900/30 text-emerald-400 px-2 py-0.5 rounded">DOWNLOADED</span>
                 </div>
+              </div>
+            </section>
+
+            {/* OCR Subtitle Extraction */}
+            <section className="space-y-6" id="ocr">
+              <div className="border-b border-zinc-800/30 pb-4">
+                <h2 className="text-xl font-semibold text-on-surface">OCR Subtitle Extraction</h2>
+                <p className="text-xs text-on-surface-variant font-mono mt-1 opacity-70">PaddleOCR settings for extracting burned-in subtitles from video frames.</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Frames Per Second</label>
+                  <select
+                    className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono"
+                    value={ocrFps}
+                    onChange={(e) => setOcrFps(Number(e.target.value))}
+                  >
+                    <option value="1.0">1.0 (faster)</option>
+                    <option value="2.0">2.0 (default)</option>
+                    <option value="3.0">3.0 (more accurate)</option>
+                    <option value="5.0">5.0 (high detail)</option>
+                  </select>
+                  <p className="text-[10px] text-zinc-600">Higher FPS = more frames to OCR = slower but catches fast subtitles</p>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Confidence Threshold</label>
+                  <select
+                    className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono"
+                    value={ocrConfidence}
+                    onChange={(e) => setOcrConfidence(Number(e.target.value))}
+                  >
+                    <option value="0.5">0.5 (loose)</option>
+                    <option value="0.6">0.6</option>
+                    <option value="0.7">0.7 (default)</option>
+                    <option value="0.8">0.8</option>
+                    <option value="0.9">0.9 (strict)</option>
+                  </select>
+                  <p className="text-[10px] text-zinc-600">Min OCR confidence to accept a detection. Lower = more text but more noise</p>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Similarity Threshold</label>
+                  <select
+                    className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono"
+                    value={ocrSimilarity}
+                    onChange={(e) => setOcrSimilarity(Number(e.target.value))}
+                  >
+                    <option value="0.7">0.7 (loose merge)</option>
+                    <option value="0.8">0.8</option>
+                    <option value="0.85">0.85 (default)</option>
+                    <option value="0.9">0.9</option>
+                    <option value="0.95">0.95 (strict)</option>
+                  </select>
+                  <p className="text-[10px] text-zinc-600">How similar consecutive frames must be to merge into one subtitle segment</p>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Subtitle Region (min Y%)</label>
+                  <select
+                    className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono"
+                    value={ocrMinY}
+                    onChange={(e) => setOcrMinY(Number(e.target.value))}
+                  >
+                    <option value="0.50">50% (wider — top-half subtitles)</option>
+                    <option value="0.55">55%</option>
+                    <option value="0.60">60%</option>
+                    <option value="0.65">65% (default)</option>
+                    <option value="0.70">70%</option>
+                    <option value="0.75">75% (bottom only)</option>
+                  </select>
+                  <p className="text-[10px] text-zinc-600">Only text below this % of frame height is considered a subtitle</p>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Watermark Frequency</label>
+                  <select
+                    className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono"
+                    value={ocrWatermarkFreq}
+                    onChange={(e) => setOcrWatermarkFreq(Number(e.target.value))}
+                  >
+                    <option value="0.70">70%</option>
+                    <option value="0.75">75%</option>
+                    <option value="0.80">80% (default)</option>
+                    <option value="0.85">85%</option>
+                    <option value="0.90">90% (less filtering)</option>
+                  </select>
+                  <p className="text-[10px] text-zinc-600">Text at same position in more than this % of frames is classified as watermark</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    localStorage.setItem('douyin_pipeline_ocr_fps', String(ocrFps));
+                    localStorage.setItem('douyin_pipeline_ocr_confidence', String(ocrConfidence));
+                    localStorage.setItem('douyin_pipeline_ocr_similarity', String(ocrSimilarity));
+                    localStorage.setItem('douyin_pipeline_ocr_min_y', String(ocrMinY));
+                    localStorage.setItem('douyin_pipeline_ocr_watermark_freq', String(ocrWatermarkFreq));
+                    setOcrSaveMsg('OCR settings saved');
+                    setTimeout(() => setOcrSaveMsg(''), 3000);
+                  }}
+                  className="px-4 py-2 bg-primary text-on-primary-fixed text-xs font-bold uppercase tracking-widest rounded"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={() => {
+                    setOcrFps(2.0); setOcrConfidence(0.7); setOcrSimilarity(0.85);
+                    setOcrMinY(0.65); setOcrWatermarkFreq(0.80);
+                    localStorage.removeItem('douyin_pipeline_ocr_fps');
+                    localStorage.removeItem('douyin_pipeline_ocr_confidence');
+                    localStorage.removeItem('douyin_pipeline_ocr_similarity');
+                    localStorage.removeItem('douyin_pipeline_ocr_min_y');
+                    localStorage.removeItem('douyin_pipeline_ocr_watermark_freq');
+                    setOcrSaveMsg('Reset to defaults');
+                    setTimeout(() => setOcrSaveMsg(''), 3000);
+                  }}
+                  className="px-4 py-2 bg-surface-container-high text-xs font-bold uppercase tracking-widest rounded hover:bg-surface-container-highest transition-colors"
+                >
+                  Reset Defaults
+                </button>
+                {ocrSaveMsg && (
+                  <span className="text-xs font-mono text-emerald-400 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-sm">check_circle</span>
+                    {ocrSaveMsg}
+                  </span>
+                )}
               </div>
             </section>
 
