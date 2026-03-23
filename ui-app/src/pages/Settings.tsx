@@ -4,6 +4,8 @@ import {
   getCookieStatus,
   putCookie,
   testCookie,
+  getConfig,
+  putConfig,
 } from '../api/client';
 import type { CookieStatus, CookieTestResult } from '../api/client';
 import { loadApiKeys, saveApiKey } from '../utils/storage';
@@ -11,8 +13,6 @@ import { loadApiKeys, saveApiKey } from '../utils/storage';
 function SettingsPage() {
   const [activeSection, setActiveSection] = useState('douyin');
   const [vadFilter, setVadFilter] = useState(true);
-  const [crfValue, setCrfValue] = useState(23);
-  const [skipExisting, setSkipExisting] = useState(true);
 
   // Cookie management state
   const [cookie, setCookie] = useState<CookieStatus | null>(null);
@@ -26,17 +26,46 @@ function SettingsPage() {
   const [apiKeys, setApiKeys] = useState(loadApiKeys);
   const [apiKeySaveMsg, setApiKeySaveMsg] = useState('');
 
-  // OCR settings state (stored in localStorage)
-  const [ocrFps, setOcrFps] = useState(() => localStorage.getItem('douyin_pipeline_ocr_fps') || '2.0');
-  const [ocrConfidence, setOcrConfidence] = useState(() => localStorage.getItem('douyin_pipeline_ocr_confidence') || '0.7');
-  const [ocrSimilarity, setOcrSimilarity] = useState(() => localStorage.getItem('douyin_pipeline_ocr_similarity') || '0.85');
-  const [ocrMinY, setOcrMinY] = useState(() => localStorage.getItem('douyin_pipeline_ocr_min_y') || '0.65');
-  const [ocrWatermarkFreq, setOcrWatermarkFreq] = useState(() => localStorage.getItem('douyin_pipeline_ocr_watermark_freq') || '0.80');
-  const [ocrCropBottom, setOcrCropBottom] = useState(() => localStorage.getItem('douyin_pipeline_ocr_crop_bottom') || '0');
-  const [ocrSaveMsg, setOcrSaveMsg] = useState('');
+  // Server config state
+  const [whisperModelSize, setWhisperModelSize] = useState('large-v3');
+  const [whisperDevice, setWhisperDevice] = useState('auto');
+  const [whisperComputeType, setWhisperComputeType] = useState('float16');
+  const [whisperLanguage, setWhisperLanguage] = useState('');
+  const [ocrFps, setOcrFps] = useState('2.0');
+  const [ocrConfidence, setOcrConfidence] = useState('0.7');
+  const [ocrSimilarity, setOcrSimilarity] = useState('0.85');
+  const [ocrMinY, setOcrMinY] = useState('0.65');
+  const [ocrWatermarkFreq, setOcrWatermarkFreq] = useState('0.80');
+  const [ocrCropBottom, setOcrCropBottom] = useState('0');
+  const [ffmpegCrf, setFfmpegCrf] = useState(23);
+  const [ffmpegPreset, setFfmpegPreset] = useState('medium');
+  const [ffmpegAudioBitrate, setFfmpegAudioBitrate] = useState('128k');
+  const [saveMsg, setSaveMsg] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     getCookieStatus().then(setCookie).catch(() => {});
+    // Load server config
+    getConfig().then((cfg) => {
+      const w = (cfg.whisper || {}) as Record<string, unknown>;
+      const o = (cfg.ocr || {}) as Record<string, unknown>;
+      const sr = (o.subtitle_region || {}) as Record<string, unknown>;
+      const f = (cfg.ffmpeg || {}) as Record<string, unknown>;
+      if (w.model_size) setWhisperModelSize(String(w.model_size));
+      if (w.device) setWhisperDevice(String(w.device));
+      if (w.compute_type) setWhisperComputeType(String(w.compute_type));
+      if (w.default_language) setWhisperLanguage(String(w.default_language));
+      if (w.vad_filter !== undefined) setVadFilter(Boolean(w.vad_filter));
+      if (o.fps) setOcrFps(String(o.fps));
+      if (o.crop_bottom_pct !== undefined) setOcrCropBottom(String(o.crop_bottom_pct));
+      if (o.confidence_threshold) setOcrConfidence(String(o.confidence_threshold));
+      if (o.similarity_threshold) setOcrSimilarity(String(o.similarity_threshold));
+      if (sr.min_y) setOcrMinY(String(sr.min_y));
+      if (sr.max_watermark_frequency) setOcrWatermarkFreq(String(sr.max_watermark_frequency));
+      if (f.default_crf) setFfmpegCrf(Number(f.default_crf));
+      if (f.preset) setFfmpegPreset(String(f.preset));
+      if (f.audio_bitrate) setFfmpegAudioBitrate(String(f.audio_bitrate));
+    }).catch(() => {});
     // Scroll to section if navigated with hash (e.g., /settings#apikeys)
     const hash = window.location.hash.replace('#', '');
     if (hash) {
@@ -278,25 +307,26 @@ function SettingsPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Model Size</label>
-                  <select className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm" defaultValue="large-v3">
-                    <option>tiny</option>
-                    <option>base</option>
-                    <option>small</option>
-                    <option>medium</option>
+                  <select className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm" value={whisperModelSize} onChange={(e) => setWhisperModelSize(e.target.value)}>
+                    <option value="tiny">tiny</option>
+                    <option value="base">base</option>
+                    <option value="small">small</option>
+                    <option value="medium">medium</option>
                     <option value="large-v3">large-v3</option>
                   </select>
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Device</label>
-                  <select className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono" defaultValue="cuda:0">
-                    <option>cpu</option>
+                  <select className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono" value={whisperDevice} onChange={(e) => setWhisperDevice(e.target.value)}>
+                    <option value="auto">auto</option>
+                    <option value="cpu">cpu</option>
                     <option value="cuda:0">cuda:0</option>
                     <option value="cuda:1">cuda:1</option>
                   </select>
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Compute Type</label>
-                  <select className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono" defaultValue="float16">
+                  <select className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono" value={whisperComputeType} onChange={(e) => setWhisperComputeType(e.target.value)}>
                     <option value="float16">float16</option>
                     <option value="int8_float16">int8_float16</option>
                     <option value="int8">int8</option>
@@ -304,7 +334,7 @@ function SettingsPage() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Language</label>
-                  <input className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm" placeholder="Auto (detect)" type="text" />
+                  <input className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm" placeholder="Auto (detect)" type="text" value={whisperLanguage} onChange={(e) => setWhisperLanguage(e.target.value)} />
                 </div>
                 <div className="flex items-center justify-between p-3 bg-surface-container-low rounded">
                   <span className="text-xs font-bold uppercase tracking-widest text-zinc-400">VAD Filter</span>
@@ -437,15 +467,15 @@ function SettingsPage() {
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
                     <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">CRF (Quality)</label>
-                    <span className="text-xs font-mono text-primary">{crfValue}</span>
+                    <span className="text-xs font-mono text-primary">{ffmpegCrf}</span>
                   </div>
                   <input
                     className="w-full h-1.5 bg-surface-container-highest rounded-lg appearance-none cursor-pointer"
                     max={51}
                     min={0}
                     type="range"
-                    value={crfValue}
-                    onChange={(e) => setCrfValue(Number(e.target.value))}
+                    value={ffmpegCrf}
+                    onChange={(e) => setFfmpegCrf(Number(e.target.value))}
                   />
                   <div className="flex justify-between text-[10px] font-mono text-zinc-600">
                     <span>LOSSLESS (0)</span>
@@ -454,19 +484,19 @@ function SettingsPage() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Preset</label>
-                  <select className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono" defaultValue="medium">
-                    <option>ultrafast</option>
-                    <option>superfast</option>
-                    <option>veryfast</option>
-                    <option>faster</option>
+                  <select className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono" value={ffmpegPreset} onChange={(e) => setFfmpegPreset(e.target.value)}>
+                    <option value="ultrafast">ultrafast</option>
+                    <option value="superfast">superfast</option>
+                    <option value="veryfast">veryfast</option>
+                    <option value="faster">faster</option>
                     <option value="medium">medium</option>
-                    <option>slow</option>
+                    <option value="slow">slow</option>
                   </select>
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Audio Bitrate</label>
                   <div className="flex items-center">
-                    <input className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded-l p-3 text-sm font-mono" type="text" defaultValue="192" />
+                    <input className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded-l p-3 text-sm font-mono" type="text" value={ffmpegAudioBitrate} onChange={(e) => setFfmpegAudioBitrate(e.target.value)} />
                     <span className="bg-surface-container-highest px-4 py-3 border-y border-r border-outline-variant/20 text-xs font-mono text-zinc-500 rounded-r">kbps</span>
                   </div>
                 </div>
@@ -616,41 +646,79 @@ function SettingsPage() {
         <div className="flex items-center gap-2">
           <span className="material-symbols-outlined text-emerald-500 text-sm">cloud_done</span>
           <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
-            {ocrSaveMsg || 'All local changes are cached'}
+            {saveMsg || 'Changes saved to config.yaml on server'}
           </span>
         </div>
         <div className="flex gap-4">
           <button
             onClick={() => {
-              setOcrFps('2.0'); setOcrCropBottom('0'); setOcrConfidence('0.7'); setOcrSimilarity('0.85');
-              setOcrMinY('0.65'); setOcrWatermarkFreq('0.80');
-              localStorage.removeItem('douyin_pipeline_ocr_fps');
-              localStorage.removeItem('douyin_pipeline_ocr_crop_bottom');
-              localStorage.removeItem('douyin_pipeline_ocr_confidence');
-              localStorage.removeItem('douyin_pipeline_ocr_similarity');
-              localStorage.removeItem('douyin_pipeline_ocr_min_y');
-              localStorage.removeItem('douyin_pipeline_ocr_watermark_freq');
-              setOcrSaveMsg('Reset to defaults');
-              setTimeout(() => setOcrSaveMsg(''), 3000);
+              getConfig().then((cfg) => {
+                const w = (cfg.whisper || {}) as Record<string, unknown>;
+                const o = (cfg.ocr || {}) as Record<string, unknown>;
+                const sr = (o.subtitle_region || {}) as Record<string, unknown>;
+                const f = (cfg.ffmpeg || {}) as Record<string, unknown>;
+                setWhisperModelSize(String(w.model_size || 'large-v3'));
+                setWhisperDevice(String(w.device || 'auto'));
+                setWhisperComputeType(String(w.compute_type || 'float16'));
+                setWhisperLanguage(String(w.default_language || ''));
+                setVadFilter(w.vad_filter !== false);
+                setOcrFps(String(o.fps || '2.0'));
+                setOcrCropBottom(String(o.crop_bottom_pct || '0'));
+                setOcrConfidence(String(o.confidence_threshold || '0.7'));
+                setOcrSimilarity(String(o.similarity_threshold || '0.85'));
+                setOcrMinY(String(sr.min_y || '0.65'));
+                setOcrWatermarkFreq(String(sr.max_watermark_frequency || '0.80'));
+                setFfmpegCrf(Number(f.default_crf) || 23);
+                setFfmpegPreset(String(f.preset || 'medium'));
+                setFfmpegAudioBitrate(String(f.audio_bitrate || '128k'));
+                setSaveMsg('Reset to server defaults');
+                setTimeout(() => setSaveMsg(''), 3000);
+              });
             }}
             className="px-6 py-2 rounded text-xs font-bold uppercase tracking-widest text-zinc-400 hover:text-on-surface transition-colors"
           >
-            Reset Defaults
+            Discard
           </button>
           <button
-            onClick={() => {
-              localStorage.setItem('douyin_pipeline_ocr_fps', ocrFps);
-              localStorage.setItem('douyin_pipeline_ocr_crop_bottom', ocrCropBottom);
-              localStorage.setItem('douyin_pipeline_ocr_confidence', ocrConfidence);
-              localStorage.setItem('douyin_pipeline_ocr_similarity', ocrSimilarity);
-              localStorage.setItem('douyin_pipeline_ocr_min_y', ocrMinY);
-              localStorage.setItem('douyin_pipeline_ocr_watermark_freq', ocrWatermarkFreq);
-              setOcrSaveMsg('Settings saved');
-              setTimeout(() => setOcrSaveMsg(''), 3000);
+            disabled={isSaving}
+            onClick={async () => {
+              setIsSaving(true);
+              try {
+                await putConfig({
+                  whisper: {
+                    model_size: whisperModelSize,
+                    device: whisperDevice,
+                    compute_type: whisperComputeType,
+                    default_language: whisperLanguage || 'zh',
+                    vad_filter: vadFilter,
+                  },
+                  ocr: {
+                    fps: Number(ocrFps),
+                    crop_bottom_pct: Number(ocrCropBottom),
+                    confidence_threshold: Number(ocrConfidence),
+                    similarity_threshold: Number(ocrSimilarity),
+                    subtitle_region: {
+                      min_y: Number(ocrMinY),
+                      max_watermark_frequency: Number(ocrWatermarkFreq),
+                    },
+                  },
+                  ffmpeg: {
+                    default_crf: ffmpegCrf,
+                    preset: ffmpegPreset,
+                    audio_bitrate: ffmpegAudioBitrate,
+                  },
+                });
+                setSaveMsg('Settings saved to config.yaml');
+                setTimeout(() => setSaveMsg(''), 3000);
+              } catch (e) {
+                setSaveMsg(`Save failed: ${e instanceof Error ? e.message : 'unknown error'}`);
+              } finally {
+                setIsSaving(false);
+              }
             }}
-            className="px-8 py-2.5 bg-gradient-to-br from-primary to-primary-container text-on-primary-fixed font-bold text-xs uppercase tracking-widest rounded shadow-lg shadow-primary/20 active:scale-95 transition-all"
+            className="px-8 py-2.5 bg-gradient-to-br from-primary to-primary-container text-on-primary-fixed font-bold text-xs uppercase tracking-widest rounded shadow-lg shadow-primary/20 active:scale-95 transition-all disabled:opacity-50"
           >
-            Save Changes
+            {isSaving ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
       </div>

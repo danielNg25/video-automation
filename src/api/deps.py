@@ -24,6 +24,11 @@ def get_config() -> dict:
     return load_config(config_path)
 
 
+def reload_config():
+    """Clear the cached config so next get_config() reads from disk."""
+    get_config.cache_clear()
+
+
 def get_data_dir() -> Path:
     """Return the data directory, creating subdirs if needed."""
     data = Path("data")

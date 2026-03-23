@@ -203,6 +203,20 @@ export function postTranslate(
   });
 }
 
+// --- Config ---
+
+export function getConfig(): Promise<Record<string, unknown>> {
+  return request('/settings/config');
+}
+
+export function putConfig(config: Record<string, unknown>): Promise<{ status: string; message: string }> {
+  return request('/settings/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+}
+
 // --- Download URLs ---
 
 export function getSrtDownloadUrl(videoId: string, language: string): string {

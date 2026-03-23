@@ -1,7 +1,8 @@
-"""Settings endpoints — Douyin cookie management + system info."""
+"""Settings endpoints — config management, Douyin cookie, system info."""
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -9,7 +10,8 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from src.api.deps import get_config
+from src.api.deps import get_config, reload_config
+from src.utils.config import load_raw_config, save_config
 
 router = APIRouter()
 
@@ -127,3 +129,38 @@ async def test_cookie():
 async def get_platform():
     """Return server platform for UI to select correct local model presets."""
     return {"platform": sys.platform}  # "darwin" or "linux"
+
+
+def _config_path() -> str:
+    """Return the active config file path."""
+    path = "config/config.yaml"
+    if not os.path.exists(path):
+        path = "config/config.example.yaml"
+    return path
+
+
+@router.get("/api/settings/config")
+async def get_config_endpoint():
+    """Return the raw config (without env var interpolation) for editing."""
+    return load_raw_config(_config_path())
+
+
+@router.put("/api/settings/config")
+async def update_config(body: dict):
+    """Merge provided config sections into config.yaml and reload."""
+    path = "config/config.yaml"
+    # Load existing config (raw, no env interpolation)
+    existing = load_raw_config(path) if os.path.exists(path) else load_raw_config(
+        "config/config.example.yaml"
+    )
+
+    # Deep merge: update top-level sections, merge nested dicts
+    for key, value in body.items():
+        if isinstance(value, dict) and isinstance(existing.get(key), dict):
+            existing[key] = {**existing[key], **value}
+        else:
+            existing[key] = value
+
+    save_config(existing, path)
+    reload_config()
+    return {"status": "ok", "message": "Config saved"}
