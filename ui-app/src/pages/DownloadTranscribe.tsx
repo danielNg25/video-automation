@@ -379,7 +379,7 @@ function DownloadTranscribePage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Left Column */}
-          <div className="lg:col-span-7 space-y-6">
+          <div className="lg:col-span-8 space-y-6">
             {/* Active Download Card */}
             {isDownloading && (
               <div className="bg-surface-container-low rounded-xl overflow-hidden">
@@ -890,7 +890,7 @@ function DownloadTranscribePage() {
           </div>
 
           {/* Right Column: SRT Preview */}
-          <div className="lg:col-span-5 flex flex-col max-h-[600px]">
+          <div className="lg:col-span-4 flex flex-col max-h-[600px]">
             <div className="bg-surface-container-low rounded-xl flex-1 flex flex-col border border-outline-variant/10 overflow-hidden">
               <div className="p-4 border-b border-outline-variant/10 flex justify-between items-center bg-surface-container-high/30">
                 <div className="flex items-center gap-2">
