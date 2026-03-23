@@ -11,6 +11,9 @@ import type {
   PreviewClipRequest,
   TranslationProfile,
   TranslationProfileSummary,
+  VoiceInfo,
+  VoiceProfileConfig,
+  TTSPlatformConfig,
 } from './types';
 
 const BASE = '/api';
@@ -235,6 +238,72 @@ export function putConfig(config: Record<string, unknown>): Promise<{ status: st
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
   });
+}
+
+// --- TTS ---
+
+export function postTTS(
+  videoId: string,
+  language: string,
+  voiceProfile: string,
+  provider?: string,
+): Promise<TaskResponse> {
+  return request('/tts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      video_id: videoId,
+      language,
+      voice_profile: voiceProfile,
+      provider: provider ?? null,
+    }),
+  });
+}
+
+export function getTTSVoices(language?: string, provider: string = 'edge'): Promise<VoiceInfo[]> {
+  const params = new URLSearchParams({ provider });
+  if (language) params.set('language', language);
+  return request(`/tts/voices?${params}`);
+}
+
+export function getTTSProfiles(): Promise<Record<string, VoiceProfileConfig>> {
+  return request('/tts/profiles');
+}
+
+export function getTTSPlatforms(): Promise<Record<string, TTSPlatformConfig>> {
+  return request('/tts/platforms');
+}
+
+export function putTTSProfile(name: string, profile: VoiceProfileConfig): Promise<VoiceProfileConfig> {
+  return request(`/tts/profiles/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(profile),
+  });
+}
+
+export async function deleteTTSProfile(name: string): Promise<void> {
+  await fetch(`${BASE}/tts/profiles/${encodeURIComponent(name)}`, { method: 'DELETE' });
+}
+
+export function getTTSAudioUrl(videoId: string, language: string): string {
+  return `${BASE}/videos/${videoId}/tts/${language}`;
+}
+
+export async function postTTSPreview(
+  text: string,
+  voice: string,
+  provider: string = 'edge',
+  speed: string = '+0%',
+  pitch: string = '+0Hz',
+): Promise<Blob> {
+  const res = await fetch(`${BASE}/tts/preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, voice, provider, speed, pitch }),
+  });
+  if (!res.ok) throw new Error(`TTS preview failed: ${res.status}`);
+  return res.blob();
 }
 
 // --- Download URLs ---

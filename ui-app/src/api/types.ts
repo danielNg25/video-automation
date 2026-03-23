@@ -52,6 +52,8 @@ export interface ProcessRequest {
   platforms: string[];
   subtitle_style?: Record<string, unknown>;
   subtitle_language_overrides?: Record<string, string>;
+  enable_tts?: boolean;
+  tts_mix_settings?: Record<string, { original_volume: number; tts_volume: number }>;
 }
 
 export interface ProcessResult {
@@ -103,6 +105,52 @@ export interface OcrRegion {
   y: number;
   w: number;
   h: number;
+}
+
+export interface TTSRequest {
+  video_id: string;
+  language: string;
+  voice_profile: string;
+  provider?: string;
+}
+
+export interface TTSPreviewRequest {
+  text: string;
+  voice: string;
+  provider: string;
+  speed?: string;
+  pitch?: string;
+}
+
+export interface TTSResult {
+  video_id: string;
+  language: string;
+  audio_path: string;
+  duration: number;
+  segment_count: number;
+}
+
+export interface VoiceInfo {
+  name: string;
+  language: string;
+  gender: string;
+  provider: string;
+  friendly_name: string;
+}
+
+export interface VoiceProfileConfig {
+  provider: string;
+  voice: string;
+  language: string;
+  speed: string;
+  pitch: string;
+}
+
+export interface TTSPlatformConfig {
+  enabled: boolean;
+  profile: string;
+  original_volume: number;
+  tts_volume: number;
 }
 
 export interface PlatformSpec {

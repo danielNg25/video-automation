@@ -20,6 +20,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `run_tts()` in task manager with SSE progress per segment
 - TTS-aware process endpoint: `enable_tts` + `tts_mix_settings` on `ProcessRequest`
 - TTS static file mount at `/files/tts/`
+- TTS TypeScript types (`ui-app/src/api/types.ts`): `TTSRequest`, `VoiceInfo`, `VoiceProfileConfig`, `TTSPlatformConfig`
+- TTS API client (`ui-app/src/api/client.ts`): `postTTS`, `getTTSVoices`, `getTTSProfiles`, `postTTSPreview`, etc.
+- TTS section on Process page: enable toggle, voice profile selector, per-platform volume sliders, generate button with SSE progress, audio playback
+- TTS preview component (`ui-app/src/components/TTSPreview.tsx`): play/stop button with blob audio playback
 - OCR subtitle extraction via PaddleOCR (`src/transcriber/ocr.py`): auto-detect subtitle regions, filter watermarks by position/frequency/size, two-pass approach (sample + full OCR), deduplication
 - `extract_frames()` method on `FFmpegProcessor` for JPEG frame extraction at configurable FPS
 - OCR transcriber factory integration: `get_transcriber(config, method="ocr")` with full config passthrough

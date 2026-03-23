@@ -344,10 +344,10 @@ douyin-automation/
 - [x] **4.12** TTS API models — `src/api/models.py`
 - [x] **4.13** TTS router — `src/api/routers/tts.py`
 - [x] **4.14** Task manager + app registration
-- [ ] **4.15** TTS TypeScript types
-- [ ] **4.16** TTS API client
-- [ ] **4.17** TTS section on Process page
-- [ ] **4.18** TTS preview component
+- [x] **4.15** TTS TypeScript types
+- [x] **4.16** TTS API client
+- [x] **4.17** TTS section on Process page
+- [x] **4.18** TTS preview component
 
 **Verification:**
 - [ ] V4.1 — Edge TTS installed and importable
