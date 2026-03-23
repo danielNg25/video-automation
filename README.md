@@ -331,7 +331,7 @@ douyin-automation/
 > Detailed plan: [`plans/phase4-tts-dubbing.md`](plans/phase4-tts-dubbing.md)
 
 - [x] **4.1** TTS base class — `src/tts/base.py`
-- [ ] **4.2** Edge TTS provider — `src/tts/edge.py` (free, default)
+- [x] **4.2** Edge TTS provider — `src/tts/edge.py` (free, default)
 - [ ] **4.3** OpenAI TTS provider — `src/tts/openai_tts.py`
 - [ ] **4.4** Google Cloud TTS provider — `src/tts/google_tts.py`
 - [ ] **4.5** TTS factory — `src/tts/__init__.py`
