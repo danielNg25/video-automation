@@ -334,7 +334,7 @@ douyin-automation/
 - [x] **4.2** Edge TTS provider — `src/tts/edge.py` (free, default)
 - [ ] **4.3** OpenAI TTS provider — `src/tts/openai_tts.py`
 - [ ] **4.4** Google Cloud TTS provider — `src/tts/google_tts.py`
-- [ ] **4.5** TTS factory — `src/tts/__init__.py`
+- [x] **4.5** TTS factory — `src/tts/__init__.py`
 - [x] **4.6** Voice profiles config — `config/tts_voices.yaml`
 - [ ] **4.7** TTS audio assembler — `src/tts/assembler.py`
 - [ ] **4.8** Audio mixing in ffmpeg — `src/processor/ffmpeg.py`
