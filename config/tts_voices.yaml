@@ -1,0 +1,46 @@
+default_provider: edge
+
+profiles:
+  female-vi-natural:
+    provider: edge
+    voice: "vi-VN-HoaiMyNeural"
+    language: vi
+    speed: "+0%"
+    pitch: "+0Hz"
+  male-vi-natural:
+    provider: edge
+    voice: "vi-VN-NamMinhNeural"
+    language: vi
+    speed: "+0%"
+    pitch: "+0Hz"
+  female-en-edge:
+    provider: edge
+    voice: "en-US-JennyNeural"
+    language: en
+    speed: "+0%"
+    pitch: "+0Hz"
+  male-en-edge:
+    provider: edge
+    voice: "en-US-GuyNeural"
+    language: en
+    speed: "+0%"
+    pitch: "+0Hz"
+
+platforms:
+  tiktok:
+    enabled: true
+    profile: female-vi-natural
+    original_volume: 0.3
+    tts_volume: 1.0
+  youtube:
+    enabled: true
+    profile: female-en-edge
+    original_volume: 0.3
+    tts_volume: 1.0
+  facebook:
+    enabled: true
+    profile: female-vi-natural
+    original_volume: 0.3
+    tts_volume: 1.0
+  x:
+    enabled: false

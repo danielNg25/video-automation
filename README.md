@@ -330,16 +330,16 @@ douyin-automation/
 
 > Detailed plan: [`plans/phase4-tts-dubbing.md`](plans/phase4-tts-dubbing.md)
 
-- [ ] **4.1** TTS base class — `src/tts/base.py`
+- [x] **4.1** TTS base class — `src/tts/base.py`
 - [ ] **4.2** Edge TTS provider — `src/tts/edge.py` (free, default)
 - [ ] **4.3** OpenAI TTS provider — `src/tts/openai_tts.py`
 - [ ] **4.4** Google Cloud TTS provider — `src/tts/google_tts.py`
 - [ ] **4.5** TTS factory — `src/tts/__init__.py`
-- [ ] **4.6** Voice profiles config — `config/tts_voices.yaml`
+- [x] **4.6** Voice profiles config — `config/tts_voices.yaml`
 - [ ] **4.7** TTS audio assembler — `src/tts/assembler.py`
 - [ ] **4.8** Audio mixing in ffmpeg — `src/processor/ffmpeg.py`
 - [ ] **4.9** Update batch processor — `src/processor/__init__.py`
-- [ ] **4.10** Config + infra updates — pyproject.toml, .gitignore, config
+- [x] **4.10** Config + infra updates — pyproject.toml, .gitignore, config
 - [ ] **4.11** TTS unit tests — `tests/test_tts.py`
 - [ ] **4.12** TTS API models — `src/api/models.py`
 - [ ] **4.13** TTS router — `src/api/routers/tts.py`

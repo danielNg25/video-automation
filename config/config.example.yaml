@@ -71,6 +71,12 @@ ocr:
         min_text_height: 0.02        # Min text height as fraction of frame
         horizontal_margin: 0.10       # Ignore text in outer 10% left/right
 
+# TTS Dubbing
+tts:
+    enabled: true
+    default_provider: edge              # "edge" (free), "openai", "google"
+    voices_config: 'config/tts_voices.yaml'
+
 # Pipeline
 pipeline:
     data_dir: './data'
