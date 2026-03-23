@@ -427,6 +427,18 @@ function DownloadTranscribePage() {
                 <option value="openai">OpenAI</option>
               </select>
             </div>
+            {selectedProfile && !llmApiKey && (
+              <div className="flex items-center gap-1.5 text-amber-400">
+                <span className="material-symbols-outlined text-xs">warning</span>
+                <span className="text-[10px]">No <strong>{llmBackend}</strong> API key</span>
+                <button
+                  onClick={() => navigate('/settings#apikeys')}
+                  className="text-[10px] font-bold underline ml-1"
+                >
+                  Configure
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
