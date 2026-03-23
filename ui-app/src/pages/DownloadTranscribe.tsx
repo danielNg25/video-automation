@@ -335,9 +335,9 @@ function DownloadTranscribePage() {
       <TopBar breadcrumb="Transcribe" />
 
       <section className="flex-1 overflow-y-auto p-6 space-y-6">
-        {/* URL Input Section */}
-        <div className="bg-surface-container-low p-1 rounded-xl shadow-sm">
-          <div className="flex items-center bg-surface-container-lowest p-2 rounded-lg gap-3 focus-within:ring-1 focus-within:ring-primary/40 transition-shadow">
+        {/* URL Input + Pipeline Config */}
+        <div className="bg-surface-container-low rounded-xl shadow-sm overflow-hidden">
+          <div className="flex items-center bg-surface-container-lowest p-2 rounded-t-lg gap-3 focus-within:ring-1 focus-within:ring-primary/40 transition-shadow">
             <div className="pl-3 text-on-surface-variant">
               <span className="material-symbols-outlined">link</span>
             </div>
@@ -347,7 +347,7 @@ function DownloadTranscribePage() {
               type="text"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleDownload()}
+              onKeyDown={(e) => e.key === 'Enter' && handlePipeline()}
             />
             <button
               onClick={handlePipeline}
@@ -365,6 +365,68 @@ function DownloadTranscribePage() {
               <span>{isDownloading ? 'Downloading...' : 'Download Only'}</span>
               <span className="material-symbols-outlined text-sm">download</span>
             </button>
+          </div>
+          {/* Pipeline config row */}
+          <div className="flex items-center gap-4 px-4 py-2.5 border-t border-outline-variant/10">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-zinc-500 uppercase tracking-tighter">Method:</span>
+              <div className="flex gap-px rounded overflow-hidden border border-outline-variant/20">
+                <button
+                  onClick={() => setTranscribeMethod('ocr')}
+                  className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                    transcribeMethod === 'ocr'
+                      ? 'bg-primary text-on-primary-fixed'
+                      : 'bg-surface-container-highest text-on-surface-variant hover:bg-surface-container-high'
+                  }`}
+                >
+                  OCR
+                </button>
+                <button
+                  onClick={() => setTranscribeMethod('audio')}
+                  className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                    transcribeMethod === 'audio'
+                      ? 'bg-primary text-on-primary-fixed'
+                      : 'bg-surface-container-highest text-on-surface-variant hover:bg-surface-container-high'
+                  }`}
+                >
+                  Audio
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-zinc-500 uppercase tracking-tighter">Translate:</span>
+              <select
+                value={selectedProfile}
+                onChange={(e) => setSelectedProfile(e.target.value)}
+                className="bg-surface-container-highest border-none text-[11px] text-on-surface py-1 px-2 rounded focus:ring-0"
+              >
+                <option value="">Skip translation</option>
+                {profiles.map((p) => (
+                  <option key={p.name} value={p.name}>
+                    {p.name} ({p.target_language})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-zinc-500 uppercase tracking-tighter">Backend:</span>
+              <select
+                value={llmBackend}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setLlmBackend(val);
+                  const models = MODEL_OPTIONS[val];
+                  const firstModel = models?.length ? models[0].value : '';
+                  if (firstModel) setLlmModel(firstModel);
+                  saveLLMPrefs(val, firstModel);
+                }}
+                className="bg-surface-container-highest border-none text-[11px] text-on-surface py-1 px-2 rounded focus:ring-0"
+              >
+                <option value="deepseek">DeepSeek</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="openai">OpenAI</option>
+              </select>
+            </div>
           </div>
         </div>
 
