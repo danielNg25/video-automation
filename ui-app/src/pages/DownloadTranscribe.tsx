@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
-import { postDownload, postTranscribe, getVideos, getVideo, getSrt, subscribeSSE, patchVideoTitle, deleteVideo, getProfiles, postTranslate, postPipeline, getRawVideoUrl, getSrtDownloadUrl } from '../api/client';
-import type { VideoMetadata, SubtitleSegment, TranslationProfileSummary } from '../api/types';
+import { postDownload, postTranscribe, getVideos, getVideo, getSrt, subscribeSSE, patchVideoTitle, deleteVideo, getProfiles, postTranslate, postPipeline, getRawVideoUrl, getSrtDownloadUrl, postTTS, getTTSProfiles, getTTSAudioUrl } from '../api/client';
+import { TTSPreview } from '../components/TTSPreview';
+import type { VideoMetadata, SubtitleSegment, TranslationProfileSummary, VoiceProfileConfig } from '../api/types';
 import { loadApiKeys, loadLLMPrefs, saveLLMPrefs } from '../utils/storage';
 
 function DownloadTranscribePage() {
@@ -41,6 +42,15 @@ function DownloadTranscribePage() {
   const [llmModel, setLlmModel] = useState(savedPrefs.model);
   const [llmApiKey, setLlmApiKey] = useState('');
   const [llmBaseUrl, setLlmBaseUrl] = useState('');
+
+  // TTS state
+  const [ttsProfiles, setTtsProfiles] = useState<Record<string, VoiceProfileConfig>>({});
+  const [selectedTtsProfile, setSelectedTtsProfile] = useState('female-vi-natural');
+  const [ttsLanguage, setTtsLanguage] = useState('vi');
+  const [isGeneratingTts, setIsGeneratingTts] = useState(false);
+  const [ttsProgress, setTtsProgress] = useState({ pct: 0, message: '' });
+  const [ttsGenerated, setTtsGenerated] = useState(false);
+  const [ttsError, setTtsError] = useState('');
 
   // Load API key from localStorage when backend changes
   useEffect(() => {
@@ -81,9 +91,19 @@ function DownloadTranscribePage() {
     }
   }, [selectedProfile]);
 
+  const loadTtsProfiles = useCallback(async () => {
+    try {
+      const profiles = await getTTSProfiles();
+      setTtsProfiles(profiles);
+    } catch {
+      // TTS not available
+    }
+  }, []);
+
   useEffect(() => {
     loadProfiles();
-  }, [loadProfiles]);
+    loadTtsProfiles();
+  }, [loadProfiles, loadTtsProfiles]);
 
   const loadVideos = useCallback(async () => {
     try {
@@ -330,9 +350,47 @@ function DownloadTranscribePage() {
     }
   };
 
+  const handleGenerateTts = async () => {
+    if (!videoMeta || !selectedTtsProfile) return;
+    setIsGeneratingTts(true);
+    setTtsError('');
+    setTtsProgress({ pct: 0, message: 'Starting TTS generation...' });
+
+    try {
+      const { task_id } = await postTTS(videoMeta.video_id, ttsLanguage, selectedTtsProfile);
+      const es = subscribeSSE(task_id, (eventType, data) => {
+        if (eventType === 'progress') {
+          setTtsProgress({
+            pct: Math.round((data.progress as number) * 100),
+            message: data.message as string,
+          });
+        } else if (eventType === 'complete') {
+          setIsGeneratingTts(false);
+          setTtsGenerated(true);
+          setTtsProgress({ pct: 100, message: 'TTS generation complete' });
+          es.close();
+        } else if (eventType === 'error') {
+          setIsGeneratingTts(false);
+          setTtsError(data.message as string);
+          es.close();
+        }
+      });
+    } catch (e) {
+      setIsGeneratingTts(false);
+      setTtsError(e instanceof Error ? e.message : 'TTS generation failed');
+    }
+  };
+
+  const handleTtsProfileChange = (profileName: string) => {
+    setSelectedTtsProfile(profileName);
+    const profile = ttsProfiles[profileName];
+    if (profile) setTtsLanguage(profile.language);
+    setTtsGenerated(false);
+  };
+
   return (
     <div className="flex flex-col h-full bg-surface">
-      <TopBar breadcrumb="Transcribe" />
+      <TopBar breadcrumb="Pipeline" />
 
       <section className="flex-1 overflow-y-auto p-6 space-y-6">
         {/* URL Input + Pipeline Config */}
@@ -853,6 +911,128 @@ function DownloadTranscribePage() {
                     </div>
                   )}
 
+                </div>
+              </div>
+            )}
+
+            {/* TTS Dubbing Panel — shown after translation is available */}
+            {videoMeta && videoMeta.has_srt && videoMeta.srt_languages.some(l => l !== 'zh') && !isDownloading && (
+              <div className="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/10">
+                <div className="p-4 border-b border-outline-variant/10 flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary text-lg">record_voice_over</span>
+                    <span className="text-xs font-bold uppercase tracking-widest">TTS Dubbing</span>
+                  </div>
+                  <span className="font-mono text-[10px] text-primary bg-primary/10 px-2 py-0.5 rounded">EDGE_TTS</span>
+                </div>
+                <div className="p-5 space-y-4">
+                  {/* Voice Profile & Language */}
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">Voice Profile</label>
+                      <select
+                        value={selectedTtsProfile}
+                        onChange={(e) => handleTtsProfileChange(e.target.value)}
+                        className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
+                      >
+                        {Object.entries(ttsProfiles).map(([name, profile]) => (
+                          <option key={name} value={name}>
+                            {name} ({profile.language})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex flex-col items-start mt-4">
+                      <span className="font-mono text-[9px] px-1.5 py-0.5 bg-primary/20 text-primary rounded uppercase">
+                        {ttsLanguage === 'vi' ? 'Vietnamese' : ttsLanguage === 'en' ? 'English' : ttsLanguage}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Voice Preview */}
+                  {ttsProfiles[selectedTtsProfile] && (
+                    <div className="flex items-center gap-3">
+                      <TTSPreview
+                        voice={ttsProfiles[selectedTtsProfile].voice}
+                        provider={ttsProfiles[selectedTtsProfile].provider}
+                        speed={ttsProfiles[selectedTtsProfile].speed}
+                        pitch={ttsProfiles[selectedTtsProfile].pitch}
+                        sampleText={
+                          ttsLanguage === 'vi'
+                            ? 'Xin chào các bạn, hôm nay chúng ta sẽ nói về một chủ đề rất thú vị.'
+                            : 'Hello everyone, today we will talk about a very interesting topic.'
+                        }
+                      />
+                      <span className="font-mono text-[9px] text-on-surface-variant">
+                        {ttsProfiles[selectedTtsProfile].voice}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Generate TTS Button */}
+                  <button
+                    disabled={isGeneratingTts}
+                    onClick={handleGenerateTts}
+                    className={`w-full py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
+                      ttsGenerated
+                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20'
+                        : isGeneratingTts
+                          ? 'bg-surface-container-highest text-on-surface-variant cursor-wait'
+                          : 'bg-primary text-on-primary-fixed hover:brightness-110 active:scale-95'
+                    }`}
+                  >
+                    {isGeneratingTts ? (
+                      <>
+                        <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
+                        {ttsProgress.message || 'Generating...'}
+                      </>
+                    ) : ttsGenerated ? (
+                      <>
+                        <span className="material-symbols-outlined text-sm">check_circle</span>
+                        TTS Generated — Regenerate
+                      </>
+                    ) : (
+                      <>
+                        <span className="material-symbols-outlined text-sm">record_voice_over</span>
+                        Generate TTS Audio
+                      </>
+                    )}
+                  </button>
+
+                  {/* TTS Progress */}
+                  {isGeneratingTts && (
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[10px] font-mono text-zinc-500 uppercase">{ttsProgress.message}</span>
+                        <span className="text-xs font-bold font-mono text-primary">{ttsProgress.pct}%</span>
+                      </div>
+                      <div className="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
+                        <div
+                          className="bg-primary h-full transition-all duration-500 shadow-[0_0_8px_rgba(208,188,255,0.4)]"
+                          style={{ width: `${ttsProgress.pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* TTS Audio Playback */}
+                  {ttsGenerated && videoMeta && (
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter">Generated TTS Track</label>
+                      <audio
+                        controls
+                        className="w-full h-8"
+                        src={getTTSAudioUrl(videoMeta.video_id, ttsLanguage)}
+                      />
+                    </div>
+                  )}
+
+                  {ttsError && (
+                    <div className="bg-error/10 border border-error/30 text-error text-xs p-3 rounded-lg flex items-center gap-2">
+                      <span className="material-symbols-outlined text-sm">error</span>
+                      {ttsError}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

@@ -27,6 +27,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - TTS unit tests (`tests/test_tts.py`): 24 tests covering text cleanup, ABC, factory, voice profiles, atempo filter, ffmpeg audio mix, and batch processor TTS integration
 - OpenAI TTS provider (`src/tts/openai_tts.py`): `/v1/audio/speech` API, tts-1/tts-1-hd models, speed control
 - Google Cloud TTS provider (`src/tts/google_tts.py`): REST API with Wavenet/Standard voices, Vietnamese and English
+
+### Changed
+- Renamed "Download & Transcribe" page to "Pipeline" in sidebar navigation
+- Moved TTS generation (voice profile selector, preview, generate button) from Subtitle Process page to Pipeline page
+- Subtitle Process page now has a simplified "Mix TTS Audio" toggle with per-platform volume sliders only
 - OCR subtitle extraction via PaddleOCR (`src/transcriber/ocr.py`): auto-detect subtitle regions, filter watermarks by position/frequency/size, two-pass approach (sample + full OCR), deduplication
 - `extract_frames()` method on `FFmpegProcessor` for JPEG frame extraction at configurable FPS
 - OCR transcriber factory integration: `get_transcriber(config, method="ocr")` with full config passthrough

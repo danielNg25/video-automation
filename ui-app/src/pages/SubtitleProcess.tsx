@@ -1,18 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { TopBar } from '../components/TopBar';
-import { TTSPreview } from '../components/TTSPreview';
 import {
   getVideos,
   getPlatforms,
   postProcess,
-  postTTS,
-  getTTSProfiles,
   getTTSPlatforms,
-  getTTSAudioUrl,
   subscribeSSE,
   getProcessedVideoUrl,
 } from '../api/client';
-import type { VideoMetadata, PlatformSpec, VoiceProfileConfig, TTSPlatformConfig } from '../api/types';
+import type { VideoMetadata, PlatformSpec, TTSPlatformConfig } from '../api/types';
 
 const PLATFORM_INFO: Record<string, { label: string; subLangLabel: string; constraint: string }> = {
   tiktok: { label: 'TikTok', subLangLabel: 'Vietnamese', constraint: '9:16 / max 10min / 4GB' },
@@ -52,17 +48,9 @@ function SubtitleProcessPage() {
   // Per-platform subtitle language override (empty string = use default from config)
   const [langOverrides, setLangOverrides] = useState<Record<string, string>>({});
 
-  // TTS state
-  const [ttsEnabled, setTtsEnabled] = useState(false);
-  const [ttsProfiles, setTtsProfiles] = useState<Record<string, VoiceProfileConfig>>({});
+  // TTS platform config (for auto-enabling when TTS audio exists)
   const [ttsPlatforms, setTtsPlatforms] = useState<Record<string, TTSPlatformConfig>>({});
-  const [selectedTtsProfile, setSelectedTtsProfile] = useState('female-vi-natural');
-  const [ttsLanguage, setTtsLanguage] = useState('vi');
-  const [isGeneratingTts, setIsGeneratingTts] = useState(false);
-  const [ttsProgress, setTtsProgress] = useState({ pct: 0, message: '' });
-  const [ttsGenerated, setTtsGenerated] = useState(false);
-  const [ttsError, setTtsError] = useState('');
-  // Per-platform volume mix overrides
+  const [ttsEnabled, setTtsEnabled] = useState(false);
   const [volumeMix, setVolumeMix] = useState<Record<string, { original_volume: number; tts_volume: number }>>({});
 
   // Processing state
@@ -96,14 +84,12 @@ function SubtitleProcessPage() {
     }
   }, []);
 
-  // Load TTS profiles and platform config
+  // Load TTS platform config
   const loadTtsData = useCallback(async () => {
     try {
-      const [profiles, platforms] = await Promise.all([getTTSProfiles(), getTTSPlatforms()]);
-      setTtsProfiles(profiles);
+      const platforms = await getTTSPlatforms();
       setTtsPlatforms(platforms);
 
-      // Initialize volume mix from platform config
       const initMix: Record<string, { original_volume: number; tts_volume: number }> = {};
       for (const [p, cfg] of Object.entries(platforms)) {
         initMix[p] = {
@@ -192,7 +178,7 @@ function SubtitleProcessPage() {
 
       // Build TTS mix settings if TTS is enabled
       const ttsMixPayload: Record<string, { original_volume: number; tts_volume: number }> = {};
-      if (ttsEnabled && ttsGenerated) {
+      if (ttsEnabled) {
         for (const p of activePlatforms) {
           if (volumeMix[p]) {
             ttsMixPayload[p] = volumeMix[p];
@@ -205,8 +191,8 @@ function SubtitleProcessPage() {
         platforms: activePlatforms,
         subtitle_style: styleOverride,
         subtitle_language_overrides: Object.keys(langOverridePayload).length > 0 ? langOverridePayload : undefined,
-        enable_tts: ttsEnabled && ttsGenerated,
-        tts_mix_settings: ttsEnabled && ttsGenerated ? ttsMixPayload : undefined,
+        enable_tts: ttsEnabled,
+        tts_mix_settings: ttsEnabled ? ttsMixPayload : undefined,
       });
 
       const es = subscribeSSE(task_id, (eventType, data) => {
@@ -248,53 +234,6 @@ function SubtitleProcessPage() {
       setIsProcessing(false);
       setError(e instanceof Error ? e.message : 'Processing failed');
     }
-  };
-
-  // TTS generation handler
-  const handleGenerateTts = async () => {
-    if (!selectedVideoId || !selectedTtsProfile) return;
-    setIsGeneratingTts(true);
-    setTtsError('');
-    setTtsProgress({ pct: 0, message: 'Starting TTS generation...' });
-
-    try {
-      const { task_id } = await postTTS(
-        selectedVideoId,
-        ttsLanguage,
-        selectedTtsProfile,
-      );
-
-      const es = subscribeSSE(task_id, (eventType, data) => {
-        if (eventType === 'progress') {
-          setTtsProgress({
-            pct: Math.round((data.progress as number) * 100),
-            message: data.message as string,
-          });
-        } else if (eventType === 'complete') {
-          setIsGeneratingTts(false);
-          setTtsGenerated(true);
-          setTtsProgress({ pct: 100, message: 'TTS generation complete' });
-          es.close();
-        } else if (eventType === 'error') {
-          setIsGeneratingTts(false);
-          setTtsError(data.message as string);
-          es.close();
-        }
-      });
-    } catch (e) {
-      setIsGeneratingTts(false);
-      setTtsError(e instanceof Error ? e.message : 'TTS generation failed');
-    }
-  };
-
-  // Update TTS language when profile changes
-  const handleProfileChange = (profileName: string) => {
-    setSelectedTtsProfile(profileName);
-    const profile = ttsProfiles[profileName];
-    if (profile) {
-      setTtsLanguage(profile.language);
-    }
-    setTtsGenerated(false); // Reset since profile changed
   };
 
   const updateVolumeMix = (platform: string, key: 'original_volume' | 'tts_volume', value: number) => {
@@ -562,10 +501,10 @@ function SubtitleProcessPage() {
                   </div>
                 </div>
 
-                {/* TTS Dubbing Section */}
+                {/* TTS Audio Mixing — toggle to include generated TTS in output */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <label className="font-mono text-[10px] uppercase text-on-surface-variant">TTS Dubbing</label>
+                    <label className="font-mono text-[10px] uppercase text-on-surface-variant">Mix TTS Audio</label>
                     <button
                       onClick={() => setTtsEnabled(!ttsEnabled)}
                       className={`w-10 h-5 rounded-full relative cursor-pointer transition-colors ${ttsEnabled ? 'bg-primary' : 'bg-surface-container-highest'}`}
@@ -575,153 +514,49 @@ function SubtitleProcessPage() {
                   </div>
 
                   {ttsEnabled && (
-                    <div className="bg-surface-container-lowest rounded-lg border border-outline-variant/10 p-4 space-y-4">
-                      {/* Voice Profile Selector */}
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1.5">
-                          <label className="font-mono text-[9px] uppercase text-on-surface-variant">Voice Profile</label>
-                          <select
-                            value={selectedTtsProfile}
-                            onChange={(e) => handleProfileChange(e.target.value)}
-                            className="w-full bg-surface-container border-none text-xs rounded h-9 focus:ring-1 focus:ring-primary text-on-surface"
-                          >
-                            {Object.entries(ttsProfiles).map(([name, profile]) => (
-                              <option key={name} value={name}>
-                                {name} ({profile.language})
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="space-y-1.5">
-                          <label className="font-mono text-[9px] uppercase text-on-surface-variant">Language</label>
-                          <div className="flex items-center h-9 px-3 bg-surface-container rounded text-xs text-on-surface">
-                            {ttsLanguage === 'vi' ? 'Vietnamese' : ttsLanguage === 'en' ? 'English' : ttsLanguage.toUpperCase()}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Voice Preview */}
-                      {ttsProfiles[selectedTtsProfile] && (
-                        <div className="flex items-center gap-3">
-                          <TTSPreview
-                            voice={ttsProfiles[selectedTtsProfile].voice}
-                            provider={ttsProfiles[selectedTtsProfile].provider}
-                            speed={ttsProfiles[selectedTtsProfile].speed}
-                            pitch={ttsProfiles[selectedTtsProfile].pitch}
-                            sampleText={
-                              ttsLanguage === 'vi'
-                                ? 'Xin chào các bạn, hôm nay chúng ta sẽ nói về một chủ đề rất thú vị.'
-                                : 'Hello everyone, today we will talk about a very interesting topic.'
-                            }
-                          />
-                          <span className="font-mono text-[9px] text-on-surface-variant">
-                            {ttsProfiles[selectedTtsProfile].voice}
-                          </span>
-                        </div>
-                      )}
+                    <div className="bg-surface-container-lowest rounded-lg border border-outline-variant/10 p-4 space-y-3">
+                      <p className="text-[10px] text-on-surface-variant">
+                        Generate TTS audio on the <strong>Pipeline</strong> page first, then enable here to mix into output videos.
+                      </p>
 
                       {/* Per-platform volume sliders */}
-                      <div className="space-y-3">
-                        <label className="font-mono text-[9px] uppercase text-on-surface-variant">Volume Mix</label>
-                        {activePlatforms.map((platform) => (
-                          <div key={platform} className="space-y-1.5">
-                            <span className="text-xs font-medium">
-                              {PLATFORM_INFO[platform]?.label || platform}
-                            </span>
-                            <div className="grid grid-cols-2 gap-3">
-                              <div className="space-y-0.5">
-                                <div className="flex justify-between">
-                                  <span className="font-mono text-[8px] text-on-surface-variant">Original</span>
-                                  <span className="font-mono text-[8px] text-primary">
-                                    {Math.round((volumeMix[platform]?.original_volume ?? 0.3) * 100)}%
-                                  </span>
-                                </div>
-                                <input
-                                  type="range" min={0} max={1} step={0.05}
-                                  value={volumeMix[platform]?.original_volume ?? 0.3}
-                                  onChange={(e) => updateVolumeMix(platform, 'original_volume', Number(e.target.value))}
-                                  className="w-full accent-primary h-1 bg-surface-container-highest rounded-lg appearance-none cursor-pointer"
-                                />
+                      {activePlatforms.map((platform) => (
+                        <div key={platform} className="space-y-1.5">
+                          <span className="text-xs font-medium">
+                            {PLATFORM_INFO[platform]?.label || platform}
+                          </span>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-0.5">
+                              <div className="flex justify-between">
+                                <span className="font-mono text-[8px] text-on-surface-variant">Original</span>
+                                <span className="font-mono text-[8px] text-primary">
+                                  {Math.round((volumeMix[platform]?.original_volume ?? 0.3) * 100)}%
+                                </span>
                               </div>
-                              <div className="space-y-0.5">
-                                <div className="flex justify-between">
-                                  <span className="font-mono text-[8px] text-on-surface-variant">TTS Voice</span>
-                                  <span className="font-mono text-[8px] text-primary">
-                                    {Math.round((volumeMix[platform]?.tts_volume ?? 1.0) * 100)}%
-                                  </span>
-                                </div>
-                                <input
-                                  type="range" min={0} max={1} step={0.05}
-                                  value={volumeMix[platform]?.tts_volume ?? 1.0}
-                                  onChange={(e) => updateVolumeMix(platform, 'tts_volume', Number(e.target.value))}
-                                  className="w-full accent-primary h-1 bg-surface-container-highest rounded-lg appearance-none cursor-pointer"
-                                />
+                              <input
+                                type="range" min={0} max={1} step={0.05}
+                                value={volumeMix[platform]?.original_volume ?? 0.3}
+                                onChange={(e) => updateVolumeMix(platform, 'original_volume', Number(e.target.value))}
+                                className="w-full accent-primary h-1 bg-surface-container-highest rounded-lg appearance-none cursor-pointer"
+                              />
+                            </div>
+                            <div className="space-y-0.5">
+                              <div className="flex justify-between">
+                                <span className="font-mono text-[8px] text-on-surface-variant">TTS Voice</span>
+                                <span className="font-mono text-[8px] text-primary">
+                                  {Math.round((volumeMix[platform]?.tts_volume ?? 1.0) * 100)}%
+                                </span>
                               </div>
+                              <input
+                                type="range" min={0} max={1} step={0.05}
+                                value={volumeMix[platform]?.tts_volume ?? 1.0}
+                                onChange={(e) => updateVolumeMix(platform, 'tts_volume', Number(e.target.value))}
+                                className="w-full accent-primary h-1 bg-surface-container-highest rounded-lg appearance-none cursor-pointer"
+                              />
                             </div>
                           </div>
-                        ))}
-                      </div>
-
-                      {/* Generate TTS Button */}
-                      <button
-                        disabled={isGeneratingTts || !selectedVideoId}
-                        onClick={handleGenerateTts}
-                        className={`w-full h-10 font-bold rounded-lg flex items-center justify-center gap-2 text-sm transition-all ${
-                          ttsGenerated
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                            : isGeneratingTts
-                              ? 'bg-surface-container-highest text-on-surface-variant cursor-wait'
-                              : 'bg-primary/20 text-primary hover:bg-primary/30 border border-primary/30'
-                        }`}
-                      >
-                        {isGeneratingTts ? (
-                          <>
-                            <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
-                            {ttsProgress.message || 'Generating...'}
-                          </>
-                        ) : ttsGenerated ? (
-                          <>
-                            <span className="material-symbols-outlined text-sm">check_circle</span>
-                            TTS Generated — Regenerate
-                          </>
-                        ) : (
-                          <>
-                            <span className="material-symbols-outlined text-sm">record_voice_over</span>
-                            Generate TTS Audio
-                          </>
-                        )}
-                      </button>
-
-                      {/* TTS Progress */}
-                      {isGeneratingTts && (
-                        <div className="space-y-1.5">
-                          <div className="h-1 bg-surface-container-highest rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-primary rounded-full transition-all duration-300 shadow-[0_0_10px_rgba(208,188,255,0.5)]"
-                              style={{ width: `${ttsProgress.pct}%` }}
-                            />
-                          </div>
-                          <p className="font-mono text-[9px] text-on-surface-variant">{ttsProgress.message}</p>
                         </div>
-                      )}
-
-                      {/* TTS Audio Playback */}
-                      {ttsGenerated && selectedVideoId && (
-                        <div className="space-y-1.5">
-                          <label className="font-mono text-[9px] uppercase text-on-surface-variant">Generated TTS Track</label>
-                          <audio
-                            controls
-                            className="w-full h-8"
-                            src={getTTSAudioUrl(selectedVideoId, ttsLanguage)}
-                          />
-                        </div>
-                      )}
-
-                      {ttsError && (
-                        <div className="p-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
-                          {ttsError}
-                        </div>
-                      )}
+                      ))}
                     </div>
                   )}
                 </div>
