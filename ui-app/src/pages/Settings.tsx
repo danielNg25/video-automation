@@ -44,6 +44,16 @@ function SettingsPage() {
   const [saveMsg, setSaveMsg] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
+  // Find the closest matching option value for a numeric config value
+  const matchOption = (val: unknown, options: string[]): string | null => {
+    if (val === undefined || val === null) return null;
+    const num = Number(val);
+    if (isNaN(num)) return String(val);
+    // Find exact match first, then closest
+    const exact = options.find((o) => Number(o) === num);
+    return exact ?? String(val);
+  };
+
   useEffect(() => {
     getCookieStatus().then(setCookie).catch(() => {});
     // Load server config
@@ -57,12 +67,18 @@ function SettingsPage() {
       if (w.compute_type) setWhisperComputeType(String(w.compute_type));
       if (w.default_language) setWhisperLanguage(String(w.default_language));
       if (w.vad_filter !== undefined) setVadFilter(Boolean(w.vad_filter));
-      if (o.fps) setOcrFps(String(o.fps));
-      if (o.crop_bottom_pct !== undefined) setOcrCropBottom(String(o.crop_bottom_pct));
-      if (o.confidence_threshold) setOcrConfidence(String(o.confidence_threshold));
-      if (o.similarity_threshold) setOcrSimilarity(String(o.similarity_threshold));
-      if (sr.min_y) setOcrMinY(String(sr.min_y));
-      if (sr.max_watermark_frequency) setOcrWatermarkFreq(String(sr.max_watermark_frequency));
+      const fpsMatch = matchOption(o.fps, ['1.0', '2.0', '3.0', '5.0']);
+      if (fpsMatch) setOcrFps(fpsMatch);
+      const cropMatch = matchOption(o.crop_bottom_pct, ['0', '0.20', '0.25', '0.30', '0.35', '0.40', '0.50']);
+      if (cropMatch) setOcrCropBottom(cropMatch);
+      const confMatch = matchOption(o.confidence_threshold, ['0.5', '0.6', '0.7', '0.8', '0.9']);
+      if (confMatch) setOcrConfidence(confMatch);
+      const simMatch = matchOption(o.similarity_threshold, ['0.7', '0.8', '0.85', '0.9', '0.95']);
+      if (simMatch) setOcrSimilarity(simMatch);
+      const minYMatch = matchOption(sr.min_y, ['0.50', '0.55', '0.60', '0.65', '0.70', '0.75']);
+      if (minYMatch) setOcrMinY(minYMatch);
+      const wmMatch = matchOption(sr.max_watermark_frequency, ['0.70', '0.75', '0.80', '0.85', '0.90']);
+      if (wmMatch) setOcrWatermarkFreq(wmMatch);
       if (f.default_crf) setFfmpegCrf(Number(f.default_crf));
       if (f.preset) setFfmpegPreset(String(f.preset));
       if (f.audio_bitrate) setFfmpegAudioBitrate(String(f.audio_bitrate));
