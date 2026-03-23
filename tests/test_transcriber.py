@@ -257,6 +257,20 @@ class TestOCRWatermarkFiltering:
         bucket = int(1700) // max(1, int(1920 * 0.05))
         assert bucket not in watermarks
 
+    def test_varying_text_not_watermark(self):
+        """High-frequency position with varying text = subtitles, not watermark."""
+        t = OCRTranscriber()
+        bbox = self._make_bbox(540, 1700, 50)
+        # Text at same Y in 10/10 frames but different text each time
+        texts = ["你好", "世界", "今天", "天气", "很好", "谢谢", "再见", "朋友", "开心", "快乐"]
+        sample_detections = [
+            (i, [(bbox, texts[i], 0.95)]) for i in range(10)
+        ]
+
+        watermarks = t._build_watermark_positions(sample_detections, 10, 1920)
+        bucket = int(1700) // max(1, int(1920 * 0.05))
+        assert bucket not in watermarks
+
     def test_watermark_position_skipped_in_filter(self):
         """Detections at watermark Y-positions should be skipped."""
         t = OCRTranscriber()

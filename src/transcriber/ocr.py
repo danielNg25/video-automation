@@ -242,13 +242,19 @@ class OCRTranscriber(BaseTranscriber):
         """Identify Y-positions that are likely watermarks based on frequency.
 
         Groups detections by Y-position bucket (±5% of frame height).
-        Positions appearing in >max_watermark_freq of samples = watermark.
+        A position is a watermark only if:
+        1. Text appears there in >max_watermark_freq of samples
+        2. The most frequent single text accounts for >60% of appearances
+           (same text = watermark, varying text = subtitles)
 
         Returns:
             Set of Y-buckets identified as watermarks.
         """
+        from collections import Counter
+
         bucket_size = max(1, int(frame_height * 0.05))
         position_counts: dict[int, int] = defaultdict(int)
+        position_texts: dict[int, list[str]] = defaultdict(list)
 
         for _, detections in sample_detections:
             seen_buckets: set[int] = set()
@@ -257,18 +263,34 @@ class OCRTranscriber(BaseTranscriber):
                     continue
                 center_y = (bbox[0][1] + bbox[2][1]) / 2
                 bucket = int(center_y) // bucket_size
+                position_texts[bucket].append(text)
                 if bucket not in seen_buckets:
                     position_counts[bucket] += 1
                     seen_buckets.add(bucket)
 
         watermark_buckets = set()
         for bucket, count in position_counts.items():
-            if count / sample_count > self.max_watermark_freq:
-                watermark_buckets.add(bucket)
-                logger.debug(
-                    f"Watermark detected at Y-bucket {bucket} "
-                    f"({count}/{sample_count} = {count / sample_count:.0%})"
-                )
+            if count / sample_count <= self.max_watermark_freq:
+                continue
+
+            # Check text consistency: watermarks show the same text repeatedly,
+            # subtitles show different text at the same Y-position
+            texts = position_texts[bucket]
+            if texts:
+                most_common_count = Counter(texts).most_common(1)[0][1]
+                text_consistency = most_common_count / len(texts)
+                if text_consistency < 0.6:
+                    logger.debug(
+                        f"Y-bucket {bucket}: high frequency but varying text "
+                        f"(consistency={text_consistency:.0%}) — keeping as subtitle"
+                    )
+                    continue
+
+            watermark_buckets.add(bucket)
+            logger.debug(
+                f"Watermark detected at Y-bucket {bucket} "
+                f"({count}/{sample_count} = {count / sample_count:.0%})"
+            )
 
         if watermark_buckets:
             logger.info(f"Filtered {len(watermark_buckets)} watermark region(s)")
