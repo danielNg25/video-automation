@@ -299,11 +299,15 @@ class TaskManager:
 
             video_path = video_info.file_path
 
-            # Build progress callback for OCR
+            # Build progress callback for OCR (thread-safe via call_soon_threadsafe)
+            loop = asyncio.get_running_loop()
+
             def ocr_progress(progress: float, message: str):
                 task.progress = progress
                 task.message = message
-                self._emit(task_id, "progress", {"progress": progress, "message": message})
+                loop.call_soon_threadsafe(
+                    self._emit, task_id, "progress", {"progress": progress, "message": message}
+                )
 
             if is_ocr:
                 ocr_config = config.get("ocr", {})

@@ -49,7 +49,11 @@ class OCRTranscriber(BaseTranscriber):
         if self._ocr_engine is None:
             from paddleocr import PaddleOCR
 
-            self._ocr_engine = PaddleOCR(lang=lang)
+            self._ocr_engine = PaddleOCR(
+                lang=lang,
+                use_doc_orientation_classify=False,
+                use_doc_unwarping=False,
+            )
         return self._ocr_engine
 
     def transcribe(
@@ -100,6 +104,11 @@ class OCRTranscriber(BaseTranscriber):
             all_sample_detections = []
 
             for i, idx in enumerate(sample_indices):
+                if i % 5 == 0:
+                    pct = 0.10 + (i / len(sample_indices)) * 0.05
+                    self._emit_progress(
+                        pct, f"Sampling frame {i + 1}/{len(sample_indices)}..."
+                    )
                 result = ocr.ocr(str(frames[idx]))
                 detections = self._parse_ocr_result(result)
                 all_sample_detections.append((idx, detections))
