@@ -528,9 +528,9 @@ function DownloadTranscribePage() {
                         </div>
                       )}
                       {transcribeMethod === 'ocr' && (
-                        <div className="flex-1 text-[10px] text-zinc-500 font-mono uppercase">
-                          Auto-detect subtitle region (Chinese)
-                        </div>
+                        <span className="text-[10px] text-zinc-500 font-mono uppercase whitespace-nowrap">
+                          Auto-detect (CN)
+                        </span>
                       )}
                       <button
                         onClick={handleTranscribe}
