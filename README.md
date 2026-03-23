@@ -340,7 +340,7 @@ douyin-automation/
 - [x] **4.8** Audio mixing in ffmpeg — `src/processor/ffmpeg.py`
 - [x] **4.9** Update batch processor — `src/processor/__init__.py`
 - [x] **4.10** Config + infra updates — pyproject.toml, .gitignore, config
-- [ ] **4.11** TTS unit tests — `tests/test_tts.py`
+- [x] **4.11** TTS unit tests — `tests/test_tts.py`
 - [x] **4.12** TTS API models — `src/api/models.py`
 - [x] **4.13** TTS router — `src/api/routers/tts.py`
 - [x] **4.14** Task manager + app registration
@@ -358,7 +358,7 @@ douyin-automation/
 - [ ] V4.6 — Per-platform voice: TikTok/FB get Vietnamese, YouTube/X get English
 - [ ] V4.7 — UI: enable TTS → select voice → preview → generate → process
 - [ ] V4.8 — Segment duration fitting: long TTS clips speed up to fit time window
-- [ ] V4.9 — Unit tests pass
+- [x] V4.9 — Unit tests pass
 
 ---
 

@@ -24,6 +24,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - TTS API client (`ui-app/src/api/client.ts`): `postTTS`, `getTTSVoices`, `getTTSProfiles`, `postTTSPreview`, etc.
 - TTS section on Process page: enable toggle, voice profile selector, per-platform volume sliders, generate button with SSE progress, audio playback
 - TTS preview component (`ui-app/src/components/TTSPreview.tsx`): play/stop button with blob audio playback
+- TTS unit tests (`tests/test_tts.py`): 24 tests covering text cleanup, ABC, factory, voice profiles, atempo filter, ffmpeg audio mix, and batch processor TTS integration
 - OCR subtitle extraction via PaddleOCR (`src/transcriber/ocr.py`): auto-detect subtitle regions, filter watermarks by position/frequency/size, two-pass approach (sample + full OCR), deduplication
 - `extract_frames()` method on `FFmpegProcessor` for JPEG frame extraction at configurable FPS
 - OCR transcriber factory integration: `get_transcriber(config, method="ocr")` with full config passthrough
