@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
 import { postDownload, postTranscribe, getVideos, getVideo, getSrt, subscribeSSE, patchVideoTitle, deleteVideo, getProfiles, getProfile, postTranslate, createProfile, updateProfile, deleteProfileApi, getRawVideoUrl, getSrtDownloadUrl, getPlatform } from '../api/client';
 import type { VideoMetadata, SubtitleSegment, TranslationProfileSummary, TranslationProfile } from '../api/types';
+import { loadApiKeys, loadLLMPrefs, saveLLMPrefs } from '../utils/storage';
 
 function DownloadTranscribePage() {
   const navigate = useNavigate();
@@ -34,10 +35,20 @@ function DownloadTranscribePage() {
     name: '', description: '', target_language: 'vi', source_language: 'zh',
     style_guide: '', example_pairs: [],
   });
-  const [llmBackend, setLlmBackend] = useState('anthropic');
-  const [llmModel, setLlmModel] = useState('claude-sonnet-4-20250514');
+  const [savedPrefs] = useState(loadLLMPrefs);
+  const [llmBackend, setLlmBackend] = useState(savedPrefs.backend);
+  const [llmModel, setLlmModel] = useState(savedPrefs.model);
   const [llmApiKey, setLlmApiKey] = useState('');
   const [llmBaseUrl, setLlmBaseUrl] = useState('');
+
+  // Load API key from localStorage when backend changes
+  useEffect(() => {
+    const keys = loadApiKeys();
+    const keyMap: Record<string, string> = { anthropic: keys.anthropic, openai: keys.openai, deepseek: keys.deepseek };
+    setLlmApiKey(keyMap[llmBackend] || '');
+    if (llmBackend === 'deepseek') setLlmBaseUrl('https://api.deepseek.com');
+    else if (llmBackend !== 'local') setLlmBaseUrl('');
+  }, [llmBackend]);
   const [serverPlatform, setServerPlatform] = useState('darwin');
 
   useEffect(() => {
@@ -613,7 +624,9 @@ function DownloadTranscribePage() {
                           const val = e.target.value;
                           setLlmBackend(val);
                           const models = MODEL_OPTIONS[val];
-                          if (models?.length) setLlmModel(models[0].value);
+                          const firstModel = models?.length ? models[0].value : '';
+                          if (firstModel) setLlmModel(firstModel);
+                          saveLLMPrefs(val, firstModel);
                           if (val === 'deepseek') {
                             setLlmBaseUrl('https://api.deepseek.com');
                           } else {
@@ -633,7 +646,7 @@ function DownloadTranscribePage() {
                       <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">Model</label>
                       <select
                         value={llmModel}
-                        onChange={(e) => setLlmModel(e.target.value)}
+                        onChange={(e) => { setLlmModel(e.target.value); saveLLMPrefs(llmBackend, e.target.value); }}
                         className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
                       >
                         {(MODEL_OPTIONS[llmBackend] || []).map((m) => (
