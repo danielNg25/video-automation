@@ -336,7 +336,7 @@ douyin-automation/
 - [ ] **4.4** Google Cloud TTS provider — `src/tts/google_tts.py`
 - [x] **4.5** TTS factory — `src/tts/__init__.py`
 - [x] **4.6** Voice profiles config — `config/tts_voices.yaml`
-- [ ] **4.7** TTS audio assembler — `src/tts/assembler.py`
+- [x] **4.7** TTS audio assembler — `src/tts/assembler.py`
 - [ ] **4.8** Audio mixing in ffmpeg — `src/processor/ffmpeg.py`
 - [ ] **4.9** Update batch processor — `src/processor/__init__.py`
 - [x] **4.10** Config + infra updates — pyproject.toml, .gitignore, config
