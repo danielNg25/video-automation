@@ -425,7 +425,7 @@ function SettingsPage() {
                   <p className="text-[10px] text-zinc-600">Text at same position in more than this % of frames is classified as watermark</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 pt-2 border-t border-zinc-800/20">
                 <button
                   onClick={() => {
                     localStorage.setItem('douyin_pipeline_ocr_fps', ocrFps);
@@ -435,11 +435,11 @@ function SettingsPage() {
                     localStorage.setItem('douyin_pipeline_ocr_min_y', ocrMinY);
                     localStorage.setItem('douyin_pipeline_ocr_watermark_freq', ocrWatermarkFreq);
                     setOcrSaveMsg('OCR settings saved');
-                    setTimeout(() => setOcrSaveMsg(''), 3000);
+                    setTimeout(() => setOcrSaveMsg(''), 5000);
                   }}
-                  className="px-4 py-2 bg-primary text-on-primary-fixed text-xs font-bold uppercase tracking-widest rounded"
+                  className="px-5 py-2.5 bg-primary text-on-primary-fixed text-xs font-bold uppercase tracking-widest rounded hover:brightness-110 active:scale-95 transition-all"
                 >
-                  Save
+                  Save OCR Settings
                 </button>
                 <button
                   onClick={() => {
