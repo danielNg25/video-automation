@@ -337,8 +337,8 @@ douyin-automation/
 - [x] **4.5** TTS factory — `src/tts/__init__.py`
 - [x] **4.6** Voice profiles config — `config/tts_voices.yaml`
 - [x] **4.7** TTS audio assembler — `src/tts/assembler.py`
-- [ ] **4.8** Audio mixing in ffmpeg — `src/processor/ffmpeg.py`
-- [ ] **4.9** Update batch processor — `src/processor/__init__.py`
+- [x] **4.8** Audio mixing in ffmpeg — `src/processor/ffmpeg.py`
+- [x] **4.9** Update batch processor — `src/processor/__init__.py`
 - [x] **4.10** Config + infra updates — pyproject.toml, .gitignore, config
 - [ ] **4.11** TTS unit tests — `tests/test_tts.py`
 - [ ] **4.12** TTS API models — `src/api/models.py`

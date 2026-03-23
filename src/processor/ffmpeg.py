@@ -464,6 +464,151 @@ class FFmpegProcessor:
         self._run_ffmpeg(cmd)
         return output_path
 
+    def mix_audio(
+        self,
+        video_path: Path,
+        tts_audio_path: Path,
+        output_path: Path,
+        original_volume: float = 0.3,
+        tts_volume: float = 1.0,
+    ) -> Path:
+        """Mix TTS audio with original video audio.
+
+        Args:
+            video_path: Source video file.
+            tts_audio_path: TTS audio track (WAV).
+            output_path: Output video path.
+            original_volume: Volume level for original audio (0.0-1.0).
+            tts_volume: Volume level for TTS audio (0.0-1.0).
+
+        Returns:
+            Path to output video with mixed audio.
+        """
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        filter_complex = (
+            f"[0:a]volume={original_volume}[orig];"
+            f"[1:a]volume={tts_volume}[tts];"
+            "[orig][tts]amix=inputs=2:duration=first:dropout_transition=0[aout]"
+        )
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(video_path),
+            "-i", str(tts_audio_path),
+            "-filter_complex", filter_complex,
+            "-map", "0:v",
+            "-map", "[aout]",
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-movflags", "+faststart",
+            str(output_path),
+        ]
+
+        logger.info(
+            f"Mixing audio: original={original_volume}, TTS={tts_volume} → {output_path.name}"
+        )
+        self._run_ffmpeg(cmd)
+        return output_path
+
+    def burn_reformat_and_dub(
+        self,
+        video_path: Path,
+        subtitle_path: Path,
+        tts_audio_path: Path,
+        platform: str,
+        output_path: Path,
+        style: dict | None = None,
+        platform_specs: dict | None = None,
+        original_volume: float = 0.3,
+        tts_volume: float = 1.0,
+    ) -> Path:
+        """Single-pass: burn subtitles, reformat for platform, and mix TTS audio.
+
+        Args:
+            video_path: Source video file.
+            subtitle_path: SRT or ASS subtitle file.
+            tts_audio_path: TTS audio track (WAV).
+            platform: Platform name.
+            output_path: Output video path.
+            style: Optional style dict.
+            platform_specs: Optional specs dict override.
+            original_volume: Volume for original audio (0.0-1.0).
+            tts_volume: Volume for TTS audio (0.0-1.0).
+
+        Returns:
+            Path to output video.
+        """
+        specs = platform_specs or self._load_platform_specs(platform)
+        resolution = specs.get("resolution", "1080x1920")
+        w, h = resolution.split("x")
+        crf = specs.get("crf", 23)
+        max_bitrate = specs.get("max_bitrate", "8M")
+        max_duration = specs.get("max_duration")
+
+        if max_duration:
+            info = self.get_video_info(video_path)
+            if info["duration"] > max_duration:
+                logger.warning(
+                    f"Platform {platform}: video is {info['duration']:.1f}s, "
+                    f"truncating to {max_duration}s"
+                )
+
+        escaped_sub = self._escape_filter_path(subtitle_path)
+
+        scale_pad = (
+            f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
+            f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2"
+        )
+
+        if style:
+            style_str = self._build_style_string(style)
+            sub_filter = f"subtitles='{escaped_sub}':force_style='{style_str}'"
+        else:
+            sub_filter = f"subtitles='{escaped_sub}'"
+
+        vf = f"{scale_pad},{sub_filter}"
+
+        # Audio mixing filter
+        af = (
+            f"[0:a]volume={original_volume}[orig];"
+            f"[1:a]volume={tts_volume}[tts];"
+            "[orig][tts]amix=inputs=2:duration=first:dropout_transition=0[aout]"
+        )
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(video_path),
+            "-i", str(tts_audio_path),
+            "-filter_complex", f"{af}",
+            "-vf", vf,
+            "-map", "0:v",
+            "-map", "[aout]",
+            "-c:v", "libx264",
+            "-preset", "medium",
+            "-crf", str(crf),
+            "-maxrate", max_bitrate,
+            "-bufsize", f"{int(max_bitrate.rstrip('M')) * 2}M",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-movflags", "+faststart",
+        ]
+
+        if max_duration:
+            cmd.extend(["-t", str(max_duration)])
+
+        cmd.append(str(output_path))
+
+        logger.info(
+            f"Burn+reformat+dub for {platform}: {subtitle_path.name}, "
+            f"{resolution}, orig_vol={original_volume}, tts_vol={tts_volume}"
+        )
+        self._run_ffmpeg(cmd)
+        return output_path
+
     def _load_platform_specs(self, platform: str) -> dict:
         """Load platform specs from config or fall back to defaults."""
         # Try loading from YAML config file
