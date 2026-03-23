@@ -22,7 +22,8 @@ Automated pipeline to download videos from Douyin, generate AI subtitles (Chines
 5. [Phase 3 — Platform Upload Integrations](#5-phase-3--platform-upload-integrations-week-3-4)
 6. [Phase 4 — Orchestration + Batch Processing](#6-phase-4--orchestration--batch-processing-week-4-5)
 7. [Phase 5 — TTS Dubbing](#7-phase-5--tts-dubbing-week-5-6)
-8. [Platform API Reference](#8-platform-api-reference)
+8. [Phase 6 — OCR Subtitle Extraction](#8-phase-6--ocr-subtitle-extraction-week-6-7)
+9. [Platform API Reference](#9-platform-api-reference)
 9. [Configuration](#9-configuration)
 10. [Dependencies](#10-dependencies)
 10. [Web UI + API Layer](#10-web-ui--api-layer)
@@ -670,7 +671,26 @@ Generate voiceover audio from translated subtitles and mix into video.
 
 ---
 
-## 8. Platform API Reference
+## 8. Phase 6 — OCR Subtitle Extraction (Week 6-7)
+
+Extract burned-in Chinese subtitles from Douyin video frames using OCR instead of audio transcription.
+
+**Why**: Whisper is inaccurate on noisy Douyin videos (background music, multiple speakers). Douyin videos already have burned-in Chinese subtitles that can be extracted via OCR with much higher accuracy.
+
+**Pipeline**: Extract frames (ffmpeg, 2 FPS) → crop to user-selected region → PaddleOCR → deduplicate → SRT
+
+**Architecture**: `src/transcriber/ocr.py` implementing existing `BaseTranscriber` ABC. Selected via factory when user chooses "OCR" method. Same segment format `{start, end, text}` — rest of pipeline unchanged.
+
+**Key tasks** (11 total — see `plans/phase6-ocr-subtitle-extraction.md`):
+- OCR transcriber backend using PaddleOCR (best Chinese accuracy)
+- Frame extraction via ffmpeg with configurable crop region
+- Text deduplication via SequenceMatcher (merge consecutive identical frames)
+- Region picker UI: user draws rectangle on video frame to select subtitle area
+- Method toggle on Download & Transcribe page: "Audio (Whisper)" / "OCR (Extract Subtitles)"
+
+---
+
+## 9. Platform API Reference
 
 Quick reference for API endpoints and auth:
 

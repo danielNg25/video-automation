@@ -99,5 +99,6 @@ Detailed phase plans with task lists, dependency graphs, and verification checkl
 - `phase3-platform-uploads.md` (8 tasks)
 - `phase4-orchestration-batch.md` (10 tasks)
 - `phase5-tts-dubbing.md` (18 tasks)
+- `phase6-ocr-subtitle-extraction.md` (11 tasks)
 
 Progress is tracked via the checklist in `README.md`.

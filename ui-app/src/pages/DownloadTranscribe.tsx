@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
-import { postDownload, postTranscribe, getVideos, getVideo, getSrt, subscribeSSE, patchVideoTitle, deleteVideo } from '../api/client';
-import type { VideoMetadata, SubtitleSegment } from '../api/types';
+import { postDownload, postTranscribe, getVideos, getVideo, getSrt, subscribeSSE, patchVideoTitle, deleteVideo, getProfiles, getProfile, postTranslate, createProfile, updateProfile, deleteProfileApi, getRawVideoUrl, getSrtDownloadUrl, getPlatform } from '../api/client';
+import type { VideoMetadata, SubtitleSegment, TranslationProfileSummary, TranslationProfile } from '../api/types';
+import { loadApiKeys, loadLLMPrefs, saveLLMPrefs } from '../utils/storage';
 
 function DownloadTranscribePage() {
   const navigate = useNavigate();
@@ -21,6 +22,89 @@ function DownloadTranscribePage() {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  // Translation state
+  const [profiles, setProfiles] = useState<TranslationProfileSummary[]>([]);
+  const [selectedProfile, setSelectedProfile] = useState('');
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [translateMessage, setTranslateMessage] = useState('');
+  const [translateProgress, setTranslateProgress] = useState(0);
+  const [showProfileEditor, setShowProfileEditor] = useState(false);
+  const [editingProfile, setEditingProfile] = useState<TranslationProfile | null>(null);
+  const [profileDraft, setProfileDraft] = useState<TranslationProfile>({
+    name: '', description: '', target_language: 'vi', source_language: 'zh',
+    style_guide: '', example_pairs: [],
+  });
+  const [savedPrefs] = useState(loadLLMPrefs);
+  const [llmBackend, setLlmBackend] = useState(savedPrefs.backend);
+  const [llmModel, setLlmModel] = useState(savedPrefs.model);
+  const [llmApiKey, setLlmApiKey] = useState('');
+  const [llmBaseUrl, setLlmBaseUrl] = useState('');
+
+  // Load API key from localStorage when backend changes
+  useEffect(() => {
+    const keys = loadApiKeys();
+    const keyMap: Record<string, string> = { anthropic: keys.anthropic, openai: keys.openai, deepseek: keys.deepseek };
+    setLlmApiKey(keyMap[llmBackend] || '');
+    if (llmBackend === 'deepseek') setLlmBaseUrl('https://api.deepseek.com');
+    else if (llmBackend !== 'local') setLlmBaseUrl('');
+  }, [llmBackend]);
+  const [serverPlatform, setServerPlatform] = useState('darwin');
+
+  useEffect(() => {
+    getPlatform().then((r) => setServerPlatform(r.platform)).catch(() => {});
+  }, []);
+
+  const LOCAL_MODELS_MACOS = [
+    { label: 'Qwen 2.5 14B (4-bit)', value: 'mlx-community/Qwen2.5-14B-Instruct-4bit' },
+    { label: 'Qwen 2.5 7B (4-bit)', value: 'mlx-community/Qwen2.5-7B-Instruct-4bit' },
+    { label: 'Qwen 2.5 32B (4-bit)', value: 'mlx-community/Qwen2.5-32B-Instruct-4bit' },
+    { label: 'Llama 3.1 8B (4-bit)', value: 'mlx-community/Meta-Llama-3.1-8B-Instruct-4bit' },
+    { label: 'Mistral 7B (4-bit)', value: 'mlx-community/Mistral-7B-Instruct-v0.3-4bit' },
+  ];
+
+  const LOCAL_MODELS_LINUX = [
+    { label: 'Qwen 2.5 14B (Q4)', value: 'Qwen/Qwen2.5-14B-Instruct-GGUF' },
+    { label: 'Qwen 2.5 7B (Q4)', value: 'Qwen/Qwen2.5-7B-Instruct-GGUF' },
+    { label: 'Qwen 2.5 32B (Q4)', value: 'Qwen/Qwen2.5-32B-Instruct-GGUF' },
+    { label: 'Llama 3.1 8B (Q4)', value: 'meta-llama/Llama-3.1-8B-Instruct-GGUF' },
+    { label: 'Mistral 7B (Q4)', value: 'mistralai/Mistral-7B-Instruct-v0.3-GGUF' },
+  ];
+
+  const MODEL_OPTIONS: Record<string, { label: string; value: string }[]> = {
+    anthropic: [
+      { label: 'Claude Sonnet 4', value: 'claude-sonnet-4-20250514' },
+      { label: 'Claude Haiku 3.5', value: 'claude-3-5-haiku-20241022' },
+      { label: 'Claude Opus 4', value: 'claude-opus-4-20250514' },
+    ],
+    openai: [
+      { label: 'GPT-4o', value: 'gpt-4o' },
+      { label: 'GPT-4o Mini', value: 'gpt-4o-mini' },
+      { label: 'GPT-4.1', value: 'gpt-4.1' },
+      { label: 'GPT-4.1 Mini', value: 'gpt-4.1-mini' },
+    ],
+    deepseek: [
+      { label: 'DeepSeek V3', value: 'deepseek-chat' },
+      { label: 'DeepSeek R1', value: 'deepseek-reasoner' },
+    ],
+    local: serverPlatform === 'darwin' ? LOCAL_MODELS_MACOS : LOCAL_MODELS_LINUX,
+  };
+
+  const loadProfiles = useCallback(async () => {
+    try {
+      const p = await getProfiles();
+      setProfiles(p);
+      if (p.length > 0 && !selectedProfile) {
+        setSelectedProfile(p[0].name);
+      }
+    } catch {
+      // API not available yet
+    }
+  }, [selectedProfile]);
+
+  useEffect(() => {
+    loadProfiles();
+  }, [loadProfiles]);
 
   const loadVideos = useCallback(async () => {
     try {
@@ -161,6 +245,93 @@ function DownloadTranscribePage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to delete video');
       setDeleteConfirmId(null);
+    }
+  };
+
+  const handleTranslate = async () => {
+    if (!videoMeta || !selectedProfile) return;
+    setError('');
+    setIsTranslating(true);
+    setTranslateProgress(0);
+    setTranslateMessage('Loading translation profile...');
+
+    // Determine source language: prefer zh, fall back to first available
+    const sourceLang = videoMeta.srt_languages.includes('zh')
+      ? 'zh'
+      : videoMeta.srt_languages.includes('en')
+        ? 'en'
+        : videoMeta.srt_languages[0] || 'zh';
+
+    try {
+      const overrides: { backend?: string; model?: string; api_key?: string; base_url?: string } = {};
+      // DeepSeek uses the OpenAI-compatible API
+      overrides.backend = llmBackend === 'deepseek' ? 'openai' : llmBackend;
+      if (llmModel) overrides.model = llmModel;
+      if (llmApiKey) overrides.api_key = llmApiKey;
+      if (llmBaseUrl) overrides.base_url = llmBaseUrl;
+      const { task_id } = await postTranslate(videoMeta.video_id, selectedProfile, sourceLang, overrides);
+      const es = subscribeSSE(task_id, (eventType, data) => {
+        if (eventType === 'progress') {
+          setTranslateProgress((data.progress as number) * 100);
+          setTranslateMessage(data.message as string);
+        } else if (eventType === 'complete') {
+          setIsTranslating(false);
+          setTranslateProgress(100);
+          setTranslateMessage('Translation complete');
+          const targetLang = data.target_language as string;
+          // Refresh video metadata first so language dropdown updates
+          getVideo(videoMeta.video_id).then((updated) => {
+            setVideoMeta(updated);
+            // Then load the translated SRT into preview
+            if (targetLang) loadSrt(videoMeta.video_id, targetLang);
+          });
+          loadVideos();
+          es.close();
+        } else if (eventType === 'error') {
+          setIsTranslating(false);
+          setError(data.message as string);
+          es.close();
+        }
+      });
+    } catch (e) {
+      setIsTranslating(false);
+      setError(e instanceof Error ? e.message : 'Translation failed');
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    try {
+      if (editingProfile) {
+        await updateProfile(editingProfile.name, profileDraft);
+      } else {
+        await createProfile(profileDraft);
+      }
+      setShowProfileEditor(false);
+      setEditingProfile(null);
+      loadProfiles();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save profile');
+    }
+  };
+
+  const handleEditProfile = async (name: string) => {
+    try {
+      const full = await getProfile(name);
+      setEditingProfile(full);
+      setProfileDraft(full);
+      setShowProfileEditor(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load profile');
+    }
+  };
+
+  const handleDeleteProfile = async (name: string) => {
+    try {
+      await deleteProfileApi(name);
+      loadProfiles();
+      if (selectedProfile === name) setSelectedProfile('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to delete profile');
     }
   };
 
@@ -342,6 +513,14 @@ function DownloadTranscribePage() {
                         <span className="material-symbols-outlined text-sm">edit_note</span>
                       </button>
                     )}
+                    <a
+                      href={getRawVideoUrl(videoMeta.video_id)}
+                      download
+                      className="bg-surface-container-highest text-on-surface px-3 py-2 rounded-md font-bold text-xs flex items-center gap-1.5 whitespace-nowrap active:scale-95 transition-all hover:bg-surface-container-high"
+                      title="Download MP4"
+                    >
+                      <span className="material-symbols-outlined text-sm">save_alt</span>
+                    </a>
                   </div>
                 </div>
               </div>
@@ -362,6 +541,303 @@ function DownloadTranscribePage() {
                       <span className="text-[11px] font-medium text-emerald-400">{transcribeMessage}</span>
                     </div>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* Translation Panel — shown after transcription */}
+            {videoMeta && videoMeta.has_srt && !isDownloading && (
+              <div className="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/10">
+                <div className="p-4 border-b border-outline-variant/10 flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary text-lg">translate</span>
+                    <span className="text-xs font-bold uppercase tracking-widest">LLM Translation</span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setEditingProfile(null);
+                      setProfileDraft({
+                        name: '', description: '', target_language: 'vi', source_language: 'zh',
+                        style_guide: '', example_pairs: [],
+                      });
+                      setShowProfileEditor(!showProfileEditor);
+                    }}
+                    className="text-[10px] font-bold text-primary uppercase tracking-wider hover:underline"
+                  >
+                    {showProfileEditor ? 'Cancel' : '+ New Profile'}
+                  </button>
+                </div>
+                <div className="p-5 space-y-4">
+                  {/* Profile Selector */}
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">Translation Profile</label>
+                      <div className="flex gap-2 items-center">
+                        <select
+                          value={selectedProfile}
+                          onChange={(e) => setSelectedProfile(e.target.value)}
+                          className="flex-1 bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
+                        >
+                          {profiles.map((p) => (
+                            <option key={p.name} value={p.name}>
+                              {p.name} ({p.target_language})
+                            </option>
+                          ))}
+                        </select>
+                        {selectedProfile && (
+                          <>
+                            <button
+                              onClick={() => handleEditProfile(selectedProfile)}
+                              className="p-1.5 hover:bg-surface-container-highest rounded transition-colors text-zinc-400"
+                              title="Edit profile"
+                            >
+                              <span className="material-symbols-outlined text-sm">edit</span>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteProfile(selectedProfile)}
+                              className="p-1.5 hover:bg-error/10 rounded transition-colors text-zinc-400 hover:text-error"
+                              title="Delete profile"
+                            >
+                              <span className="material-symbols-outlined text-sm">delete</span>
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleTranslate}
+                      disabled={isTranslating || !selectedProfile}
+                      className="bg-primary text-on-primary-fixed px-5 py-2 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap active:scale-95 transition-all disabled:opacity-50 mt-4"
+                    >
+                      <span>{isTranslating ? 'Translating...' : 'Translate'}</span>
+                      <span className="material-symbols-outlined text-sm">translate</span>
+                    </button>
+                  </div>
+
+                  {/* Model & API Key */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">Backend</label>
+                      <select
+                        value={llmBackend}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setLlmBackend(val);
+                          const models = MODEL_OPTIONS[val];
+                          const firstModel = models?.length ? models[0].value : '';
+                          if (firstModel) setLlmModel(firstModel);
+                          saveLLMPrefs(val, firstModel);
+                          if (val === 'deepseek') {
+                            setLlmBaseUrl('https://api.deepseek.com');
+                          } else {
+                            setLlmBaseUrl('');
+                          }
+                          if (val === 'local') setLlmApiKey('');
+                        }}
+                        className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
+                      >
+                        <option value="anthropic">Anthropic</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="deepseek">DeepSeek</option>
+                        <option value="local">Local (mlx-lm / llama.cpp)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">Model</label>
+                      <select
+                        value={llmModel}
+                        onChange={(e) => { setLlmModel(e.target.value); saveLLMPrefs(llmBackend, e.target.value); }}
+                        className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
+                      >
+                        {(MODEL_OPTIONS[llmBackend] || []).map((m) => (
+                          <option key={m.value} value={m.value}>
+                            {m.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {llmBackend !== 'local' && (
+                      <div>
+                        <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">API Key</label>
+                        <input
+                          type="password"
+                          value={llmApiKey}
+                          onChange={(e) => setLlmApiKey(e.target.value)}
+                          className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary"
+                          placeholder="Uses env var if empty"
+                        />
+                      </div>
+                    )}
+                    {llmBackend === 'local' && (
+                      <div className="flex items-end">
+                        <span className="text-[10px] text-zinc-500 py-2">
+                          {serverPlatform === 'darwin'
+                            ? 'Runs in-process via mlx-lm (Apple Silicon)'
+                            : 'Runs in-process via llama-cpp-python (CPU/CUDA)'}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Profile Description */}
+                  {selectedProfile && profiles.find((p) => p.name === selectedProfile) && (
+                    <div className="text-[11px] text-on-surface-variant bg-surface-container-highest/50 rounded p-3">
+                      {profiles.find((p) => p.name === selectedProfile)?.description}
+                    </div>
+                  )}
+
+                  {/* Translation Progress / Result */}
+                  {isTranslating && (
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[10px] font-mono text-zinc-500 uppercase">{translateMessage}</span>
+                        <span className="text-xs font-bold font-mono text-primary">{translateProgress.toFixed(0)}%</span>
+                      </div>
+                      <div className="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
+                        <div
+                          className="bg-primary h-full transition-all duration-500 shadow-[0_0_8px_rgba(208,188,255,0.4)]"
+                          style={{ width: `${translateProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {!isTranslating && translateMessage === 'Translation complete' && (
+                    <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs p-3 rounded-lg flex items-center gap-2">
+                      <span className="material-symbols-outlined text-sm">check_circle</span>
+                      Translation complete — see translated subtitles in the SRT Preview panel
+                      <button onClick={() => setTranslateMessage('')} className="ml-auto text-emerald-500/50 hover:text-emerald-400">
+                        <span className="material-symbols-outlined text-sm">close</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Profile Editor */}
+                  {showProfileEditor && (
+                    <div className="border border-outline-variant/20 rounded-lg p-4 space-y-3 bg-surface-container-lowest">
+                      <h4 className="text-xs font-bold uppercase tracking-widest">
+                        {editingProfile ? 'Edit Profile' : 'New Profile'}
+                      </h4>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[10px] text-zinc-500 uppercase block mb-1">Name</label>
+                          <input
+                            className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary"
+                            value={profileDraft.name}
+                            onChange={(e) => setProfileDraft({ ...profileDraft, name: e.target.value })}
+                            placeholder="my-profile-vi"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-zinc-500 uppercase block mb-1">Target Language</label>
+                          <select
+                            className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
+                            value={profileDraft.target_language}
+                            onChange={(e) => setProfileDraft({ ...profileDraft, target_language: e.target.value })}
+                          >
+                            <option value="vi">Vietnamese</option>
+                            <option value="en">English</option>
+                            <option value="ko">Korean</option>
+                            <option value="ja">Japanese</option>
+                            <option value="es">Spanish</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-zinc-500 uppercase block mb-1">Description</label>
+                        <input
+                          className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary"
+                          value={profileDraft.description}
+                          onChange={(e) => setProfileDraft({ ...profileDraft, description: e.target.value })}
+                          placeholder="Short description of this translation style"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-zinc-500 uppercase block mb-1">Source Language</label>
+                        <select
+                          className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
+                          value={profileDraft.source_language}
+                          onChange={(e) => setProfileDraft({ ...profileDraft, source_language: e.target.value })}
+                        >
+                          <option value="zh">Chinese</option>
+                          <option value="en">English</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-zinc-500 uppercase block mb-1">Style Guide</label>
+                        <textarea
+                          className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary h-32 resize-y"
+                          value={profileDraft.style_guide}
+                          onChange={(e) => setProfileDraft({ ...profileDraft, style_guide: e.target.value })}
+                          placeholder="Describe the personality, tone, and rules for translation..."
+                        />
+                      </div>
+                      <div>
+                        <div className="flex justify-between items-center mb-2">
+                          <label className="text-[10px] text-zinc-500 uppercase">Example Pairs</label>
+                          <button
+                            onClick={() =>
+                              setProfileDraft({
+                                ...profileDraft,
+                                example_pairs: [...profileDraft.example_pairs, { source: '', target: '' }],
+                              })
+                            }
+                            className="text-[10px] text-primary font-bold uppercase hover:underline"
+                          >
+                            + Add
+                          </button>
+                        </div>
+                        {profileDraft.example_pairs.map((pair, i) => (
+                          <div key={i} className="flex gap-2 mb-2 items-center">
+                            <input
+                              className="flex-1 bg-surface-container-highest border-none text-xs text-on-surface py-1.5 px-2 rounded focus:ring-1 focus:ring-primary"
+                              placeholder="Source text"
+                              value={pair.source}
+                              onChange={(e) => {
+                                const pairs = [...profileDraft.example_pairs];
+                                pairs[i] = { ...pairs[i], source: e.target.value };
+                                setProfileDraft({ ...profileDraft, example_pairs: pairs });
+                              }}
+                            />
+                            <span className="text-zinc-600 text-[10px]">→</span>
+                            <input
+                              className="flex-1 bg-surface-container-highest border-none text-xs text-on-surface py-1.5 px-2 rounded focus:ring-1 focus:ring-primary"
+                              placeholder="Target text"
+                              value={pair.target}
+                              onChange={(e) => {
+                                const pairs = [...profileDraft.example_pairs];
+                                pairs[i] = { ...pairs[i], target: e.target.value };
+                                setProfileDraft({ ...profileDraft, example_pairs: pairs });
+                              }}
+                            />
+                            <button
+                              onClick={() => {
+                                const pairs = profileDraft.example_pairs.filter((_, j) => j !== i);
+                                setProfileDraft({ ...profileDraft, example_pairs: pairs });
+                              }}
+                              className="text-zinc-500 hover:text-error"
+                            >
+                              <span className="material-symbols-outlined text-sm">close</span>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex justify-end gap-2 pt-2">
+                        <button
+                          onClick={() => { setShowProfileEditor(false); setEditingProfile(null); }}
+                          className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-zinc-400 hover:text-on-surface"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleSaveProfile}
+                          disabled={!profileDraft.name.trim()}
+                          className="bg-primary text-on-primary-fixed px-4 py-2 rounded-md font-bold text-xs uppercase tracking-wider disabled:opacity-50"
+                        >
+                          {editingProfile ? 'Update' : 'Save'} Profile
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -406,9 +882,16 @@ function DownloadTranscribePage() {
                   {videoMeta && videoMeta.srt_languages.length === 1 && (
                     <span className="text-[10px] font-mono text-zinc-500 uppercase">{previewLanguage}</span>
                   )}
-                  <button className="p-1.5 hover:bg-surface-container-highest rounded transition-colors text-zinc-400" title="Export SRT">
-                    <span className="material-symbols-outlined text-sm">download</span>
-                  </button>
+                  {videoMeta && previewLanguage && (
+                    <a
+                      href={getSrtDownloadUrl(videoMeta.video_id, previewLanguage)}
+                      download
+                      className="p-1.5 hover:bg-surface-container-highest rounded transition-colors text-zinc-400"
+                      title="Export SRT"
+                    >
+                      <span className="material-symbols-outlined text-sm">download</span>
+                    </a>
+                  )}
                   <button className="p-1.5 hover:bg-surface-container-highest rounded transition-colors text-zinc-400" title="Copy Text">
                     <span className="material-symbols-outlined text-sm">content_copy</span>
                   </button>

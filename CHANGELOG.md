@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Phase 6 plan: OCR subtitle extraction from burned-in Douyin subtitles via PaddleOCR
+- Translation profile system (`src/translator/profiles.py`): load, list, save, delete profiles
+- Built-in translation profiles: funny-casual-vi, neutral-vi, dramatic-vi
+- Profile YAML config directory (`config/translation_profiles/`) with example template
+- LLM translator (`src/translator/llm.py`): batch SRT translation via Anthropic/OpenAI with retry, rate limiting, context carryover
+- Translation config section in `config/config.example.yaml`
+- `anthropic` and `openai` SDK dependencies in `pyproject.toml`
+- Translator factory (`src/translator/__init__.py`): `get_translator()` + `translate_with_profile()` convenience function
+- Translation API router (`src/api/routers/translate.py`): `POST /api/translate` with SSE progress, profile CRUD endpoints
+- Translation request/response models in `src/api/models.py`
+- `run_translate()` in task manager with batch-level SSE progress events
+- Translation UI on Download & Transcribe page: profile selector, translate button with SSE progress, profile editor (create/edit/delete)
+- SRT file download endpoint: `GET /api/videos/{video_id}/srt/download`
+- Content-Disposition attachment header on raw video download endpoint
+- Download MP4 button on video result card
+- SRT export button wired to download endpoint in SRT preview header
+- LLM backend/model/API key selector on translation panel (overrides config per-request)
+
 ## [1.1.0] — 2026-03-22
 
 ### Added

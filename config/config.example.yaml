@@ -50,6 +50,15 @@ platforms:
         access_token: '${X_ACCESS_TOKEN}'
         access_secret: '${X_ACCESS_SECRET}'
 
+# LLM Translation
+translation:
+    backend: 'anthropic'                    # "anthropic" | "openai"
+    model: 'claude-sonnet-4-20250514'       # model ID
+    api_key: '${ANTHROPIC_API_KEY}'
+    max_segments_per_batch: 8
+    temperature: 0.7
+    default_profile: 'funny-casual-vi'
+
 # Pipeline
 pipeline:
     data_dir: './data'

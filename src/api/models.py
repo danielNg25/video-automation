@@ -21,6 +21,25 @@ class UpdateVideoRequest(BaseModel):
     title: str
 
 
+class TranslateRequest(BaseModel):
+    video_id: str
+    profile_name: str = "funny-casual-vi"
+    source_language: str = "zh"
+    backend: str | None = None    # override config: "anthropic" | "openai"
+    model: str | None = None      # override config: model ID
+    api_key: str | None = None    # override config: API key
+    base_url: str | None = None   # override config: custom API base URL (for local models)
+
+
+class TranslationProfileCreate(BaseModel):
+    name: str
+    description: str
+    target_language: str
+    source_language: str = "zh"
+    style_guide: str
+    example_pairs: list[dict] = []
+
+
 class ProcessRequest(BaseModel):
     video_id: str
     platforms: list[str]
@@ -95,6 +114,21 @@ class ProcessResult(BaseModel):
     video_id: str
     outputs: dict[str, str] = {}
     subtitle_languages: dict[str, str] = {}
+
+
+class TranslationProfileResponse(BaseModel):
+    name: str
+    description: str
+    target_language: str
+    source_language: str
+    style_guide: str
+    example_pairs: list[dict]
+
+
+class TranslationProfileSummary(BaseModel):
+    name: str
+    description: str
+    target_language: str
 
 
 class DashboardStats(BaseModel):

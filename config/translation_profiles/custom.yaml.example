@@ -1,0 +1,27 @@
+# Custom Translation Profile Template
+#
+# Copy this file to create your own translation profile:
+#   cp custom.yaml.example my-style.yaml
+#
+# Then edit the fields below and use it when translating:
+#   POST /api/translate {"profile_name": "my-style", ...}
+
+name: my-custom-profile
+description: "Short description of this translation style"
+target_language: vi       # Target language code (vi, en, ko, ja, etc.)
+source_language: zh       # Source language code (zh or en)
+style_guide: |
+  You are translating short video subtitles.
+
+  Personality: [Describe the personality/tone here]
+
+  Rules:
+  - [Add your style rules here]
+  - Keep subtitle length short — max 2 lines, prefer 1
+
+  Avoid:
+  - [Things to avoid in translations]
+
+example_pairs:
+  - source: "原文示例"
+    target: "Translation example"

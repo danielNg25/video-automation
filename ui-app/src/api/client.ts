@@ -9,6 +9,8 @@ import type {
   PlatformSpec,
   SaveSrtRequest,
   PreviewClipRequest,
+  TranslationProfile,
+  TranslationProfileSummary,
 } from './types';
 
 const BASE = '/api';
@@ -137,6 +139,66 @@ export function getRawVideoUrl(videoId: string): string {
 
 export function getProxyVideoUrl(videoId: string): string {
   return `${BASE}/videos/${videoId}/proxy`;
+}
+
+// --- Translation + Profiles ---
+
+export function getProfiles(): Promise<TranslationProfileSummary[]> {
+  return request('/profiles');
+}
+
+export function getProfile(name: string): Promise<TranslationProfile> {
+  return request(`/profiles/${encodeURIComponent(name)}`);
+}
+
+export function createProfile(profile: TranslationProfile): Promise<TranslationProfile> {
+  return request('/profiles', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(profile),
+  });
+}
+
+export function updateProfile(name: string, profile: TranslationProfile): Promise<TranslationProfile> {
+  return request(`/profiles/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(profile),
+  });
+}
+
+export async function deleteProfileApi(name: string): Promise<void> {
+  await fetch(`${BASE}/profiles/${encodeURIComponent(name)}`, { method: 'DELETE' });
+}
+
+export function postTranslate(
+  videoId: string,
+  profileName: string,
+  sourceLang: string = 'zh',
+  overrides?: { backend?: string; model?: string; api_key?: string; base_url?: string },
+): Promise<TaskResponse> {
+  return request('/translate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      video_id: videoId,
+      profile_name: profileName,
+      source_language: sourceLang,
+      ...overrides,
+    }),
+  });
+}
+
+// --- Download URLs ---
+
+export function getSrtDownloadUrl(videoId: string, language: string): string {
+  return `${BASE}/videos/${videoId}/srt/download?language=${language}`;
+}
+
+// --- System info ---
+
+export function getPlatform(): Promise<{ platform: string }> {
+  return request('/settings/platform');
 }
 
 // --- Cookie management ---

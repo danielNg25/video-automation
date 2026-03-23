@@ -1,7 +1,8 @@
-"""Settings endpoints — Douyin cookie management."""
+"""Settings endpoints — Douyin cookie management + system info."""
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import httpx
@@ -120,3 +121,9 @@ async def test_cookie():
         )
     except Exception as e:
         return CookieTestResult(success=False, message=str(e))
+
+
+@router.get("/api/settings/platform")
+async def get_platform():
+    """Return server platform for UI to select correct local model presets."""
+    return {"platform": sys.platform}  # "darwin" or "linux"

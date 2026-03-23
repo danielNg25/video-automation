@@ -4,6 +4,7 @@ import asyncio
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
+from starlette.responses import FileResponse
 
 from src.api.deps import get_config, get_task_manager
 from src.api.models import SrtResponse, SubtitleSegment, TaskResponse, TranscribeRequest
@@ -52,3 +53,20 @@ async def get_srt(video_id: str, language: str = "zh"):
     ]
 
     return SrtResponse(video_id=video_id, segments=segments, language=language)
+
+
+@router.get("/api/videos/{video_id}/srt/download")
+async def download_srt(video_id: str, language: str = "zh"):
+    """Download SRT file as attachment."""
+    srt_path = Path("data/srt") / f"{video_id}_{language}.srt"
+    if not srt_path.exists():
+        raise HTTPException(
+            status_code=404, detail=f"SRT file not found for {video_id} ({language})"
+        )
+
+    return FileResponse(
+        path=str(srt_path),
+        media_type="text/plain",
+        filename=f"{video_id}_{language}.srt",
+        headers={"Content-Disposition": f'attachment; filename="{video_id}_{language}.srt"'},
+    )

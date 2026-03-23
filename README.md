@@ -223,13 +223,13 @@ douyin-automation/
 - [x] **1.23** React frontend foundation — `ui-app/` scaffold
 - [x] **1.24** Download & Transcribe page — `ui-app/src/pages/DownloadTranscribe.tsx`
 - [x] **1.25** Backend dependencies — `pyproject.toml` + `Makefile` updates
-- [ ] **1.26** Translation profile system — `src/translator/profiles.py` + `config/translation_profiles/`
-- [ ] **1.27** LLM translator — `src/translator/llm.py` (Anthropic/OpenAI/local backends)
-- [ ] **1.28** Translator factory — `src/translator/__init__.py`
-- [ ] **1.29** Translation API — `src/api/routers/translate.py` (profiles CRUD + translate endpoint)
-- [ ] **1.30** Translation UI — profile selector, translation progress, multi-language SRT preview
-- [ ] **1.31** Raw video download endpoint — `GET /api/videos/{video_id}/raw`
-- [ ] **1.32** Download raw video UI — download button on VideoCard + SRT export
+- [x] **1.26** Translation profile system — `src/translator/profiles.py` + `config/translation_profiles/`
+- [x] **1.27** LLM translator — `src/translator/llm.py` (Anthropic/OpenAI/local backends)
+- [x] **1.28** Translator factory — `src/translator/__init__.py`
+- [x] **1.29** Translation API — `src/api/routers/translate.py` (profiles CRUD + translate endpoint)
+- [x] **1.30** Translation UI — profile selector, translation progress, multi-language SRT preview
+- [x] **1.31** Raw video download endpoint — `GET /api/videos/{video_id}/raw`
+- [x] **1.32** Download raw video UI — download button on VideoCard + SRT export
 
 **Verification (Backend):**
 - [x] V1.1 — `pip install -e ".[macos]"` completes without errors
@@ -253,14 +253,14 @@ douyin-automation/
 - [x] V1.17 — End-to-end: paste URL → download → transcribe → see SRT preview in browser
 
 **Verification (Translation + Download):**
-- [ ] V1.18 — Translation profiles load from `config/translation_profiles/`
+- [x] V1.18 — Translation profiles load from `config/translation_profiles/`
 - [ ] V1.19 — LLM translation produces Vietnamese SRT with profile-guided style
-- [ ] V1.20 — Profile CRUD API: create, list, update, delete profiles
-- [ ] V1.21 — Translation API with batch progress via SSE
-- [ ] V1.22 — UI: select profile → translate → see multi-language SRT preview
-- [ ] V1.23 — UI: create/edit custom translation profile
-- [ ] V1.24 — Raw video download: browser downloads MP4 file
-- [ ] V1.25 — SRT export: download SRT file from UI
+- [x] V1.20 — Profile CRUD API: create, list, update, delete profiles
+- [x] V1.21 — Translation API with batch progress via SSE
+- [x] V1.22 — UI: select profile → translate → see multi-language SRT preview
+- [x] V1.23 — UI: create/edit custom translation profile
+- [x] V1.24 — Raw video download: browser downloads MP4 file
+- [x] V1.25 — SRT export: download SRT file from UI
 
 ---
 
@@ -412,6 +412,34 @@ douyin-automation/
 - [ ] V5.7 — UI: enable TTS → select voice → preview → generate → process
 - [ ] V5.8 — Segment duration fitting: long TTS clips speed up to fit time window
 - [ ] V5.9 — Unit tests pass
+
+---
+
+### Phase 6 — OCR Subtitle Extraction (Week 6-7)
+
+> Detailed plan: [`plans/phase6-ocr-subtitle-extraction.md`](plans/phase6-ocr-subtitle-extraction.md)
+
+- [ ] **6.1** PaddleOCR dependencies — `pyproject.toml`
+- [ ] **6.2** Frame extraction — `src/processor/ffmpeg.py` (`extract_frames` with crop region)
+- [ ] **6.3** OCR transcriber — `src/transcriber/ocr.py` (PaddleOCR + dedup)
+- [ ] **6.4** Transcriber factory — `src/transcriber/__init__.py` (add "ocr" backend)
+- [ ] **6.5** OCR config — `config/config.example.yaml`
+- [ ] **6.6** API models — `src/api/models.py` (method + ocr_region fields)
+- [ ] **6.7** Router + task manager — sample-frame endpoint, OCR routing
+- [ ] **6.8** UI types + client — `ui-app/src/api/`
+- [ ] **6.9** Region picker component — `ui-app/src/components/OcrRegionPicker.tsx`
+- [ ] **6.10** DownloadTranscribe page — method toggle + region picker integration
+- [ ] **6.11** Unit tests — OCR dedup logic, factory, frame extraction
+
+**Verification:**
+- [ ] V6.1 — PaddleOCR installed and importable
+- [ ] V6.2 — Frame extraction produces correct frame count
+- [ ] V6.3 — OCR transcription produces SRT with Chinese text from burned-in subtitles
+- [ ] V6.4 — Whisper still works (backward compat, no `method` field defaults to audio)
+- [ ] V6.5 — Sample frame endpoint returns JPEG
+- [ ] V6.6 — Region picker: draw rectangle → OCR runs on selected region only
+- [ ] V6.7 — UI: toggle to OCR → see region picker → transcribe → SRT preview
+- [ ] V6.8 — Unit tests pass
 
 ---
 
