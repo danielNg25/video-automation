@@ -304,25 +304,24 @@ douyin-automation/
 > Detailed plan: [`plans/phase3-ocr-subtitle-extraction.md`](plans/phase3-ocr-subtitle-extraction.md)
 
 - [ ] **3.1** PaddleOCR dependencies — `pyproject.toml`
-- [ ] **3.2** Frame extraction — `src/processor/ffmpeg.py` (`extract_frames` with crop region)
-- [ ] **3.3** OCR transcriber — `src/transcriber/ocr.py` (PaddleOCR + dedup)
+- [ ] **3.2** Frame extraction — `src/processor/ffmpeg.py` (`extract_frames`)
+- [ ] **3.3** OCR transcriber with auto-detect — `src/transcriber/ocr.py` (PaddleOCR + region classification + dedup)
 - [ ] **3.4** Transcriber factory — `src/transcriber/__init__.py` (add "ocr" backend)
 - [ ] **3.5** OCR config — `config/config.example.yaml`
-- [ ] **3.6** API models — `src/api/models.py` (method + ocr_region fields)
-- [ ] **3.7** Router + task manager — sample-frame endpoint, OCR routing
+- [ ] **3.6** API models — `src/api/models.py` (method + optional ocr_region override)
+- [ ] **3.7** Router + task manager — sample-frame endpoint, OCR routing with progress
 - [ ] **3.8** UI types + client — `ui-app/src/api/`
-- [ ] **3.9** Region picker component — `ui-app/src/components/OcrRegionPicker.tsx`
-- [ ] **3.10** DownloadTranscribe page — method toggle + region picker integration
-- [ ] **3.11** Unit tests — OCR dedup logic, factory, frame extraction
+- [ ] **3.9** DownloadTranscribe page — method toggle, auto-detect flow, optional manual region override
+- [ ] **3.10** Unit tests — auto-classification, watermark filtering, dedup logic, factory
 
 **Verification:**
 - [ ] V3.1 — PaddleOCR installed and importable
 - [ ] V3.2 — Frame extraction produces correct frame count
-- [ ] V3.3 — OCR transcription produces SRT with Chinese text from burned-in subtitles
-- [ ] V3.4 — Whisper still works (backward compat, no `method` field defaults to audio)
-- [ ] V3.5 — Sample frame endpoint returns JPEG
-- [ ] V3.6 — Region picker: draw rectangle → OCR runs on selected region only
-- [ ] V3.7 — UI: toggle to OCR → see region picker → transcribe → SRT preview
+- [ ] V3.3 — Auto-detection filters watermarks (username/logo NOT in SRT, subtitles ARE)
+- [ ] V3.4 — OCR transcription produces SRT with Chinese text from burned-in subtitles
+- [ ] V3.5 — Whisper still works (backward compat, no `method` field defaults to audio)
+- [ ] V3.6 — Manual region override works when provided
+- [ ] V3.7 — UI: toggle to OCR → click Transcribe → auto-detect → SRT preview
 - [ ] V3.8 — Unit tests pass
 
 ---

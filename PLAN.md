@@ -423,11 +423,12 @@ Extract burned-in Chinese subtitles from Douyin video frames using OCR instead o
 
 **Architecture**: `src/transcriber/ocr.py` implementing existing `BaseTranscriber` ABC. Selected via factory when user chooses "OCR" method. Same segment format `{start, end, text}` — rest of pipeline unchanged.
 
-**Key tasks** (11 total — see `plans/phase3-ocr-subtitle-extraction.md`):
+**Key tasks** (10 total — see `plans/phase3-ocr-subtitle-extraction.md`):
 - OCR transcriber backend using PaddleOCR (best Chinese accuracy)
-- Frame extraction via ffmpeg with configurable crop region
+- **Auto-detect subtitle region**: classify text by position (bottom 35%), frequency (<80% = subtitle, >80% = watermark), and size/centering
+- Two-pass approach: sample frames to identify watermarks, then full OCR skipping noise
 - Text deduplication via SequenceMatcher (merge consecutive identical frames)
-- Region picker UI: user draws rectangle on video frame to select subtitle area
+- Optional manual region override for edge cases
 - Method toggle on Download & Transcribe page: "Audio (Whisper)" / "OCR (Extract Subtitles)"
 
 ---
