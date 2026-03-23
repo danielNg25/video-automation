@@ -49,11 +49,7 @@ class OCRTranscriber(BaseTranscriber):
         if self._ocr_engine is None:
             from paddleocr import PaddleOCR
 
-            self._ocr_engine = PaddleOCR(
-                use_angle_cls=True,
-                lang=lang,
-                show_log=False,
-            )
+            self._ocr_engine = PaddleOCR(lang=lang)
         return self._ocr_engine
 
     def transcribe(
@@ -104,7 +100,7 @@ class OCRTranscriber(BaseTranscriber):
             all_sample_detections = []
 
             for i, idx in enumerate(sample_indices):
-                result = ocr.ocr(str(frames[idx]), cls=True)
+                result = ocr.ocr(str(frames[idx]))
                 detections = self._parse_ocr_result(result)
                 all_sample_detections.append((idx, detections))
 
@@ -122,7 +118,7 @@ class OCRTranscriber(BaseTranscriber):
                         pct, f"Running OCR on frame {i + 1}/{total_frames}..."
                     )
 
-                result = ocr.ocr(str(frame_path), cls=True)
+                result = ocr.ocr(str(frame_path))
                 detections = self._parse_ocr_result(result)
 
                 # Filter: keep only subtitle-classified text
@@ -165,7 +161,7 @@ class OCRTranscriber(BaseTranscriber):
                     pct, f"Running OCR on frame {i + 1}/{total_frames}..."
                 )
 
-            result = ocr.ocr(str(frame_path), cls=True)
+            result = ocr.ocr(str(frame_path))
             detections = self._parse_ocr_result(result)
 
             # Keep only detections within the manual region
@@ -185,12 +181,44 @@ class OCRTranscriber(BaseTranscriber):
 
     @staticmethod
     def _parse_ocr_result(result) -> list[tuple]:
-        """Parse PaddleOCR result into list of (bbox, text, confidence)."""
+        """Parse PaddleOCR result into list of (bbox, text, confidence).
+
+        Handles both v2 format [[(bbox, (text, conf)), ...]] and
+        v3 format [{"rec_texts": [...], "rec_scores": [...], "dt_polys": [...]}].
+        """
         detections = []
-        if not result or not result[0]:
+        if not result:
+            return detections
+
+        # PaddleOCR v3: list of result dicts with rec_texts/rec_scores/dt_polys
+        if isinstance(result, list) and len(result) > 0 and isinstance(result[0], dict):
+            res = result[0]
+            texts = res.get("rec_texts", [])
+            scores = res.get("rec_scores", [])
+            polys = res.get("dt_polys", res.get("rec_polys", []))
+
+            for i, text in enumerate(texts):
+                score = scores[i] if i < len(scores) else 0.0
+                poly = polys[i] if i < len(polys) else [[0, 0], [0, 0], [0, 0], [0, 0]]
+                # Convert numpy array to list if needed
+                bbox = poly.tolist() if hasattr(poly, "tolist") else list(poly)
+                # Ensure 4-point bbox format [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
+                if len(bbox) >= 4:
+                    detections.append((bbox[:4], text, score))
+                elif len(bbox) == 2:
+                    # rect format [x1,y1,x2,y2] → expand to 4 corners
+                    x1, y1 = bbox[0]
+                    x2, y2 = bbox[1]
+                    detections.append(
+                        ([[x1, y1], [x2, y1], [x2, y2], [x1, y2]], text, score)
+                    )
+            return detections
+
+        # PaddleOCR v2: [[(bbox, (text, conf)), ...]]
+        if not result[0]:
             return detections
         for line in result[0]:
-            bbox = line[0]  # [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
+            bbox = line[0]
             text = line[1][0]
             confidence = line[1][1]
             detections.append((bbox, text, confidence))

@@ -328,7 +328,8 @@ class TestOCRDeduplication:
 class TestOCRParseResult:
     """Tests for PaddleOCR result parsing."""
 
-    def test_parse_valid_result(self):
+    def test_parse_v2_result(self):
+        """PaddleOCR v2 format: [[(bbox, (text, conf)), ...]]"""
         result = [[
             [[[10, 20], [200, 20], [200, 50], [10, 50]], ("你好", 0.95)],
             [[[10, 100], [200, 100], [200, 130], [10, 130]], ("世界", 0.88)],
@@ -337,6 +338,24 @@ class TestOCRParseResult:
         assert len(detections) == 2
         assert detections[0][1] == "你好"
         assert detections[0][2] == 0.95
+
+    def test_parse_v3_result(self):
+        """PaddleOCR v3 format: [{"rec_texts": [...], ...}]"""
+        import numpy as np
+
+        result = [{
+            "rec_texts": ["你好", "世界"],
+            "rec_scores": [0.95, 0.88],
+            "dt_polys": [
+                np.array([[10, 20], [200, 20], [200, 50], [10, 50]]),
+                np.array([[10, 100], [200, 100], [200, 130], [10, 130]]),
+            ],
+        }]
+        detections = OCRTranscriber._parse_ocr_result(result)
+        assert len(detections) == 2
+        assert detections[0][1] == "你好"
+        assert detections[0][2] == 0.95
+        assert detections[1][1] == "世界"
 
     def test_parse_empty_result(self):
         assert OCRTranscriber._parse_ocr_result(None) == []
