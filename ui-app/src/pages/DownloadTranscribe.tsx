@@ -22,7 +22,7 @@ function DownloadTranscribePage() {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  const [transcribeMethod, setTranscribeMethod] = useState<'audio' | 'ocr'>('audio');
+  const [transcribeMethod, setTranscribeMethod] = useState<'audio' | 'ocr'>('ocr');
 
   // Translation state
   const [profiles, setProfiles] = useState<TranslationProfileSummary[]>([]);
@@ -491,16 +491,6 @@ function DownloadTranscribePage() {
                       <span className="text-[10px] text-zinc-500 uppercase tracking-tighter">Method:</span>
                       <div className="flex gap-px rounded-md overflow-hidden border border-outline-variant/20">
                         <button
-                          onClick={() => setTranscribeMethod('audio')}
-                          className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors ${
-                            transcribeMethod === 'audio'
-                              ? 'bg-primary text-on-primary-fixed'
-                              : 'bg-surface-container-highest text-on-surface-variant hover:bg-surface-container-high'
-                          }`}
-                        >
-                          Audio (Whisper)
-                        </button>
-                        <button
                           onClick={() => setTranscribeMethod('ocr')}
                           className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors ${
                             transcribeMethod === 'ocr'
@@ -509,6 +499,16 @@ function DownloadTranscribePage() {
                           }`}
                         >
                           OCR (Extract Subtitles)
+                        </button>
+                        <button
+                          onClick={() => setTranscribeMethod('audio')}
+                          className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                            transcribeMethod === 'audio'
+                              ? 'bg-primary text-on-primary-fixed'
+                              : 'bg-surface-container-highest text-on-surface-variant hover:bg-surface-container-high'
+                          }`}
+                        >
+                          Audio (Whisper)
                         </button>
                       </div>
                     </div>
