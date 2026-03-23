@@ -341,9 +341,9 @@ douyin-automation/
 - [x] **4.9** Update batch processor — `src/processor/__init__.py`
 - [x] **4.10** Config + infra updates — pyproject.toml, .gitignore, config
 - [ ] **4.11** TTS unit tests — `tests/test_tts.py`
-- [ ] **4.12** TTS API models — `src/api/models.py`
-- [ ] **4.13** TTS router — `src/api/routers/tts.py`
-- [ ] **4.14** Task manager + app registration
+- [x] **4.12** TTS API models — `src/api/models.py`
+- [x] **4.13** TTS router — `src/api/routers/tts.py`
+- [x] **4.14** Task manager + app registration
 - [ ] **4.15** TTS TypeScript types
 - [ ] **4.16** TTS API client
 - [ ] **4.17** TTS section on Process page

@@ -15,6 +15,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - TTS audio assembler (`src/tts/assembler.py`): concurrent segment synthesis, ffmpeg atempo duration fitting, silence-padded concatenation
 - Audio mixing in FFmpeg (`src/processor/ffmpeg.py`): `mix_audio()` and `burn_reformat_and_dub()` for TTS dubbing
 - Batch processor TTS support: `tts_audio_paths` and `tts_mix_settings` params for per-platform TTS dubbing
+- TTS API models (`src/api/models.py`): `TTSRequest`, `TTSPreviewRequest`, `VoiceInfo`, `VoiceProfileConfig`, `TTSResult`
+- TTS router (`src/api/routers/tts.py`): generate TTS, list voices, CRUD profiles, preview audio, stream TTS track
+- `run_tts()` in task manager with SSE progress per segment
+- TTS-aware process endpoint: `enable_tts` + `tts_mix_settings` on `ProcessRequest`
+- TTS static file mount at `/files/tts/`
 - OCR subtitle extraction via PaddleOCR (`src/transcriber/ocr.py`): auto-detect subtitle regions, filter watermarks by position/frequency/size, two-pass approach (sample + full OCR), deduplication
 - `extract_frames()` method on `FFmpegProcessor` for JPEG frame extraction at configurable FPS
 - OCR transcriber factory integration: `get_transcriber(config, method="ocr")` with full config passthrough
