@@ -7,6 +7,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- OCR subtitle extraction via PaddleOCR (`src/transcriber/ocr.py`): auto-detect subtitle regions, filter watermarks by position/frequency/size, two-pass approach (sample + full OCR), deduplication
+- `extract_frames()` method on `FFmpegProcessor` for JPEG frame extraction at configurable FPS
+- OCR transcriber factory integration: `get_transcriber(config, method="ocr")` with full config passthrough
+- OCR config section in `config/config.example.yaml`: fps, confidence, similarity, subtitle region heuristics
+- API: `method` and `ocr_region` fields on `TranscribeRequest` for OCR mode with optional manual region override
+- API: `GET /api/videos/{video_id}/sample-frame` endpoint for frame preview (manual region override)
+- Task manager OCR routing with per-frame SSE progress messages
+- UI: Audio/OCR method toggle on DownloadTranscribe page with OCR-specific progress labels
+- UI: `getSampleFrameUrl()` client function and `OcrRegion` type
+- `paddlepaddle` and `paddleocr` dependencies in `pyproject.toml`
+- Unit tests for OCR: auto-classification (5 tests), watermark filtering (3 tests), deduplication (6 tests), result parsing (2 tests), factory integration (4 tests), extract_frames (2 tests)
 - Phase 3 plan: OCR subtitle extraction from burned-in Douyin subtitles via PaddleOCR
 - Translation profile system (`src/translator/profiles.py`): load, list, save, delete profiles
 - Built-in translation profiles: funny-casual-vi, neutral-vi, dramatic-vi

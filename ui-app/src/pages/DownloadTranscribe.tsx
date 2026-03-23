@@ -22,6 +22,7 @@ function DownloadTranscribePage() {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [transcribeMethod, setTranscribeMethod] = useState<'audio' | 'ocr'>('audio');
 
   // Translation state
   const [profiles, setProfiles] = useState<TranslationProfileSummary[]>([]);
@@ -181,14 +182,14 @@ function DownloadTranscribePage() {
     if (!videoMeta) return;
     setError('');
     setIsTranscribing(true);
-    setTranscribeMessage('Loading transcription model...');
+    setTranscribeMessage(transcribeMethod === 'ocr' ? 'Initializing OCR engine...' : 'Loading transcription model...');
     setSrtSegments([]);
 
     const task = selectedLanguage === 'en' ? 'translate' : 'transcribe';
-    const lang = selectedLanguage === 'en' ? 'zh' : selectedLanguage;
+    const lang = transcribeMethod === 'ocr' ? 'zh' : (selectedLanguage === 'en' ? 'zh' : selectedLanguage);
 
     try {
-      const { task_id } = await postTranscribe(videoMeta.video_id, lang, task);
+      const { task_id } = await postTranscribe(videoMeta.video_id, lang, task, transcribeMethod);
       const es = subscribeSSE(task_id, (eventType, data) => {
         if (eventType === 'progress') {
           setTranscribeMessage(data.message as string);
@@ -484,26 +485,61 @@ function DownloadTranscribePage() {
                       </div>
                     </div>
                   </div>
-                  <div className="mt-6 flex items-center gap-3">
-                    <div className="flex-1 flex gap-px rounded-md overflow-hidden border border-outline-variant/20">
-                      <select
-                        value={selectedLanguage}
-                        onChange={(e) => setSelectedLanguage(e.target.value)}
-                        className="flex-1 bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 focus:ring-0"
-                      >
-                        <option value="zh">Chinese (Mandarin)</option>
-                        <option value="vi">Vietnamese</option>
-                        <option value="en">English (Translate)</option>
-                      </select>
+                  <div className="mt-4 space-y-3">
+                    {/* Method Toggle */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-zinc-500 uppercase tracking-tighter">Method:</span>
+                      <div className="flex gap-px rounded-md overflow-hidden border border-outline-variant/20">
+                        <button
+                          onClick={() => setTranscribeMethod('audio')}
+                          className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                            transcribeMethod === 'audio'
+                              ? 'bg-primary text-on-primary-fixed'
+                              : 'bg-surface-container-highest text-on-surface-variant hover:bg-surface-container-high'
+                          }`}
+                        >
+                          Audio (Whisper)
+                        </button>
+                        <button
+                          onClick={() => setTranscribeMethod('ocr')}
+                          className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                            transcribeMethod === 'ocr'
+                              ? 'bg-primary text-on-primary-fixed'
+                              : 'bg-surface-container-highest text-on-surface-variant hover:bg-surface-container-high'
+                          }`}
+                        >
+                          OCR (Extract Subtitles)
+                        </button>
+                      </div>
                     </div>
-                    <button
-                      onClick={handleTranscribe}
-                      disabled={isTranscribing}
-                      className="bg-primary text-on-primary-fixed px-4 py-2 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap active:scale-95 transition-all disabled:opacity-50"
-                    >
-                      <span>{isTranscribing ? 'Transcribing...' : videoMeta.has_srt ? 'Re-Transcribe' : 'Transcribe'}</span>
-                      <span className="material-symbols-outlined text-sm">neurology</span>
-                    </button>
+
+                    <div className="flex items-center gap-3">
+                      {transcribeMethod === 'audio' && (
+                        <div className="flex-1 flex gap-px rounded-md overflow-hidden border border-outline-variant/20">
+                          <select
+                            value={selectedLanguage}
+                            onChange={(e) => setSelectedLanguage(e.target.value)}
+                            className="flex-1 bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 focus:ring-0"
+                          >
+                            <option value="zh">Chinese (Mandarin)</option>
+                            <option value="vi">Vietnamese</option>
+                            <option value="en">English (Translate)</option>
+                          </select>
+                        </div>
+                      )}
+                      {transcribeMethod === 'ocr' && (
+                        <div className="flex-1 text-[10px] text-zinc-500 font-mono uppercase">
+                          Auto-detect subtitle region (Chinese)
+                        </div>
+                      )}
+                      <button
+                        onClick={handleTranscribe}
+                        disabled={isTranscribing}
+                        className="bg-primary text-on-primary-fixed px-4 py-2 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap active:scale-95 transition-all disabled:opacity-50"
+                      >
+                        <span>{isTranscribing ? (transcribeMethod === 'ocr' ? 'Extracting...' : 'Transcribing...') : videoMeta.has_srt ? 'Re-Transcribe' : 'Transcribe'}</span>
+                        <span className="material-symbols-outlined text-sm">{transcribeMethod === 'ocr' ? 'document_scanner' : 'neurology'}</span>
+                      </button>
                     {videoMeta.has_srt && (
                       <button
                         onClick={() => navigate(`/editor/${videoMeta.video_id}?lang=${previewLanguage || videoMeta.srt_languages[0] || 'zh'}`)}
@@ -533,8 +569,8 @@ function DownloadTranscribePage() {
                   <div className="w-10 h-10 rounded-full border-2 border-primary border-t-transparent animate-spin"></div>
                   <div className="flex-1">
                     <div className="flex justify-between items-center mb-1">
-                      <span className="text-xs font-bold uppercase tracking-widest text-primary">Transcribing Audio...</span>
-                      <span className="text-[10px] font-mono text-zinc-500">WHISPER v3 LARGE</span>
+                      <span className="text-xs font-bold uppercase tracking-widest text-primary">{transcribeMethod === 'ocr' ? 'Extracting Subtitles (OCR)...' : 'Transcribing Audio...'}</span>
+                      <span className="text-[10px] font-mono text-zinc-500">{transcribeMethod === 'ocr' ? 'PADDLEOCR' : 'WHISPER v3 LARGE'}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-[11px] text-on-surface-variant font-mono">Current Stage:</span>

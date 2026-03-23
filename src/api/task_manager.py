@@ -271,7 +271,14 @@ class TaskManager:
             logger.error(f"Download task {task_id} failed: {e}")
 
     async def run_transcribe(
-        self, task_id: str, video_id: str, language: str, task_type: str, config: dict
+        self,
+        task_id: str,
+        video_id: str,
+        language: str,
+        task_type: str,
+        config: dict,
+        method: str = "audio",
+        ocr_region: dict | None = None,
     ):
         """Execute a transcription task in the background."""
         from src.transcriber import get_transcriber
@@ -279,10 +286,11 @@ class TaskManager:
         task = self.tasks[task_id]
         task.status = "running"
         task.video_id = video_id
-        task.message = "Loading transcription model..."
-        self._emit(
-            task_id, "progress", {"progress": 0.0, "message": "Loading transcription model..."}
-        )
+
+        is_ocr = method == "ocr"
+        init_msg = "Initializing OCR engine..." if is_ocr else "Loading transcription model..."
+        task.message = init_msg
+        self._emit(task_id, "progress", {"progress": 0.0, "message": init_msg})
 
         try:
             video_info = self.video_index.get(video_id)
@@ -290,12 +298,29 @@ class TaskManager:
                 raise ValueError(f"Video {video_id} not found")
 
             video_path = video_info.file_path
-            transcriber = get_transcriber(config.get("whisper", {}))
 
-            task.message = "Transcribing audio..."
-            self._emit(
-                task_id, "progress", {"progress": 0.2, "message": "Transcribing audio..."}
-            )
+            # Build progress callback for OCR
+            def ocr_progress(progress: float, message: str):
+                task.progress = progress
+                task.message = message
+                self._emit(task_id, "progress", {"progress": progress, "message": message})
+
+            if is_ocr:
+                ocr_config = config.get("ocr", {})
+                transcriber = get_transcriber(
+                    ocr_config,
+                    method="ocr",
+                    ocr_region=ocr_region,
+                    progress_callback=ocr_progress,
+                )
+            else:
+                transcriber = get_transcriber(config.get("whisper", {}))
+                task.message = "Transcribing audio..."
+                self._emit(
+                    task_id,
+                    "progress",
+                    {"progress": 0.2, "message": "Transcribing audio..."},
+                )
 
             # Run CPU-bound transcription in a thread
             segments = await asyncio.to_thread(
@@ -304,7 +329,7 @@ class TaskManager:
 
             task.message = "Generating SRT file..."
             self._emit(
-                task_id, "progress", {"progress": 0.8, "message": "Generating SRT file..."}
+                task_id, "progress", {"progress": 0.9, "message": "Generating SRT file..."}
             )
 
             # Generate SRT
@@ -330,6 +355,7 @@ class TaskManager:
                 "srt_path": str(srt_path),
                 "segment_count": len(segments),
                 "language": lang_suffix,
+                "method": method,
             }
             self._emit(task_id, "complete", task.result)
 

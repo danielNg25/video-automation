@@ -45,12 +45,24 @@ export function postTranscribe(
   videoId: string,
   language: string = 'zh',
   task: string = 'transcribe',
+  method: string = 'audio',
+  ocrRegion?: { x: number; y: number; w: number; h: number },
 ): Promise<TaskResponse> {
   return request('/transcribe', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ video_id: videoId, language, task }),
+    body: JSON.stringify({
+      video_id: videoId,
+      language,
+      task,
+      method: method,
+      ocr_region: ocrRegion ?? null,
+    }),
   });
+}
+
+export function getSampleFrameUrl(videoId: string, timestamp: number = 1.0): string {
+  return `${BASE}/videos/${videoId}/sample-frame?timestamp=${timestamp}`;
 }
 
 export function getSrt(videoId: string, language: string = 'zh'): Promise<SrtResponse> {

@@ -144,6 +144,40 @@ class FFmpegProcessor:
         logger.info(f"Generated proxy: {output_path}")
         return output_path
 
+    def extract_frames(
+        self,
+        video_path: Path,
+        output_dir: Path,
+        fps: float = 2.0,
+    ) -> list[Path]:
+        """Extract video frames as JPEG images at the given FPS.
+
+        Args:
+            video_path: Source video file.
+            output_dir: Directory to write frame images.
+            fps: Frames per second to extract (default 2.0).
+
+        Returns:
+            Sorted list of extracted frame file paths.
+        """
+        output_dir.mkdir(parents=True, exist_ok=True)
+        pattern = str(output_dir / "frame_%06d.jpg")
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(video_path),
+            "-vf", f"fps={fps}",
+            "-q:v", "2",
+            pattern,
+        ]
+
+        logger.info(f"Extracting frames at {fps} FPS: {video_path.name}")
+        self._run_ffmpeg(cmd)
+
+        frames = sorted(output_dir.glob("frame_*.jpg"))
+        logger.info(f"Extracted {len(frames)} frames to {output_dir}")
+        return frames
+
     def _build_style_string(self, style: dict) -> str:
         """Convert style dict to ffmpeg ASS force_style string.
 

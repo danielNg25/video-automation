@@ -98,6 +98,13 @@ export interface TranslationProfile {
   example_pairs: { source: string; target: string }[];
 }
 
+export interface OcrRegion {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface PlatformSpec {
   subtitle_language: string;
   max_duration: number | null;
