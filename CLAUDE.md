@@ -96,9 +96,9 @@ Three YAML files in `config/`:
 Detailed phase plans with task lists, dependency graphs, and verification checklists are in `plans/`:
 - `phase1-core-download-transcribe.md` (17 tasks)
 - `phase2-subtitle-burnin-reformat.md` (6 tasks)
-- `phase3-platform-uploads.md` (8 tasks)
-- `phase4-orchestration-batch.md` (10 tasks)
-- `phase5-tts-dubbing.md` (18 tasks)
-- `phase6-ocr-subtitle-extraction.md` (11 tasks)
+- `phase3-ocr-subtitle-extraction.md` (11 tasks)
+- `phase4-tts-dubbing.md` (18 tasks)
+- `phase5-orchestration-batch.md` (15 tasks)
+- `phase6-platform-uploads.md` (11 tasks)
 
 Progress is tracked via the checklist in `README.md`.

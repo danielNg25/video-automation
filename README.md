@@ -299,147 +299,147 @@ douyin-automation/
 
 ---
 
-### Phase 3 — Platform Upload Integrations (Week 3-4)
+### Phase 3 — OCR Subtitle Extraction (Week 3)
 
-> Detailed plan: [`plans/phase3-platform-uploads.md`](plans/phase3-platform-uploads.md)
+> Detailed plan: [`plans/phase3-ocr-subtitle-extraction.md`](plans/phase3-ocr-subtitle-extraction.md)
 
-- [ ] **3.1** Base uploader interface — `src/uploader/base.py`
-- [ ] **3.2** OAuth setup script — `scripts/setup_oauth.py`
-- [ ] **3.3** YouTube uploader — `src/uploader/youtube.py`
-- [ ] **3.4** TikTok uploader — `src/uploader/tiktok.py`
-- [ ] **3.5** Facebook uploader — `src/uploader/facebook.py`
-- [ ] **3.6** X/Twitter uploader *(stretch goal)* — `src/uploader/x.py`
-- [ ] **3.7** Uploader factory — `src/uploader/__init__.py`
-- [ ] **3.8** Phase 3 tests — `tests/test_uploader.py`
-- [ ] **3.9** Auth router — `server/routers/auth.py`
-- [ ] **3.10** Upload router + service — `server/routers/upload.py`
-- [ ] **3.11** Upload page — `web/src/pages/UploadPage.tsx`
+- [ ] **3.1** PaddleOCR dependencies — `pyproject.toml`
+- [ ] **3.2** Frame extraction — `src/processor/ffmpeg.py` (`extract_frames` with crop region)
+- [ ] **3.3** OCR transcriber — `src/transcriber/ocr.py` (PaddleOCR + dedup)
+- [ ] **3.4** Transcriber factory — `src/transcriber/__init__.py` (add "ocr" backend)
+- [ ] **3.5** OCR config — `config/config.example.yaml`
+- [ ] **3.6** API models — `src/api/models.py` (method + ocr_region fields)
+- [ ] **3.7** Router + task manager — sample-frame endpoint, OCR routing
+- [ ] **3.8** UI types + client — `ui-app/src/api/`
+- [ ] **3.9** Region picker component — `ui-app/src/components/OcrRegionPicker.tsx`
+- [ ] **3.10** DownloadTranscribe page — method toggle + region picker integration
+- [ ] **3.11** Unit tests — OCR dedup logic, factory, frame extraction
 
-**Verification (Backend):**
-- [ ] V3.1 — YouTube OAuth setup saves token with refresh_token
-- [ ] V3.2 — YouTube upload (private) succeeds, video visible in Studio
-- [ ] V3.3 — TikTok upload (draft) succeeds, video in inbox
-- [ ] V3.4 — Facebook upload succeeds, video on Page
-- [ ] V3.5 — X upload succeeds *(if enabled)*
-- [ ] V3.6 — Uploader factory returns correct types, only enabled platforms
-- [ ] V3.7 — Error handling returns `UploadResult(success=False)`, no crash
+**Verification:**
+- [ ] V3.1 — PaddleOCR installed and importable
+- [ ] V3.2 — Frame extraction produces correct frame count
+- [ ] V3.3 — OCR transcription produces SRT with Chinese text from burned-in subtitles
+- [ ] V3.4 — Whisper still works (backward compat, no `method` field defaults to audio)
+- [ ] V3.5 — Sample frame endpoint returns JPEG
+- [ ] V3.6 — Region picker: draw rectangle → OCR runs on selected region only
+- [ ] V3.7 — UI: toggle to OCR → see region picker → transcribe → SRT preview
 - [ ] V3.8 — Unit tests pass
 
-**Verification (Web UI):**
-- [ ] V3.9 — Auth status API returns per-platform connection status
-- [ ] V3.10 — OAuth flow via API (start → authorize → callback → connected)
-- [ ] V3.11 — Upload via API with per-platform progress
-- [ ] V3.12 — Upload page: connect accounts → select video → upload → see result URLs
-- [ ] V3.13 — Retry failed upload without re-uploading successful platforms
+---
+
+### Phase 4 — TTS Dubbing (Week 4)
+
+> Detailed plan: [`plans/phase4-tts-dubbing.md`](plans/phase4-tts-dubbing.md)
+
+- [ ] **4.1** TTS base class — `src/tts/base.py`
+- [ ] **4.2** Edge TTS provider — `src/tts/edge.py` (free, default)
+- [ ] **4.3** OpenAI TTS provider — `src/tts/openai_tts.py`
+- [ ] **4.4** Google Cloud TTS provider — `src/tts/google_tts.py`
+- [ ] **4.5** TTS factory — `src/tts/__init__.py`
+- [ ] **4.6** Voice profiles config — `config/tts_voices.yaml`
+- [ ] **4.7** TTS audio assembler — `src/tts/assembler.py`
+- [ ] **4.8** Audio mixing in ffmpeg — `src/processor/ffmpeg.py`
+- [ ] **4.9** Update batch processor — `src/processor/__init__.py`
+- [ ] **4.10** Config + infra updates — pyproject.toml, .gitignore, config
+- [ ] **4.11** TTS unit tests — `tests/test_tts.py`
+- [ ] **4.12** TTS API models — `src/api/models.py`
+- [ ] **4.13** TTS router — `src/api/routers/tts.py`
+- [ ] **4.14** Task manager + app registration
+- [ ] **4.15** TTS TypeScript types
+- [ ] **4.16** TTS API client
+- [ ] **4.17** TTS section on Process page
+- [ ] **4.18** TTS preview component
+
+**Verification:**
+- [ ] V4.1 — Edge TTS installed and importable
+- [ ] V4.2 — Voice list API returns Vietnamese voices
+- [ ] V4.3 — Voice preview returns playable audio
+- [ ] V4.4 — TTS generation produces WAV matching video duration (±0.5s)
+- [ ] V4.5 — Audio mixing: dubbed video has correct volume levels
+- [ ] V4.6 — Per-platform voice: TikTok/FB get Vietnamese, YouTube/X get English
+- [ ] V4.7 — UI: enable TTS → select voice → preview → generate → process
+- [ ] V4.8 — Segment duration fitting: long TTS clips speed up to fit time window
+- [ ] V4.9 — Unit tests pass
 
 ---
 
-### Phase 4 — Orchestration + Batch Processing (Week 4-5)
+### Phase 5 — Orchestration + Batch Processing (Week 5-6)
 
-> Detailed plan: [`plans/phase4-orchestration-batch.md`](plans/phase4-orchestration-batch.md)
+> Detailed plan: [`plans/phase5-orchestration-batch.md`](plans/phase5-orchestration-batch.md)
 
-- [ ] **4.1** Retry utility — `src/utils/retry.py`
-- [ ] **4.2** State persistence — `src/utils/state.py`
-- [ ] **4.3** Duplicate detection — `src/utils/state.py`
-- [ ] **4.4** Pipeline orchestrator — `src/pipeline.py`
-- [ ] **4.5** Metadata mapper — `src/utils/metadata.py`
-- [ ] **4.6** CLI interface — `src/cli.py`
-- [ ] **4.7** Structured logging — `src/utils/logger.py` (finalize)
-- [ ] **4.8** Module entry point — `src/__main__.py`
-- [ ] **4.9** README.md (finalize)
-- [ ] **4.10** Integration tests — `tests/test_pipeline.py`
-- [ ] **4.11** Pipeline router + service — `server/routers/pipeline.py`
-- [ ] **4.12** Config router — `server/routers/config.py`
-- [ ] **4.13** Dashboard page — `web/src/pages/DashboardPage.tsx`
-- [ ] **4.14** Settings page — `web/src/pages/SettingsPage.tsx`
-- [ ] **4.15** React Router — route-based navigation
+- [ ] **5.1** Retry utility — `src/utils/retry.py`
+- [ ] **5.2** State persistence — `src/utils/state.py`
+- [ ] **5.3** Duplicate detection — `src/utils/state.py`
+- [ ] **5.4** Pipeline orchestrator — `src/pipeline.py`
+- [ ] **5.5** Metadata mapper — `src/utils/metadata.py`
+- [ ] **5.6** CLI interface — `src/cli.py`
+- [ ] **5.7** Structured logging — `src/utils/logger.py` (finalize)
+- [ ] **5.8** Module entry point — `src/__main__.py`
+- [ ] **5.9** README.md (finalize)
+- [ ] **5.10** Integration tests — `tests/test_pipeline.py`
+- [ ] **5.11** Pipeline router + service — `server/routers/pipeline.py`
+- [ ] **5.12** Config router — `server/routers/config.py`
+- [ ] **5.13** Dashboard page — `web/src/pages/DashboardPage.tsx`
+- [ ] **5.14** Settings page — `web/src/pages/SettingsPage.tsx`
+- [ ] **5.15** React Router — route-based navigation
 
 **Verification (CLI):**
-- [ ] V4.1 — `python -m src --help` displays all commands
-- [ ] V4.2 — `python -m src process --help` shows all options
-- [ ] V4.3 — Full pipeline: URL → subtitled video → uploaded to all platforms
-- [ ] V4.4 — Crash recovery: interrupted pipeline resumes from last stage
-- [ ] V4.5 — Duplicate detection: same URL skipped on second run
-- [ ] V4.6 — Batch processing: multiple URLs with concurrency limit
-- [ ] V4.7 — Retry: transient failures recovered with exponential backoff
-- [ ] V4.8 — Structured JSON logs written to `data/logs/pipeline.log`
-- [ ] V4.9 — `python -m src status` displays rich-formatted table
-- [ ] V4.10 — All tests pass: `pytest tests/ -v`
+- [ ] V5.1 — `python -m src --help` displays all commands
+- [ ] V5.2 — `python -m src process --help` shows all options
+- [ ] V5.3 — Full pipeline: URL → subtitled video → uploaded to all platforms
+- [ ] V5.4 — Crash recovery: interrupted pipeline resumes from last stage
+- [ ] V5.5 — Duplicate detection: same URL skipped on second run
+- [ ] V5.6 — Batch processing: multiple URLs with concurrency limit
+- [ ] V5.7 — Retry: transient failures recovered with exponential backoff
+- [ ] V5.8 — Structured JSON logs written to `data/logs/pipeline.log`
+- [ ] V5.9 — `python -m src status` displays rich-formatted table
+- [ ] V5.10 — All tests pass: `pytest tests/ -v`
 
 **Verification (Web UI):**
-- [ ] V4.11 — Pipeline API runs full pipeline with stage-level SSE events
-- [ ] V4.12 — Batch API processes multiple URLs with concurrency control
-- [ ] V4.13 — Dashboard stats API returns counts and success rate
-- [ ] V4.14 — Pipeline history API with filtering
-- [ ] V4.15 — Config API: read (secrets redacted) and update (partial merge)
-- [ ] V4.16 — Dashboard UI: stats, quick process, pipeline table with live updates
-- [ ] V4.17 — Batch processing UI: paste URLs → track per-video progress
-- [ ] V4.18 — Settings UI: edit config → save → persists
-- [ ] V4.19 — React Router: all routes work, sidebar highlights active page
+- [ ] V5.11 — Pipeline API runs full pipeline with stage-level SSE events
+- [ ] V5.12 — Batch API processes multiple URLs with concurrency control
+- [ ] V5.13 — Dashboard stats API returns counts and success rate
+- [ ] V5.14 — Pipeline history API with filtering
+- [ ] V5.15 — Config API: read (secrets redacted) and update (partial merge)
+- [ ] V5.16 — Dashboard UI: stats, quick process, pipeline table with live updates
+- [ ] V5.17 — Batch processing UI: paste URLs → track per-video progress
+- [ ] V5.18 — Settings UI: edit config → save → persists
+- [ ] V5.19 — React Router: all routes work, sidebar highlights active page
 
 ---
 
-### Phase 5 — TTS Dubbing (Week 5-6)
+### Phase 6 — Platform Upload Integrations (Week 6-7)
 
-> Detailed plan: [`plans/phase5-tts-dubbing.md`](plans/phase5-tts-dubbing.md)
+> Detailed plan: [`plans/phase6-platform-uploads.md`](plans/phase6-platform-uploads.md)
 
-- [ ] **5.1** TTS base class — `src/tts/base.py`
-- [ ] **5.2** Edge TTS provider — `src/tts/edge.py` (free, default)
-- [ ] **5.3** OpenAI TTS provider — `src/tts/openai_tts.py`
-- [ ] **5.4** Google Cloud TTS provider — `src/tts/google_tts.py`
-- [ ] **5.5** TTS factory — `src/tts/__init__.py`
-- [ ] **5.6** Voice profiles config — `config/tts_voices.yaml`
-- [ ] **5.7** TTS audio assembler — `src/tts/assembler.py`
-- [ ] **5.8** Audio mixing in ffmpeg — `src/processor/ffmpeg.py`
-- [ ] **5.9** Update batch processor — `src/processor/__init__.py`
-- [ ] **5.10** Config + infra updates — pyproject.toml, .gitignore, config
-- [ ] **5.11** TTS unit tests — `tests/test_tts.py`
-- [ ] **5.12** TTS API models — `src/api/models.py`
-- [ ] **5.13** TTS router — `src/api/routers/tts.py`
-- [ ] **5.14** Task manager + app registration
-- [ ] **5.15** TTS TypeScript types
-- [ ] **5.16** TTS API client
-- [ ] **5.17** TTS section on Process page
-- [ ] **5.18** TTS preview component
+- [ ] **6.1** Base uploader interface — `src/uploader/base.py`
+- [ ] **6.2** OAuth setup script — `scripts/setup_oauth.py`
+- [ ] **6.3** YouTube uploader — `src/uploader/youtube.py`
+- [ ] **6.4** TikTok uploader — `src/uploader/tiktok.py`
+- [ ] **6.5** Facebook uploader — `src/uploader/facebook.py`
+- [ ] **6.6** X/Twitter uploader *(stretch goal)* — `src/uploader/x.py`
+- [ ] **6.7** Uploader factory — `src/uploader/__init__.py`
+- [ ] **6.8** Phase 6 tests — `tests/test_uploader.py`
+- [ ] **6.9** Auth router — `server/routers/auth.py`
+- [ ] **6.10** Upload router + service — `server/routers/upload.py`
+- [ ] **6.11** Upload page — `web/src/pages/UploadPage.tsx`
 
-**Verification:**
-- [ ] V5.1 — Edge TTS installed and importable
-- [ ] V5.2 — Voice list API returns Vietnamese voices
-- [ ] V5.3 — Voice preview returns playable audio
-- [ ] V5.4 — TTS generation produces WAV matching video duration (±0.5s)
-- [ ] V5.5 — Audio mixing: dubbed video has correct volume levels
-- [ ] V5.6 — Per-platform voice: TikTok/FB get Vietnamese, YouTube/X get English
-- [ ] V5.7 — UI: enable TTS → select voice → preview → generate → process
-- [ ] V5.8 — Segment duration fitting: long TTS clips speed up to fit time window
-- [ ] V5.9 — Unit tests pass
-
----
-
-### Phase 6 — OCR Subtitle Extraction (Week 6-7)
-
-> Detailed plan: [`plans/phase6-ocr-subtitle-extraction.md`](plans/phase6-ocr-subtitle-extraction.md)
-
-- [ ] **6.1** PaddleOCR dependencies — `pyproject.toml`
-- [ ] **6.2** Frame extraction — `src/processor/ffmpeg.py` (`extract_frames` with crop region)
-- [ ] **6.3** OCR transcriber — `src/transcriber/ocr.py` (PaddleOCR + dedup)
-- [ ] **6.4** Transcriber factory — `src/transcriber/__init__.py` (add "ocr" backend)
-- [ ] **6.5** OCR config — `config/config.example.yaml`
-- [ ] **6.6** API models — `src/api/models.py` (method + ocr_region fields)
-- [ ] **6.7** Router + task manager — sample-frame endpoint, OCR routing
-- [ ] **6.8** UI types + client — `ui-app/src/api/`
-- [ ] **6.9** Region picker component — `ui-app/src/components/OcrRegionPicker.tsx`
-- [ ] **6.10** DownloadTranscribe page — method toggle + region picker integration
-- [ ] **6.11** Unit tests — OCR dedup logic, factory, frame extraction
-
-**Verification:**
-- [ ] V6.1 — PaddleOCR installed and importable
-- [ ] V6.2 — Frame extraction produces correct frame count
-- [ ] V6.3 — OCR transcription produces SRT with Chinese text from burned-in subtitles
-- [ ] V6.4 — Whisper still works (backward compat, no `method` field defaults to audio)
-- [ ] V6.5 — Sample frame endpoint returns JPEG
-- [ ] V6.6 — Region picker: draw rectangle → OCR runs on selected region only
-- [ ] V6.7 — UI: toggle to OCR → see region picker → transcribe → SRT preview
+**Verification (Backend):**
+- [ ] V6.1 — YouTube OAuth setup saves token with refresh_token
+- [ ] V6.2 — YouTube upload (private) succeeds, video visible in Studio
+- [ ] V6.3 — TikTok upload (draft) succeeds, video in inbox
+- [ ] V6.4 — Facebook upload succeeds, video on Page
+- [ ] V6.5 — X upload succeeds *(if enabled)*
+- [ ] V6.6 — Uploader factory returns correct types, only enabled platforms
+- [ ] V6.7 — Error handling returns `UploadResult(success=False)`, no crash
 - [ ] V6.8 — Unit tests pass
+
+**Verification (Web UI):**
+- [ ] V6.9 — Auth status API returns per-platform connection status
+- [ ] V6.10 — OAuth flow via API (start → authorize → callback → connected)
+- [ ] V6.11 — Upload via API with per-platform progress
+- [ ] V6.12 — Upload page: connect accounts → select video → upload → see result URLs
+- [ ] V6.13 — Retry failed upload without re-uploading successful platforms
 
 ---
 

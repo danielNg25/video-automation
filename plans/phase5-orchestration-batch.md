@@ -1,10 +1,10 @@
-# Phase 4 — Orchestration + Batch Processing (Week 4-5)
+# Phase 5 — Orchestration + Batch Processing (Week 5-6)
 
 ---
 
 ## Task List
 
-### 4.1 Retry Utility — `src/utils/retry.py`
+### 5.1 Retry Utility — `src/utils/retry.py`
 
 - `retry` decorator using `tenacity`:
   - Configurable: `max_attempts`, `base_delay`, `max_delay`
@@ -14,7 +14,7 @@
 - `async_retry` variant for async functions
 - **Dependencies**: Phase 1 task 1.6
 
-### 4.2 State Persistence — `src/utils/state.py`
+### 5.2 State Persistence — `src/utils/state.py`
 
 Class `PipelineState`:
 - State file: `data/logs/{video_id}_state.json`
@@ -35,7 +35,7 @@ On crash recovery: read state file, skip completed stages, resume from last inco
 
 **Dependencies**: Phase 1 task 1.3
 
-### 4.3 Duplicate Detection — `src/utils/state.py`
+### 5.3 Duplicate Detection — `src/utils/state.py`
 
 Registry file: `data/logs/processed_videos.json` (dict of `video_id → {url, status, timestamp, platforms}`)
 
@@ -46,7 +46,7 @@ Functions:
 
 **Dependencies**: 4.2
 
-### 4.4 Pipeline Orchestrator — `src/pipeline.py`
+### 5.4 Pipeline Orchestrator — `src/pipeline.py`
 
 Class `Pipeline`:
 
@@ -75,9 +75,9 @@ Class `Pipeline`:
 - Process with `asyncio.Semaphore(max_concurrent)`
 - Collect results, log summary
 
-**Dependencies**: Phase 1 (1.10, 1.14), Phase 2 (2.5), Phase 3 (3.7), 4.1, 4.2, 4.3, 4.5
+**Dependencies**: Phase 1 (1.10, 1.14), Phase 2 (2.5), Phase 6 (6.7), 4.1, 4.2, 4.3, 4.5
 
-### 4.5 Metadata Mapper — `src/utils/metadata.py` (extend)
+### 5.5 Metadata Mapper — `src/utils/metadata.py` (extend)
 
 Function `map_metadata(douyin_meta, platform, overrides=None) -> VideoMetadata`:
 
@@ -92,7 +92,7 @@ Apply user overrides last. Enforce character limits per platform.
 
 **Dependencies**: Phase 3 task 3.1
 
-### 4.6 CLI Interface — `src/cli.py`
+### 5.6 CLI Interface — `src/cli.py`
 
 Click-based CLI with commands:
 
@@ -135,7 +135,7 @@ douyin-repurpose status [VIDEO_ID]
 
 **Dependencies**: 4.4
 
-### 4.7 Structured Logging — `src/utils/logger.py` (finalize)
+### 5.7 Structured Logging — `src/utils/logger.py` (finalize)
 
 JSON log format fields: `timestamp` (ISO 8601 UTC), `level`, `video_id`, `stage`, `message`, `duration_ms`, `extra`
 
@@ -146,7 +146,7 @@ Output destinations:
 
 **Dependencies**: Phase 1 task 1.6 (extends existing)
 
-### 4.8 Module Entry Point — `src/__main__.py`
+### 5.8 Module Entry Point — `src/__main__.py`
 
 ```python
 from src.cli import main
@@ -157,13 +157,13 @@ Enables `python -m src` execution.
 
 **Dependencies**: 4.6
 
-### 4.9 README.md
+### 5.9 README.md
 
 Sections: Overview, Prerequisites, Installation (venv + pip), Configuration, Usage (with CLI examples), Architecture diagram, Development, Troubleshooting.
 
 **Dependencies**: All prior tasks (write last)
 
-### 4.10 Integration Tests — `tests/test_pipeline.py`
+### 5.10 Integration Tests — `tests/test_pipeline.py`
 
 - Full pipeline with mocked external services
 - Crash recovery: interrupt mid-pipeline, verify resume
@@ -204,7 +204,7 @@ Sections: Overview, Prerequisites, Installation (venv + pip), Configuration, Usa
 
 ## Verification Checklist
 
-### V4.1: CLI help displays correctly
+### V5.1: CLI help displays correctly
 
 ```bash
 python3 -m src --help
@@ -225,7 +225,7 @@ Commands:
   status      Show processing status
 ```
 
-### V4.2: CLI process subcommand shows options
+### V5.2: CLI process subcommand shows options
 
 ```bash
 python3 -m src process --help
@@ -233,7 +233,7 @@ python3 -m src process --help
 
 **Expected**: All options listed with descriptions.
 
-### V4.3: Full pipeline — single video end-to-end
+### V5.3: Full pipeline — single video end-to-end
 
 ```bash
 python3 -m src process "https://v.douyin.com/iRNBho6t/" \
@@ -265,7 +265,7 @@ ls -la data/raw/*.mp4 data/srt/*.srt data/output/*.mp4
 cat data/logs/<video_id>_state.json | python3 -m json.tool
 ```
 
-### V4.4: State persistence + crash recovery
+### V5.4: State persistence + crash recovery
 
 ```bash
 # Step 1: Start and interrupt
@@ -289,7 +289,7 @@ python3 -m src process "https://v.douyin.com/iRNBho6t/" --platforms youtube
 
 **Expected**: Step 3 skips download ("already complete"), resumes from next stage.
 
-### V4.5: Duplicate detection
+### V5.5: Duplicate detection
 
 ```bash
 # Process same URL twice
@@ -306,7 +306,7 @@ python3 -m src process "https://v.douyin.com/iRNBho6t/" --platforms youtube --fo
 
 **Expected**: Processes again despite duplicate.
 
-### V4.6: Batch processing
+### V5.6: Batch processing
 
 ```bash
 # Create URL file
@@ -330,7 +330,7 @@ Batch complete: 3 videos
   Skipped: 0 (duplicates)
 ```
 
-### V4.7: Retry logic
+### V5.7: Retry logic
 
 ```bash
 python3 -c "
@@ -352,7 +352,7 @@ print(f'Result: {result}, attempts: {attempt}')
 
 **Expected**: `Result: success, attempts: 3`.
 
-### V4.8: Structured JSON logs
+### V5.8: Structured JSON logs
 
 ```bash
 python3 -m src process "https://v.douyin.com/iRNBho6t/" --platforms youtube --privacy private
@@ -369,7 +369,7 @@ with open('data/logs/pipeline.log') as f:
 
 **Expected**: Each line is valid JSON with `timestamp`, `level`, `video_id`, `stage`, `message`.
 
-### V4.9: Status command
+### V5.9: Status command
 
 ```bash
 python3 -m src status
@@ -385,7 +385,7 @@ python3 -m src status
 └──────────────┴────────────┴──────────────────────┴───────────┘
 ```
 
-### V4.10: Integration tests
+### V5.10: Integration tests
 
 ```bash
 python3 -m pytest tests/ -v --tb=short
@@ -397,7 +397,7 @@ python3 -m pytest tests/ -v --tb=short
 
 ## Web UI + API (Phase 4)
 
-### 4.11 Pipeline Router + Service — `server/routers/pipeline.py` + `server/services/pipeline_service.py`
+### 5.11 Pipeline Router + Service — `server/routers/pipeline.py` + `server/services/pipeline_service.py`
 
 **API Endpoints:**
 
@@ -419,7 +419,7 @@ python3 -m pytest tests/ -v --tb=short
 - Stats: counts from state files — total, today, success/failure rates
 - **Dependencies**: 4.4, Phase 1 tasks 1.19, 1.20
 
-### 4.12 Config Router — `server/routers/config.py`
+### 5.12 Config Router — `server/routers/config.py`
 
 **API Endpoints:**
 
@@ -436,7 +436,7 @@ python3 -m pytest tests/ -v --tb=short
 - Validation: check required fields, valid URLs, valid ranges (e.g., CRF 18–28)
 - **Dependencies**: Phase 1 task 1.5
 
-### 4.13 Dashboard Page — `web/src/pages/DashboardPage.tsx`
+### 5.13 Dashboard Page — `web/src/pages/DashboardPage.tsx`
 
 **Components:**
 
@@ -491,7 +491,7 @@ python3 -m pytest tests/ -v --tb=short
 
 - **Dependencies**: 4.11, Phase 1 task 1.23
 
-### 4.14 Settings Page — `web/src/pages/SettingsPage.tsx`
+### 5.14 Settings Page — `web/src/pages/SettingsPage.tsx`
 
 **Layout:** Vertical tabs (left sidebar within page) + form content (right).
 
@@ -545,7 +545,7 @@ python3 -m pytest tests/ -v --tb=short
 
 - **Dependencies**: 4.12, Phase 1 task 1.23
 
-### 4.15 Add React Router — `web/src/App.tsx`
+### 5.15 Add React Router — `web/src/App.tsx`
 
 Upgrade from tab-based to route-based navigation:
 
@@ -565,7 +565,7 @@ Upgrade from tab-based to route-based navigation:
 
 ### Web UI Verification Checklist (Phase 4)
 
-### V4.11: Pipeline API — single video
+### V5.11: Pipeline API — single video
 
 ```bash
 curl -X POST http://localhost:8000/api/pipeline \
@@ -579,7 +579,7 @@ curl -N http://localhost:8000/api/events/{task_id}
 
 **Expected**: Pipeline runs all stages, SSE shows stage transitions.
 
-### V4.12: Pipeline API — batch
+### V5.12: Pipeline API — batch
 
 ```bash
 curl -X POST http://localhost:8000/api/pipeline/batch \
@@ -589,7 +589,7 @@ curl -X POST http://localhost:8000/api/pipeline/batch \
 
 **Expected**: Returns batch_id + task_ids. Max 2 videos process concurrently.
 
-### V4.13: Dashboard stats API
+### V5.13: Dashboard stats API
 
 ```bash
 curl http://localhost:8000/api/dashboard/stats
@@ -597,7 +597,7 @@ curl http://localhost:8000/api/dashboard/stats
 
 **Expected**: `{"total_videos": N, "today": N, "success_rate": 0.95, "active_tasks": 0}`
 
-### V4.14: Pipeline history API
+### V5.14: Pipeline history API
 
 ```bash
 curl "http://localhost:8000/api/pipeline/history?status=failed&limit=5"
@@ -605,7 +605,7 @@ curl "http://localhost:8000/api/pipeline/history?status=failed&limit=5"
 
 **Expected**: JSON array of failed pipeline runs with stage details.
 
-### V4.15: Config API — read and update
+### V5.15: Config API — read and update
 
 ```bash
 curl http://localhost:8000/api/config
@@ -621,7 +621,7 @@ curl http://localhost:8000/api/config | jq '.whisper.model_size'
 
 **Expected**: Config readable with redacted secrets, updatable with partial merge.
 
-### V4.16: Dashboard UI flow
+### V5.16: Dashboard UI flow
 
 1. Open Dashboard → see stats cards with counts
 2. Paste URL in Quick Process → select platforms → click Go
@@ -631,7 +631,7 @@ curl http://localhost:8000/api/config | jq '.whisper.model_size'
 
 **Expected**: Full dashboard experience with real-time updates.
 
-### V4.17: Batch processing UI
+### V5.17: Batch processing UI
 
 1. Paste 3 URLs in batch textarea
 2. Select platforms, set concurrency to 2
@@ -641,7 +641,7 @@ curl http://localhost:8000/api/config | jq '.whisper.model_size'
 
 **Expected**: Concurrency control works, all videos tracked.
 
-### V4.18: Settings UI
+### V5.18: Settings UI
 
 1. Open Settings → see current config values populated
 2. Change model size to "medium" → Save Changes button activates
@@ -650,7 +650,7 @@ curl http://localhost:8000/api/config | jq '.whisper.model_size'
 
 **Expected**: Settings persist across page loads.
 
-### V4.19: React Router navigation
+### V5.19: React Router navigation
 
 ```bash
 # Open http://localhost:5173/download → Download page

@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
-- Phase 6 plan: OCR subtitle extraction from burned-in Douyin subtitles via PaddleOCR
+- Phase 3 plan: OCR subtitle extraction from burned-in Douyin subtitles via PaddleOCR
 - Translation profile system (`src/translator/profiles.py`): load, list, save, delete profiles
 - Built-in translation profiles: funny-casual-vi, neutral-vi, dramatic-vi
 - Profile YAML config directory (`config/translation_profiles/`) with example template
@@ -60,7 +60,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Video serving endpoints: `GET /api/videos/{id}/raw` and `GET /api/videos/{id}/proxy` (on-demand transcoding with caching)
 - Quality toggle in subtitle editor header (360p proxy vs full resolution)
 - Per-video subtitle style storage (`data/srt/{video_id}_style.json`) with global default fallback
-- Phase 5 plan: TTS dubbing with Edge TTS (free), OpenAI TTS, Google Cloud TTS providers
+- Phase 4 plan: TTS dubbing with Edge TTS (free), OpenAI TTS, Google Cloud TTS providers
 - Voice profiles system (`config/tts_voices.yaml`) with per-platform voice/volume config
 - TTS audio assembler with segment-level duration fitting via ffmpeg `atempo`
 

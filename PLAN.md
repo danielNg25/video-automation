@@ -19,10 +19,10 @@ Automated pipeline to download videos from Douyin, generate AI subtitles (Chines
 2. [Project Structure](#2-project-structure)
 3. [Phase 1 — Core: Download + Transcribe](#3-phase-1--core-download--transcribe-week-1-2)
 4. [Phase 2 — Subtitle Burn-in + Reformat](#4-phase-2--subtitle-burn-in--reformat-week-2-3)
-5. [Phase 3 — Platform Upload Integrations](#5-phase-3--platform-upload-integrations-week-3-4)
-6. [Phase 4 — Orchestration + Batch Processing](#6-phase-4--orchestration--batch-processing-week-4-5)
-7. [Phase 5 — TTS Dubbing](#7-phase-5--tts-dubbing-week-5-6)
-8. [Phase 6 — OCR Subtitle Extraction](#8-phase-6--ocr-subtitle-extraction-week-6-7)
+5. [Phase 3 — OCR Subtitle Extraction](#5-phase-3--ocr-subtitle-extraction-week-3)
+6. [Phase 4 — TTS Dubbing](#6-phase-4--tts-dubbing-week-4)
+7. [Phase 5 — Orchestration + Batch Processing](#7-phase-5--orchestration--batch-processing-week-5-6)
+8. [Phase 6 — Platform Upload Integrations](#8-phase-6--platform-upload-integrations-week-6-7)
 9. [Platform API Reference](#9-platform-api-reference)
 9. [Configuration](#9-configuration)
 10. [Dependencies](#10-dependencies)
@@ -413,9 +413,55 @@ PLATFORM_SPECS = {
 
 ---
 
-## 5. Phase 3 — Platform Upload Integrations (Week 3-4)
+## 5. Phase 3 — OCR Subtitle Extraction (Week 3)
 
-> **Recommended order**: YouTube first (easiest API, best docs) → Facebook → TikTok → X (stretch goal)
+Extract burned-in Chinese subtitles from Douyin video frames using OCR instead of audio transcription.
+
+**Why**: Whisper is inaccurate on noisy Douyin videos (background music, multiple speakers). Douyin videos already have burned-in Chinese subtitles that can be extracted via OCR with much higher accuracy.
+
+**Pipeline**: Extract frames (ffmpeg, 2 FPS) → crop to user-selected region → PaddleOCR → deduplicate → SRT
+
+**Architecture**: `src/transcriber/ocr.py` implementing existing `BaseTranscriber` ABC. Selected via factory when user chooses "OCR" method. Same segment format `{start, end, text}` — rest of pipeline unchanged.
+
+**Key tasks** (11 total — see `plans/phase3-ocr-subtitle-extraction.md`):
+- OCR transcriber backend using PaddleOCR (best Chinese accuracy)
+- Frame extraction via ffmpeg with configurable crop region
+- Text deduplication via SequenceMatcher (merge consecutive identical frames)
+- Region picker UI: user draws rectangle on video frame to select subtitle area
+- Method toggle on Download & Transcribe page: "Audio (Whisper)" / "OCR (Extract Subtitles)"
+
+---
+
+## 6. Phase 4 — TTS Dubbing (Week 4)
+
+Generate voiceover audio from translated subtitles and mix into video.
+
+**Pipeline**: Download → Transcribe → Translate → **TTS Dubbing** → Process (burn subs + mix audio) → Upload
+
+**Architecture**: `src/tts/` module with ABC + Edge TTS (free, default) + OpenAI TTS + Google Cloud TTS. Voice profiles in `config/tts_voices.yaml`. Audio mixing via ffmpeg `amix` filter.
+
+**Key tasks** (18 total — see `plans/phase4-tts-dubbing.md`):
+- TTS provider abstraction (base + 3 backends + factory)
+- Audio assembler: segment-by-segment TTS → duration fitting → full-track concatenation
+- Audio mixing in ffmpeg: configurable volume levels (e.g., 30% original + 100% TTS)
+- Per-platform voice selection (Vietnamese for TikTok/FB, English for YouTube/X)
+- Voice preview + profile management API
+- TTS UI section on Process page with voice selector, volume sliders, preview playback
+
+---
+
+## 7. Phase 5 — Orchestration + Batch Processing (Week 5-6)
+
+See `plans/phase5-orchestration-batch.md` for full details. CLI → Pipeline orchestrator → Batch mode → Dashboard UI.
+
+**Key tasks** (15 total):
+- Retry utility with exponential backoff
+- State persistence + crash recovery (resume from last stage)
+- Duplicate detection
+- Pipeline orchestrator chaining all stages
+- CLI interface (Click + Rich)
+- Dashboard page, Settings page, React Router
+- Pipeline + Config API endpoints
 
 ### 5.1 Common Uploader Interface
 
@@ -560,7 +606,7 @@ class BaseUploader(ABC):
 
 ---
 
-## 6. Phase 4 — Orchestration + Batch Processing (Week 4-5)
+## 6. Phase 4 — TTS Dubbing (Week 4)
 
 ### 6.1 CLI Interface
 
@@ -653,40 +699,16 @@ def map_metadata(douyin_meta: dict, platform: str, overrides: dict = None) -> Vi
 
 ---
 
-## 7. Phase 5 — TTS Dubbing (Week 5-6)
+## 8. Phase 6 — Platform Upload Integrations (Week 6-7)
 
-Generate voiceover audio from translated subtitles and mix into video.
+See `plans/phase6-platform-uploads.md` for full details. YouTube (easiest) → Facebook → TikTok → X (stretch goal).
 
-**Pipeline**: Download → Transcribe → Translate → **TTS Dubbing** → Process (burn subs + mix audio) → Upload
-
-**Architecture**: `src/tts/` module with ABC + Edge TTS (free, default) + OpenAI TTS + Google Cloud TTS. Voice profiles in `config/tts_voices.yaml`. Audio mixing via ffmpeg `amix` filter.
-
-**Key tasks** (18 total — see `plans/phase5-tts-dubbing.md`):
-- TTS provider abstraction (base + 3 backends + factory)
-- Audio assembler: segment-by-segment TTS → duration fitting → full-track concatenation
-- Audio mixing in ffmpeg: configurable volume levels (e.g., 30% original + 100% TTS)
-- Per-platform voice selection (Vietnamese for TikTok/FB, English for YouTube/X)
-- Voice preview + profile management API
-- TTS UI section on Process page with voice selector, volume sliders, preview playback
-
----
-
-## 8. Phase 6 — OCR Subtitle Extraction (Week 6-7)
-
-Extract burned-in Chinese subtitles from Douyin video frames using OCR instead of audio transcription.
-
-**Why**: Whisper is inaccurate on noisy Douyin videos (background music, multiple speakers). Douyin videos already have burned-in Chinese subtitles that can be extracted via OCR with much higher accuracy.
-
-**Pipeline**: Extract frames (ffmpeg, 2 FPS) → crop to user-selected region → PaddleOCR → deduplicate → SRT
-
-**Architecture**: `src/transcriber/ocr.py` implementing existing `BaseTranscriber` ABC. Selected via factory when user chooses "OCR" method. Same segment format `{start, end, text}` — rest of pipeline unchanged.
-
-**Key tasks** (11 total — see `plans/phase6-ocr-subtitle-extraction.md`):
-- OCR transcriber backend using PaddleOCR (best Chinese accuracy)
-- Frame extraction via ffmpeg with configurable crop region
-- Text deduplication via SequenceMatcher (merge consecutive identical frames)
-- Region picker UI: user draws rectangle on video frame to select subtitle area
-- Method toggle on Download & Transcribe page: "Audio (Whisper)" / "OCR (Extract Subtitles)"
+**Key tasks** (11 total):
+- Base uploader ABC + per-platform implementations (YouTube, TikTok, Facebook, X)
+- OAuth setup script + token management
+- Chunked/resumable upload protocols per platform
+- Auth status API + Upload API with SSE progress
+- Upload page UI with OAuth connect, metadata editor, per-platform progress
 
 ---
 

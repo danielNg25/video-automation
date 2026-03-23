@@ -1,4 +1,4 @@
-# Phase 5 — TTS Dubbing (Week 5-6)
+# Phase 4 — TTS Dubbing (Week 4)
 
 ## Context
 
@@ -28,7 +28,7 @@ Follows existing patterns:
 
 ### Backend
 
-#### 5.1 TTS base class — `src/tts/base.py`
+#### 4.1 TTS base class — `src/tts/base.py`
 
 ```python
 class BaseTTSProvider(ABC):
@@ -41,7 +41,7 @@ class BaseTTSProvider(ABC):
 
 **Dependencies**: none.
 
-#### 5.2 Edge TTS provider — `src/tts/edge.py`
+#### 4.2 Edge TTS provider — `src/tts/edge.py`
 
 Default provider. Free, no API key, async, good Vietnamese support.
 - Voices: `vi-VN-HoaiMyNeural` (female), `vi-VN-NamMinhNeural` (male), `en-US-JennyNeural`, `en-US-GuyNeural`
@@ -50,7 +50,7 @@ Default provider. Free, no API key, async, good Vietnamese support.
 
 **Dependencies**: 5.1.
 
-#### 5.3 OpenAI TTS provider — `src/tts/openai_tts.py`
+#### 4.3 OpenAI TTS provider — `src/tts/openai_tts.py`
 
 Uses `httpx.AsyncClient` to call `/v1/audio/speech`.
 - Voices: alloy, echo, fable, onyx, nova, shimmer
@@ -59,7 +59,7 @@ Uses `httpx.AsyncClient` to call `/v1/audio/speech`.
 
 **Dependencies**: 5.1.
 
-#### 5.4 Google Cloud TTS provider — `src/tts/google_tts.py`
+#### 4.4 Google Cloud TTS provider — `src/tts/google_tts.py`
 
 Excellent Vietnamese quality.
 - Voices: `vi-VN-Standard-A/B/C/D`, `vi-VN-Wavenet-A/B/C/D`
@@ -67,7 +67,7 @@ Excellent Vietnamese quality.
 
 **Dependencies**: 5.1.
 
-#### 5.5 TTS factory — `src/tts/__init__.py`
+#### 4.5 TTS factory — `src/tts/__init__.py`
 
 ```python
 def get_tts_provider(config: dict) -> BaseTTSProvider:
@@ -76,7 +76,7 @@ def get_tts_provider(config: dict) -> BaseTTSProvider:
 
 **Dependencies**: 5.2, 5.3, 5.4.
 
-#### 5.6 Voice profiles config — `config/tts_voices.yaml`
+#### 4.6 Voice profiles config — `config/tts_voices.yaml`
 
 ```yaml
 default_provider: edge
@@ -126,7 +126,7 @@ platforms:
 
 **Dependencies**: none.
 
-#### 5.7 TTS audio assembler — `src/tts/assembler.py`
+#### 4.7 TTS audio assembler — `src/tts/assembler.py`
 
 Core logic to build a full-length audio track from segments:
 
@@ -150,7 +150,7 @@ Use `asyncio.gather` with `Semaphore(5)` for concurrent TTS API requests.
 
 **Dependencies**: 5.1, 5.5.
 
-#### 5.8 Audio mixing in ffmpeg — `src/processor/ffmpeg.py`
+#### 4.8 Audio mixing in ffmpeg — `src/processor/ffmpeg.py`
 
 Add methods:
 
@@ -168,13 +168,13 @@ ffmpeg -i video.mp4 -i tts.wav \
 
 **Dependencies**: 5.7.
 
-#### 5.9 Update batch processor — `src/processor/__init__.py`
+#### 4.9 Update batch processor — `src/processor/__init__.py`
 
 Add `tts_audio_paths: dict[str, Path]` and `tts_mix_settings` params to `process_for_all_platforms`. If TTS audio exists for a platform, use `burn_reformat_and_dub` instead of `burn_and_reformat`.
 
 **Dependencies**: 5.8.
 
-#### 5.10 Config + infra updates
+#### 4.10 Config + infra updates
 
 - `config/config.example.yaml`: add `tts:` section (enabled, default_provider, voices_config path)
 - `pyproject.toml`: add `edge-tts>=6.1.0`
@@ -183,7 +183,7 @@ Add `tts_audio_paths: dict[str, Path]` and `tts_mix_settings` params to `process
 
 **Dependencies**: none.
 
-#### 5.11 TTS unit tests — `tests/test_tts.py`
+#### 4.11 TTS unit tests — `tests/test_tts.py`
 
 Test ABC, factory, mocked Edge TTS synthesis, assembler duration fitting, ffmpeg audio mix command generation.
 
@@ -193,13 +193,13 @@ Test ABC, factory, mocked Edge TTS synthesis, assembler duration fitting, ffmpeg
 
 ### API
 
-#### 5.12 TTS Pydantic models — `src/api/models.py`
+#### 4.12 TTS Pydantic models — `src/api/models.py`
 
 `TTSRequest`, `TTSPreviewRequest`, `TTSResult`, `VoiceInfo`, `VoiceProfileConfig`.
 
 **Dependencies**: none.
 
-#### 5.13 TTS router — `src/api/routers/tts.py`
+#### 4.13 TTS router — `src/api/routers/tts.py`
 
 | Method | Path | Purpose |
 |--------|------|---------|
@@ -213,7 +213,7 @@ Test ABC, factory, mocked Edge TTS synthesis, assembler duration fitting, ffmpeg
 
 **Dependencies**: 5.5, 5.6, 5.7, 5.12.
 
-#### 5.14 Task manager + app registration
+#### 4.14 Task manager + app registration
 
 - `src/api/task_manager.py`: add `run_tts()` with SSE progress ("Generating segment 3/50...")
 - `src/api/__init__.py`: register TTS router, mount `data/tts` static
@@ -225,19 +225,19 @@ Test ABC, factory, mocked Edge TTS synthesis, assembler duration fitting, ffmpeg
 
 ### UI
 
-#### 5.15 TTS TypeScript types — `ui-app/src/api/types.ts`
+#### 4.15 TTS TypeScript types — `ui-app/src/api/types.ts`
 
 `TTSRequest`, `TTSPreviewRequest`, `TTSResult`, `VoiceInfo`, `VoiceProfileConfig`.
 
 **Dependencies**: none.
 
-#### 5.16 TTS API client — `ui-app/src/api/client.ts`
+#### 4.16 TTS API client — `ui-app/src/api/client.ts`
 
 `postTTS`, `getTTSVoices`, `getTTSProfiles`, `getTTSAudioUrl`, `postTTSPreview`.
 
 **Dependencies**: 5.15.
 
-#### 5.17 TTS section on Process page — `ui-app/src/pages/SubtitleProcess.tsx`
+#### 4.17 TTS section on Process page — `ui-app/src/pages/SubtitleProcess.tsx`
 
 Add collapsible "TTS Dubbing" section:
 1. **Enable TTS toggle** — master switch
@@ -250,7 +250,7 @@ Add collapsible "TTS Dubbing" section:
 
 **Dependencies**: 5.15, 5.16.
 
-#### 5.18 TTS preview component — `ui-app/src/components/TTSPreview.tsx`
+#### 4.18 TTS preview component — `ui-app/src/components/TTSPreview.tsx`
 
 Play/stop button. POST to `/api/tts/preview` → get audio blob → play via `new Audio(URL.createObjectURL(blob))`.
 
@@ -282,13 +282,13 @@ Level 6:  5.11 (←5.1-5.8)
 
 ## Verification Checklist
 
-### V5.1: Edge TTS installed
+### V4.1: Edge TTS installed
 
 ```bash
 python3 -c "import edge_tts; print('ok')"
 ```
 
-### V5.2: List available voices
+### V4.2: List available voices
 
 ```bash
 curl http://localhost:8000/api/tts/voices?language=vi
@@ -296,7 +296,7 @@ curl http://localhost:8000/api/tts/voices?language=vi
 
 **Expected**: JSON array with Vietnamese voices including `vi-VN-HoaiMyNeural`.
 
-### V5.3: Voice preview
+### V4.3: Voice preview
 
 ```bash
 curl -X POST http://localhost:8000/api/tts/preview \
@@ -306,7 +306,7 @@ curl -X POST http://localhost:8000/api/tts/preview \
 
 **Expected**: Audio bytes returned, playable in browser.
 
-### V5.4: Generate TTS for video
+### V4.4: Generate TTS for video
 
 ```bash
 curl -X POST http://localhost:8000/api/tts \
@@ -318,7 +318,7 @@ curl -N http://localhost:8000/api/events/{task_id}
 
 **Expected**: SSE shows "Generating segment 1/N...", WAV created at `data/tts/{id}_vi.wav`.
 
-### V5.5: TTS duration matches video
+### V4.5: TTS duration matches video
 
 ```bash
 python3 -c "
@@ -332,7 +332,7 @@ print(f'TTS: {float(tts_info[\"format\"][\"duration\"]):.1f}s')
 
 **Expected**: Durations match within ±0.5s.
 
-### V5.6: Audio mixing produces dubbed video
+### V4.6: Audio mixing produces dubbed video
 
 ```bash
 curl -X POST http://localhost:8000/api/process \
@@ -342,11 +342,11 @@ curl -X POST http://localhost:8000/api/process \
 
 **Expected**: Output video has mixed audio (original quieter + TTS overlay).
 
-### V5.7: Volume levels correct
+### V4.7: Volume levels correct
 
 Play output video — original Chinese audio should be faintly audible (30%), English/Vietnamese TTS should be dominant (100%).
 
-### V5.8: UI flow
+### V4.8: UI flow
 
 1. Open Process page → enable TTS toggle
 2. Select voice profile → click Preview → hear sample audio
@@ -354,7 +354,7 @@ Play output video — original Chinese audio should be faintly audible (30%), En
 4. After generation, play back full TTS track
 5. Select platforms → click Process → output has dubbed audio
 
-### V5.9: Unit tests pass
+### V4.9: Unit tests pass
 
 ```bash
 python3 -m pytest tests/test_tts.py -v

@@ -1,4 +1,4 @@
-# Phase 3 — Platform Upload Integrations (Week 3-4)
+# Phase 6 — Platform Upload Integrations (Week 6-7)
 
 > **Recommended order**: YouTube (easiest API, best docs) → Facebook → TikTok → X (stretch goal)
 
@@ -6,7 +6,7 @@
 
 ## Task List
 
-### 3.1 Base Uploader Interface — `src/uploader/base.py`
+### 6.1 Base Uploader Interface — `src/uploader/base.py`
 
 Dataclasses:
 - `UploadResult`: `platform`, `success`, `post_id`, `post_url`, `error`, `timestamp`
@@ -20,7 +20,7 @@ Abstract class `BaseUploader(ABC)`:
 
 **Dependencies**: Phase 1 task 1.6
 
-### 3.2 OAuth Setup Script — `scripts/setup_oauth.py`
+### 6.2 OAuth Setup Script — `scripts/setup_oauth.py`
 
 Click-based CLI: `python scripts/setup_oauth.py <platform>`
 
@@ -32,7 +32,7 @@ Subcommands:
 
 **Dependencies**: 3.1
 
-### 3.3 YouTube Uploader — `src/uploader/youtube.py`
+### 6.3 YouTube Uploader — `src/uploader/youtube.py`
 
 Class `YouTubeUploader(BaseUploader)`:
 
@@ -57,7 +57,7 @@ Class `YouTubeUploader(BaseUploader)`:
 
 **Dependencies**: 3.1, 3.2
 
-### 3.4 TikTok Uploader — `src/uploader/tiktok.py`
+### 6.4 TikTok Uploader — `src/uploader/tiktok.py`
 
 Class `TikTokUploader(BaseUploader)`:
 
@@ -87,7 +87,7 @@ Class `TikTokUploader(BaseUploader)`:
 
 **Dependencies**: 3.1, 3.2
 
-### 3.5 Facebook Uploader — `src/uploader/facebook.py`
+### 6.5 Facebook Uploader — `src/uploader/facebook.py`
 
 Class `FacebookUploader(BaseUploader)`:
 
@@ -113,7 +113,7 @@ Class `FacebookUploader(BaseUploader)`:
 
 **Dependencies**: 3.1, 3.2
 
-### 3.6 X/Twitter Uploader — `src/uploader/x.py` *(Stretch Goal)*
+### 6.6 X/Twitter Uploader — `src/uploader/x.py` *(Stretch Goal)*
 
 Class `XUploader(BaseUploader)`:
 
@@ -136,14 +136,14 @@ Class `XUploader(BaseUploader)`:
 
 **Dependencies**: 3.1, 3.2
 
-### 3.7 Uploader Factory — `src/uploader/__init__.py`
+### 6.7 Uploader Factory — `src/uploader/__init__.py`
 
 - `get_uploader(platform: str, config: dict) -> BaseUploader`
 - `get_enabled_uploaders(config: dict) -> dict[str, BaseUploader]` — returns only `enabled: true` platforms
 
 **Dependencies**: 3.3, 3.4, 3.5, 3.6
 
-### 3.8 Phase 3 Tests — `tests/test_uploader.py`
+### 6.8 Phase 3 Tests — `tests/test_uploader.py`
 
 - Mock API responses for each platform (use `httpx` mock or `responses` library)
 - Test auth flow (token load, refresh, expiry handling)
@@ -178,7 +178,7 @@ Class `XUploader(BaseUploader)`:
 
 ## Verification Checklist
 
-### V3.1: OAuth setup for YouTube
+### V6.1: OAuth setup for YouTube
 
 ```bash
 python3 scripts/setup_oauth.py youtube
@@ -196,7 +196,7 @@ print('Has refresh_token:', 'refresh_token' in token)
 
 **Expected**: Browser opens, user authorizes, `refresh_token` present in saved token.
 
-### V3.2: YouTube upload (private)
+### V6.2: YouTube upload (private)
 
 ```bash
 python3 -c "
@@ -223,7 +223,7 @@ asyncio.run(test())
 
 **Expected**: `Success: True`, video visible in YouTube Studio as private.
 
-### V3.3: TikTok upload (draft)
+### V6.3: TikTok upload (draft)
 
 ```bash
 python3 -c "
@@ -249,7 +249,7 @@ asyncio.run(test())
 
 **Expected**: `Success: True`, video appears in TikTok inbox as draft.
 
-### V3.4: Facebook upload
+### V6.4: Facebook upload
 
 ```bash
 python3 -c "
@@ -275,7 +275,7 @@ asyncio.run(test())
 
 **Expected**: `Success: True`, video visible on Facebook Page.
 
-### V3.5: X upload (if enabled)
+### V6.5: X upload (if enabled)
 
 ```bash
 python3 -c "
@@ -301,7 +301,7 @@ asyncio.run(test())
 
 **Expected**: `Success: True`, tweet with video visible on X.
 
-### V3.6: Uploader factory returns correct types
+### V6.6: Uploader factory returns correct types
 
 ```bash
 python3 -c "
@@ -319,7 +319,7 @@ print(list(enabled.keys()))  # ['youtube', 'tiktok', 'facebook']
 
 **Expected**: Correct class names, X excluded (disabled by default).
 
-### V3.7: Error handling — nonexistent file
+### V6.7: Error handling — nonexistent file
 
 ```bash
 python3 -c "
@@ -345,7 +345,7 @@ asyncio.run(test())
 
 **Expected**: `Success: False`, meaningful error message (not unhandled exception).
 
-### V3.8: Unit tests pass
+### V6.8: Unit tests pass
 
 ```bash
 python3 -m pytest tests/test_uploader.py -v
@@ -355,7 +355,7 @@ python3 -m pytest tests/test_uploader.py -v
 
 ## Web UI + API (Phase 3)
 
-### 3.9 Auth Router — `server/routers/auth.py`
+### 6.9 Auth Router — `server/routers/auth.py`
 
 **API Endpoints:**
 
@@ -385,7 +385,7 @@ python3 -m pytest tests/test_uploader.py -v
 
 - **Dependencies**: 3.2 (OAuth setup script logic, reused)
 
-### 3.10 Upload Router + Service — `server/routers/upload.py` + `server/services/upload_service.py`
+### 6.10 Upload Router + Service — `server/routers/upload.py` + `server/services/upload_service.py`
 
 **API Endpoints:**
 
@@ -406,7 +406,7 @@ python3 -m pytest tests/test_uploader.py -v
 - Retry: re-creates uploader for failed platforms only, preserves successful results
 - **Dependencies**: 3.7, Phase 1 tasks 1.19, 1.20
 
-### 3.11 Upload Page — `web/src/pages/UploadPage.tsx`
+### 6.11 Upload Page — `web/src/pages/UploadPage.tsx`
 
 **Components:**
 
@@ -461,7 +461,7 @@ python3 -m pytest tests/test_uploader.py -v
 
 ### Web UI Verification Checklist (Phase 3)
 
-### V3.9: Auth status API
+### V6.9: Auth status API
 
 ```bash
 curl http://localhost:8000/api/auth/status
@@ -469,7 +469,7 @@ curl http://localhost:8000/api/auth/status
 
 **Expected**: JSON with auth status per platform (authenticated/expired/disabled).
 
-### V3.10: OAuth flow via API
+### V6.10: OAuth flow via API
 
 ```bash
 curl -X POST http://localhost:8000/api/auth/youtube/start
@@ -480,7 +480,7 @@ curl http://localhost:8000/api/auth/status
 
 **Expected**: YouTube status changes to `authenticated: true`.
 
-### V3.11: Upload via API
+### V6.11: Upload via API
 
 ```bash
 curl -X POST http://localhost:8000/api/upload \
@@ -490,7 +490,7 @@ curl -X POST http://localhost:8000/api/upload \
 
 **Expected**: Upload starts, task returns success with post URL.
 
-### V3.12: Upload page UI flow
+### V6.12: Upload page UI flow
 
 1. Open Upload page → see auth status for all platforms
 2. Click "Connect" on YouTube → authorize in popup → status turns green
@@ -500,7 +500,7 @@ curl -X POST http://localhost:8000/api/upload \
 
 **Expected**: Full upload flow from UI with real-time progress.
 
-### V3.13: Retry failed upload
+### V6.13: Retry failed upload
 
 1. Upload to YouTube + TikTok (with TikTok intentionally failing — e.g., no auth)
 2. YouTube succeeds, TikTok shows "Failed" with error
