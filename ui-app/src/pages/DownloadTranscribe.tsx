@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
-import { postDownload, postTranscribe, getVideos, getVideo, getSrt, subscribeSSE, patchVideoTitle, deleteVideo, getProfiles, getProfile, postTranslate, createProfile, updateProfile, deleteProfileApi, getRawVideoUrl, getSrtDownloadUrl } from '../api/client';
-import type { VideoMetadata, SubtitleSegment, TranslationProfileSummary, TranslationProfile } from '../api/types';
+import { postDownload, postTranscribe, getVideos, getVideo, getSrt, subscribeSSE, patchVideoTitle, deleteVideo, getProfiles, postTranslate, getRawVideoUrl, getSrtDownloadUrl } from '../api/client';
+import type { VideoMetadata, SubtitleSegment, TranslationProfileSummary } from '../api/types';
 import { loadApiKeys, loadLLMPrefs, saveLLMPrefs } from '../utils/storage';
 
 function DownloadTranscribePage() {
@@ -30,12 +30,6 @@ function DownloadTranscribePage() {
   const [isTranslating, setIsTranslating] = useState(false);
   const [translateMessage, setTranslateMessage] = useState('');
   const [translateProgress, setTranslateProgress] = useState(0);
-  const [showProfileEditor, setShowProfileEditor] = useState(false);
-  const [editingProfile, setEditingProfile] = useState<TranslationProfile | null>(null);
-  const [profileDraft, setProfileDraft] = useState<TranslationProfile>({
-    name: '', description: '', target_language: 'vi', source_language: 'zh',
-    style_guide: '', example_pairs: [],
-  });
   const [savedPrefs] = useState(loadLLMPrefs);
   const [llmBackend, setLlmBackend] = useState(savedPrefs.backend);
   const [llmModel, setLlmModel] = useState(savedPrefs.model);
@@ -275,42 +269,6 @@ function DownloadTranscribePage() {
     } catch (e) {
       setIsTranslating(false);
       setError(e instanceof Error ? e.message : 'Translation failed');
-    }
-  };
-
-  const handleSaveProfile = async () => {
-    try {
-      if (editingProfile) {
-        await updateProfile(editingProfile.name, profileDraft);
-      } else {
-        await createProfile(profileDraft);
-      }
-      setShowProfileEditor(false);
-      setEditingProfile(null);
-      loadProfiles();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save profile');
-    }
-  };
-
-  const handleEditProfile = async (name: string) => {
-    try {
-      const full = await getProfile(name);
-      setEditingProfile(full);
-      setProfileDraft(full);
-      setShowProfileEditor(true);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load profile');
-    }
-  };
-
-  const handleDeleteProfile = async (name: string) => {
-    try {
-      await deleteProfileApi(name);
-      loadProfiles();
-      if (selectedProfile === name) setSelectedProfile('');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to delete profile');
     }
   };
 
@@ -569,17 +527,11 @@ function DownloadTranscribePage() {
                     <span className="text-xs font-bold uppercase tracking-widest">LLM Translation</span>
                   </div>
                   <button
-                    onClick={() => {
-                      setEditingProfile(null);
-                      setProfileDraft({
-                        name: '', description: '', target_language: 'vi', source_language: 'zh',
-                        style_guide: '', example_pairs: [],
-                      });
-                      setShowProfileEditor(!showProfileEditor);
-                    }}
-                    className="text-[10px] font-bold text-primary uppercase tracking-wider hover:underline"
+                    onClick={() => navigate('/profiles')}
+                    className="text-[10px] font-bold text-primary uppercase tracking-wider hover:underline flex items-center gap-1"
                   >
-                    {showProfileEditor ? 'Cancel' : '+ New Profile'}
+                    <span className="material-symbols-outlined text-xs">settings</span>
+                    Manage Profiles
                   </button>
                 </div>
                 <div className="p-5 space-y-4">
@@ -599,24 +551,6 @@ function DownloadTranscribePage() {
                             </option>
                           ))}
                         </select>
-                        {selectedProfile && (
-                          <>
-                            <button
-                              onClick={() => handleEditProfile(selectedProfile)}
-                              className="p-1.5 hover:bg-surface-container-highest rounded transition-colors text-zinc-400"
-                              title="Edit profile"
-                            >
-                              <span className="material-symbols-outlined text-sm">edit</span>
-                            </button>
-                            <button
-                              onClick={() => handleDeleteProfile(selectedProfile)}
-                              className="p-1.5 hover:bg-error/10 rounded transition-colors text-zinc-400 hover:text-error"
-                              title="Delete profile"
-                            >
-                              <span className="material-symbols-outlined text-sm">delete</span>
-                            </button>
-                          </>
-                        )}
                       </div>
                     </div>
                     <button
@@ -669,18 +603,16 @@ function DownloadTranscribePage() {
                         ))}
                       </select>
                     </div>
-                    {llmBackend !== 'local' && (
-                      <div>
-                        <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">API Key</label>
-                        <input
-                          type="password"
-                          value={llmApiKey}
-                          onChange={(e) => setLlmApiKey(e.target.value)}
-                          className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary"
-                          placeholder="Uses env var if empty"
-                        />
-                      </div>
-                    )}
+                    <div>
+                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">API Key</label>
+                      <input
+                        type="password"
+                        value={llmApiKey}
+                        onChange={(e) => setLlmApiKey(e.target.value)}
+                        className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary"
+                        placeholder="Uses env var if empty"
+                      />
+                    </div>
                   </div>
 
                   {/* Profile Description */}
@@ -715,133 +647,6 @@ function DownloadTranscribePage() {
                     </div>
                   )}
 
-                  {/* Profile Editor */}
-                  {showProfileEditor && (
-                    <div className="border border-outline-variant/20 rounded-lg p-4 space-y-3 bg-surface-container-lowest">
-                      <h4 className="text-xs font-bold uppercase tracking-widest">
-                        {editingProfile ? 'Edit Profile' : 'New Profile'}
-                      </h4>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-[10px] text-zinc-500 uppercase block mb-1">Name</label>
-                          <input
-                            className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary"
-                            value={profileDraft.name}
-                            onChange={(e) => setProfileDraft({ ...profileDraft, name: e.target.value })}
-                            placeholder="my-profile-vi"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] text-zinc-500 uppercase block mb-1">Target Language</label>
-                          <select
-                            className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
-                            value={profileDraft.target_language}
-                            onChange={(e) => setProfileDraft({ ...profileDraft, target_language: e.target.value })}
-                          >
-                            <option value="vi">Vietnamese</option>
-                            <option value="en">English</option>
-                            <option value="ko">Korean</option>
-                            <option value="ja">Japanese</option>
-                            <option value="es">Spanish</option>
-                          </select>
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-[10px] text-zinc-500 uppercase block mb-1">Description</label>
-                        <input
-                          className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary"
-                          value={profileDraft.description}
-                          onChange={(e) => setProfileDraft({ ...profileDraft, description: e.target.value })}
-                          placeholder="Short description of this translation style"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] text-zinc-500 uppercase block mb-1">Source Language</label>
-                        <select
-                          className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
-                          value={profileDraft.source_language}
-                          onChange={(e) => setProfileDraft({ ...profileDraft, source_language: e.target.value })}
-                        >
-                          <option value="zh">Chinese</option>
-                          <option value="en">English</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-[10px] text-zinc-500 uppercase block mb-1">Style Guide</label>
-                        <textarea
-                          className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary h-32 resize-y"
-                          value={profileDraft.style_guide}
-                          onChange={(e) => setProfileDraft({ ...profileDraft, style_guide: e.target.value })}
-                          placeholder="Describe the personality, tone, and rules for translation..."
-                        />
-                      </div>
-                      <div>
-                        <div className="flex justify-between items-center mb-2">
-                          <label className="text-[10px] text-zinc-500 uppercase">Example Pairs</label>
-                          <button
-                            onClick={() =>
-                              setProfileDraft({
-                                ...profileDraft,
-                                example_pairs: [...profileDraft.example_pairs, { source: '', target: '' }],
-                              })
-                            }
-                            className="text-[10px] text-primary font-bold uppercase hover:underline"
-                          >
-                            + Add
-                          </button>
-                        </div>
-                        {profileDraft.example_pairs.map((pair, i) => (
-                          <div key={i} className="flex gap-2 mb-2 items-center">
-                            <input
-                              className="flex-1 bg-surface-container-highest border-none text-xs text-on-surface py-1.5 px-2 rounded focus:ring-1 focus:ring-primary"
-                              placeholder="Source text"
-                              value={pair.source}
-                              onChange={(e) => {
-                                const pairs = [...profileDraft.example_pairs];
-                                pairs[i] = { ...pairs[i], source: e.target.value };
-                                setProfileDraft({ ...profileDraft, example_pairs: pairs });
-                              }}
-                            />
-                            <span className="text-zinc-600 text-[10px]">→</span>
-                            <input
-                              className="flex-1 bg-surface-container-highest border-none text-xs text-on-surface py-1.5 px-2 rounded focus:ring-1 focus:ring-primary"
-                              placeholder="Target text"
-                              value={pair.target}
-                              onChange={(e) => {
-                                const pairs = [...profileDraft.example_pairs];
-                                pairs[i] = { ...pairs[i], target: e.target.value };
-                                setProfileDraft({ ...profileDraft, example_pairs: pairs });
-                              }}
-                            />
-                            <button
-                              onClick={() => {
-                                const pairs = profileDraft.example_pairs.filter((_, j) => j !== i);
-                                setProfileDraft({ ...profileDraft, example_pairs: pairs });
-                              }}
-                              className="text-zinc-500 hover:text-error"
-                            >
-                              <span className="material-symbols-outlined text-sm">close</span>
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="flex justify-end gap-2 pt-2">
-                        <button
-                          onClick={() => { setShowProfileEditor(false); setEditingProfile(null); }}
-                          className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-zinc-400 hover:text-on-surface"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={handleSaveProfile}
-                          disabled={!profileDraft.name.trim()}
-                          className="bg-primary text-on-primary-fixed px-4 py-2 rounded-md font-bold text-xs uppercase tracking-wider disabled:opacity-50"
-                        >
-                          {editingProfile ? 'Update' : 'Save'} Profile
-                        </button>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
             )}
