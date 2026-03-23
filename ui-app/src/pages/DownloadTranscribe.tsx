@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
-import { postDownload, postTranscribe, getVideos, getVideo, getSrt, subscribeSSE, patchVideoTitle, deleteVideo, getProfiles, postTranslate, getRawVideoUrl, getSrtDownloadUrl } from '../api/client';
+import { postDownload, postTranscribe, getVideos, getVideo, getSrt, subscribeSSE, patchVideoTitle, deleteVideo, getProfiles, postTranslate, postPipeline, getRawVideoUrl, getSrtDownloadUrl } from '../api/client';
 import type { VideoMetadata, SubtitleSegment, TranslationProfileSummary } from '../api/types';
 import { loadApiKeys, loadLLMPrefs, saveLLMPrefs } from '../utils/storage';
 
@@ -23,6 +23,12 @@ function DownloadTranscribePage() {
   const [titleDraft, setTitleDraft] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [transcribeMethod, setTranscribeMethod] = useState<'audio' | 'ocr'>('ocr');
+
+  // Pipeline state
+  const [isPipeline, setIsPipeline] = useState(false);
+  const [pipelineStage, setPipelineStage] = useState('');
+  const [pipelineProgress, setPipelineProgress] = useState(0);
+  const [pipelineMessage, setPipelineMessage] = useState('');
 
   // Translation state
   const [profiles, setProfiles] = useState<TranslationProfileSummary[]>([]);
@@ -147,6 +153,57 @@ function DownloadTranscribePage() {
     } catch (e) {
       setIsDownloading(false);
       setError(e instanceof Error ? e.message : 'Download failed');
+    }
+  };
+
+  const handlePipeline = async () => {
+    if (!url.trim()) return;
+    setError('');
+    setIsPipeline(true);
+    setPipelineStage('download');
+    setPipelineProgress(0);
+    setPipelineMessage('Starting download...');
+    setVideoMeta(null);
+    setSrtSegments([]);
+
+    try {
+      const { task_id } = await postPipeline(
+        url.trim(),
+        transcribeMethod,
+        selectedProfile || undefined,
+      );
+      const es = subscribeSSE(task_id, (eventType, data) => {
+        if (eventType === 'progress') {
+          setPipelineStage((data.stage as string) || '');
+          setPipelineProgress((data.progress as number) * 100);
+          setPipelineMessage(data.message as string);
+        } else if (eventType === 'complete') {
+          setIsPipeline(false);
+          setPipelineProgress(100);
+          setPipelineMessage('Pipeline complete');
+          const result = data as Record<string, unknown>;
+          const video = result.video as VideoMetadata | undefined;
+          if (video) setVideoMeta(video);
+          const videoId = result.video_id as string;
+          if (videoId) {
+            getVideo(videoId).then((v) => {
+              setVideoMeta(v);
+              if (v.srt_languages.length > 0) {
+                loadSrt(videoId, v.srt_languages[v.srt_languages.length - 1]);
+              }
+            });
+          }
+          loadVideos();
+          es.close();
+        } else if (eventType === 'error') {
+          setIsPipeline(false);
+          setError(data.message as string);
+          es.close();
+        }
+      });
+    } catch (e) {
+      setIsPipeline(false);
+      setError(e instanceof Error ? e.message : 'Pipeline failed');
     }
   };
 
@@ -293,11 +350,19 @@ function DownloadTranscribePage() {
               onKeyDown={(e) => e.key === 'Enter' && handleDownload()}
             />
             <button
-              onClick={handleDownload}
-              disabled={isDownloading || !url.trim()}
+              onClick={handlePipeline}
+              disabled={isDownloading || isPipeline || !url.trim()}
               className="bg-primary text-on-primary-fixed px-6 py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:brightness-110 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <span>{isDownloading ? 'Downloading...' : 'Download'}</span>
+              <span>{isPipeline ? 'Processing...' : 'Process'}</span>
+              <span className="material-symbols-outlined text-sm">play_arrow</span>
+            </button>
+            <button
+              onClick={handleDownload}
+              disabled={isDownloading || isPipeline || !url.trim()}
+              className="bg-surface-container-highest text-on-surface px-4 py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:bg-surface-container-high active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span>{isDownloading ? 'Downloading...' : 'Download Only'}</span>
               <span className="material-symbols-outlined text-sm">download</span>
             </button>
           </div>
@@ -349,8 +414,69 @@ function DownloadTranscribePage() {
               </div>
             )}
 
+            {/* Pipeline Progress */}
+            {isPipeline && (
+              <div className="bg-surface-container-low rounded-xl overflow-hidden border border-primary/20">
+                <div className="p-4 border-b border-outline-variant/10 flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary text-lg">rocket_launch</span>
+                    <span className="text-xs font-bold uppercase tracking-widest">Pipeline</span>
+                  </div>
+                  <span className="text-lg font-black font-mono text-primary tracking-tighter">
+                    {pipelineProgress.toFixed(0)}%
+                  </span>
+                </div>
+                <div className="p-5 space-y-4">
+                  {/* Stage indicators */}
+                  <div className="flex items-center gap-2">
+                    {[
+                      { key: 'download', label: 'Download', icon: 'download' },
+                      { key: 'transcribe', label: 'Extract Subtitles', icon: 'document_scanner' },
+                      ...(selectedProfile ? [{ key: 'translate', label: 'Translate', icon: 'translate' }] : []),
+                    ].map((s, i) => {
+                      const isDone = (
+                        (s.key === 'download' && pipelineStage !== 'download') ||
+                        (s.key === 'transcribe' && (pipelineStage === 'translate' || pipelineProgress >= 100)) ||
+                        (s.key === 'translate' && pipelineProgress >= 100)
+                      );
+                      const isActive = pipelineStage === s.key;
+                      return (
+                        <div key={s.key} className="flex items-center gap-2">
+                          {i > 0 && <div className={`w-8 h-px ${isDone || isActive ? 'bg-primary' : 'bg-zinc-700'}`} />}
+                          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                            isDone
+                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                              : isActive
+                                ? 'bg-primary/10 text-primary border border-primary/30'
+                                : 'bg-surface-container-highest text-zinc-600 border border-outline-variant/10'
+                          }`}>
+                            <span className="material-symbols-outlined text-xs">
+                              {isDone ? 'check_circle' : isActive ? 'pending' : s.icon}
+                            </span>
+                            {s.label}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Current stage message */}
+                  <div className="flex items-center gap-3">
+                    <div className="w-6 h-6 rounded-full border-2 border-primary border-t-transparent animate-spin shrink-0"></div>
+                    <span className="text-[11px] font-medium text-emerald-400">{pipelineMessage}</span>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
+                    <div
+                      className="bg-primary h-full transition-all duration-500 shadow-[0_0_8px_rgba(208,188,255,0.4)]"
+                      style={{ width: `${pipelineProgress}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Video Result Card — shown when a video is selected or just downloaded */}
-            {videoMeta && !isDownloading && (
+            {videoMeta && !isDownloading && !isPipeline && (
               <div className="bg-surface-container-low rounded-xl overflow-hidden flex flex-col md:flex-row border border-primary/20">
                 <div className="w-full md:w-64 aspect-video bg-surface-container-highest relative group overflow-hidden">
                   {videoMeta.thumbnail ? (

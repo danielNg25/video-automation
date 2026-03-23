@@ -43,6 +43,13 @@ class TranslationProfileCreate(BaseModel):
     example_pairs: list[dict] = []
 
 
+class PipelineRequest(BaseModel):
+    url: str
+    transcribe_method: str = "ocr"
+    translate_profile: str | None = None
+    source_language: str = "zh"
+
+
 class ProcessRequest(BaseModel):
     video_id: str
     platforms: list[str]

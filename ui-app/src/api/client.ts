@@ -203,6 +203,26 @@ export function postTranslate(
   });
 }
 
+// --- Pipeline ---
+
+export function postPipeline(
+  url: string,
+  transcribeMethod: string = 'ocr',
+  translateProfile?: string,
+  sourceLanguage: string = 'zh',
+): Promise<TaskResponse> {
+  return request('/pipeline', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      url,
+      transcribe_method: transcribeMethod,
+      translate_profile: translateProfile ?? null,
+      source_language: sourceLanguage,
+    }),
+  });
+}
+
 // --- Config ---
 
 export function getConfig(): Promise<Record<string, unknown>> {
