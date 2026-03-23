@@ -85,7 +85,9 @@ class TTSAssembler:
 
             raw_clips = await asyncio.gather(*tasks, return_exceptions=True)
 
-            # Step 2-4: Duration fitting and concatenation
+            # Step 2-4: Duration fitting — only speed up if clip would
+            # overlap the *next* segment's start time, allowing natural
+            # speech to overflow its own subtitle window.
             fitted_clips: list[tuple[float, Path | None]] = []  # (start_time, clip_path)
 
             for i, (seg, clip_result) in enumerate(zip(segments, raw_clips)):
@@ -102,25 +104,26 @@ class TTSAssembler:
                     continue
 
                 clip_path = clip_result
-                seg_window = seg["end"] - seg["start"]
-
-                if seg_window <= 0:
-                    fitted_clips.append((seg["start"], clip_path))
-                    continue
-
                 clip_duration = _get_audio_duration(clip_path)
                 if clip_duration <= 0:
                     fitted_clips.append((seg["start"], None))
                     continue
 
-                speed_ratio = clip_duration / seg_window
+                # Available space: from this segment's start to the next
+                # segment's start (or video end for the last segment).
+                if i + 1 < total:
+                    next_start = segments[i + 1]["start"]
+                else:
+                    next_start = video_duration
+                available = max(next_start - seg["start"], 0.1)
+
+                speed_ratio = clip_duration / available
 
                 if speed_ratio > 1.05:
-                    # Need to speed up the clip
                     if speed_ratio > MAX_SAFE_SPEED_RATIO:
                         logger.warning(
                             f"Segment {i}: TTS is {clip_duration:.1f}s for "
-                            f"{seg_window:.1f}s window ({speed_ratio:.1f}x speedup needed)"
+                            f"{available:.1f}s available ({speed_ratio:.1f}x speedup needed)"
                         )
 
                     fitted_path = tmp / f"fitted_{i:04d}.mp3"

@@ -29,6 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Google Cloud TTS provider (`src/tts/google_tts.py`): REST API with Wavenet/Standard voices, Vietnamese and English
 
 ### Changed
+- TTS assembler: clips only speed up when they would overlap the next segment's start, not the current segment's end — produces more natural-sounding speech
 - Renamed "Download & Transcribe" page to "Pipeline" in sidebar navigation
 - Moved TTS generation (voice profile selector, preview, generate button) from Subtitle Process page to Pipeline page
 - Subtitle Process page now has a simplified "Mix TTS Audio" toggle with per-platform volume sliders only
