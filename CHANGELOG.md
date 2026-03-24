@@ -40,7 +40,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - TTS assembler: clips only speed up when they would overlap the next segment's start, not the current segment's end — produces more natural-sounding speech
 - Renamed "Download & Transcribe" page to "Pipeline" in sidebar navigation
 
+- Process & Export panel on Pipeline page: platform selection, collapsible subtitle style editor, TTS mix toggle, process button with SSE progress, output video preview tabs
+
 ### Removed
+- `SubtitleProcess.tsx` page, `/process` route, and "Subtitle & Process" sidebar entry — merged into Pipeline page
 - Whisper speech-to-text backends (`src/transcriber/faster.py`, `src/transcriber/mlx.py`) — OCR via PaddleOCR is the only transcription method
 - `faster-whisper` and `mlx-whisper` dependencies from `pyproject.toml`
 - Whisper config section from `config.yaml` and `config.example.yaml`

@@ -7,7 +7,6 @@ export interface NavItem {
 export const navItems: readonly NavItem[] = [
   { icon: 'dashboard', label: 'Dashboard', path: '/' },
   { icon: 'rocket_launch', label: 'Pipeline', path: '/download' },
-  { icon: 'movie_edit', label: 'Subtitle & Process', path: '/process' },
   { icon: 'translate', label: 'Translation Profiles', path: '/profiles' },
   { icon: 'upload', label: 'Upload', path: '/upload' },
   { icon: 'settings', label: 'Settings', path: '/settings' },

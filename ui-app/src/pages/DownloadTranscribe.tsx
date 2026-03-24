@@ -1,9 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
-import { postDownload, postTranscribe, getVideos, getVideo, getSrt, subscribeSSE, patchVideoTitle, deleteVideo, getProfiles, postTranslate, postPipeline, getRawVideoUrl, getSrtDownloadUrl, postTTS, getTTSProfiles, getTTSProviders, getTTSVoices, getTTSAudioUrl } from '../api/client';
+import { postDownload, postTranscribe, getVideos, getVideo, getSrt, subscribeSSE, patchVideoTitle, deleteVideo, getProfiles, postTranslate, postPipeline, getRawVideoUrl, getSrtDownloadUrl, postTTS, getTTSProfiles, getTTSProviders, getTTSVoices, getTTSAudioUrl, postProcess, getPlatforms, getProcessedVideoUrl } from '../api/client';
 import { TTSPreview } from '../components/TTSPreview';
-import type { VideoMetadata, SubtitleSegment, TranslationProfileSummary, VoiceProfileConfig, TTSProviderInfo, VoiceInfo } from '../api/types';
+import type { VideoMetadata, SubtitleSegment, TranslationProfileSummary, VoiceProfileConfig, TTSProviderInfo, VoiceInfo, PlatformSpec } from '../api/types';
+
+const PLATFORM_INFO: Record<string, { label: string; subLangLabel: string; constraint: string }> = {
+  tiktok: { label: 'TikTok', subLangLabel: 'Vietnamese', constraint: '9:16 / 10min / 4GB' },
+  youtube: { label: 'YouTube', subLangLabel: 'English', constraint: '9:16 / Shorts / 256GB' },
+  facebook: { label: 'Facebook', subLangLabel: 'Vietnamese', constraint: '9:16 / 15min / 4GB' },
+  x: { label: 'X / Twitter', subLangLabel: 'English', constraint: '9:16 / 2:20 / 512MB' },
+};
 import { loadApiKeys, loadLLMPrefs, saveLLMPrefs } from '../utils/storage';
 
 function DownloadTranscribePage() {
@@ -56,6 +63,27 @@ function DownloadTranscribePage() {
   const [ttsGenerated, setTtsGenerated] = useState(false);
   const [ttsError, setTtsError] = useState('');
 
+  // Process state
+  const [platformSpecs, setPlatformSpecs] = useState<Record<string, PlatformSpec>>({});
+  const [selectedPlatforms, setSelectedPlatforms] = useState<Record<string, boolean>>({
+    tiktok: true, youtube: true, facebook: false, x: false,
+  });
+  const [langOverrides, setLangOverrides] = useState<Record<string, string>>({});
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processProgress, setProcessProgress] = useState<Record<string, { pct: number; message: string }>>({});
+  const [processError, setProcessError] = useState('');
+  const [completedOutputs, setCompletedOutputs] = useState<Record<string, string>>({});
+  const [activeOutputTab, setActiveOutputTab] = useState('');
+  const [enableTtsMix, setEnableTtsMix] = useState(false);
+  // Subtitle style (compact, collapsed by default)
+  const [fontName, setFontName] = useState('Arial');
+  const [fontSize, setFontSize] = useState(24);
+  const [outlineWidth, setOutlineWidth] = useState(2);
+  const [verticalMargin, setVerticalMargin] = useState(30);
+  const [shadowEnabled, setShadowEnabled] = useState(true);
+  const [boldEnabled, setBoldEnabled] = useState(true);
+  const [styleExpanded, setStyleExpanded] = useState(false);
+
   // Load API key from localStorage when backend changes
   useEffect(() => {
     const keys = loadApiKeys();
@@ -95,6 +123,13 @@ function DownloadTranscribePage() {
     }
   }, [selectedProfile]);
 
+  const loadPlatformSpecs = useCallback(async () => {
+    try {
+      const specs = await getPlatforms();
+      setPlatformSpecs(specs);
+    } catch { /* API not available */ }
+  }, []);
+
   const loadTtsProfiles = useCallback(async () => {
     try {
       const [profiles, providers] = await Promise.all([getTTSProfiles(), getTTSProviders()]);
@@ -120,7 +155,8 @@ function DownloadTranscribePage() {
   useEffect(() => {
     loadProfiles();
     loadTtsProfiles();
-  }, [loadProfiles, loadTtsProfiles]);
+    loadPlatformSpecs();
+  }, [loadProfiles, loadTtsProfiles, loadPlatformSpecs]);
 
   const loadVideos = useCallback(async () => {
     try {
@@ -424,6 +460,93 @@ function DownloadTranscribePage() {
     const info = ttsProviders.find(p => p.id === provider);
     if (info && !info.requires_key) {
       loadVoicesForProvider(provider);
+    }
+  };
+
+  // ── Process helpers ──
+  const activePlatforms = Object.entries(selectedPlatforms).filter(([, v]) => v).map(([k]) => k);
+  const togglePlatform = (id: string) => setSelectedPlatforms(prev => ({ ...prev, [id]: !prev[id] }));
+  const getEffectiveLang = (platform: string): string => {
+    if (langOverrides[platform]) return langOverrides[platform];
+    const spec = platformSpecs[platform];
+    return spec?.subtitle_language || (platform === 'tiktok' || platform === 'facebook' ? 'vi' : 'en');
+  };
+  const hasSubtitleForPlatform = (platform: string): boolean => {
+    if (!videoMeta) return false;
+    return videoMeta.srt_languages.includes(getEffectiveLang(platform));
+  };
+  const setLangOverride = (platform: string, lang: string) => {
+    setLangOverrides(prev => {
+      const next = { ...prev };
+      if (lang === '') delete next[platform]; else next[platform] = lang;
+      return next;
+    });
+  };
+  const canProcess = !!videoMeta && activePlatforms.length > 0 && !isProcessing;
+
+  const handleProcess = async () => {
+    if (!canProcess || !videoMeta) return;
+    setIsProcessing(true);
+    setProcessError('');
+    setCompletedOutputs({});
+    const initProg: Record<string, { pct: number; message: string }> = {};
+    for (const p of activePlatforms) initProg[p] = { pct: 0, message: 'Queued' };
+    setProcessProgress(initProg);
+
+    try {
+      const styleOverride = {
+        font_name: fontName, font_size: fontSize, outline_width: outlineWidth,
+        margin_v: verticalMargin, shadow_depth: shadowEnabled ? 1 : 0, bold: boldEnabled,
+      };
+      const langPayload: Record<string, string> = {};
+      for (const p of activePlatforms) { if (langOverrides[p]) langPayload[p] = langOverrides[p]; }
+
+      // TTS mix: use platform defaults from tts_voices.yaml
+      let ttsMixPayload: Record<string, { original_volume: number; tts_volume: number }> | undefined;
+      if (enableTtsMix && ttsGenerated) {
+        ttsMixPayload = {};
+        for (const p of activePlatforms) {
+          ttsMixPayload[p] = { original_volume: 0.3, tts_volume: 1.0 };
+        }
+      }
+
+      const { task_id } = await postProcess({
+        video_id: videoMeta.video_id,
+        platforms: activePlatforms,
+        subtitle_style: styleOverride,
+        subtitle_language_overrides: Object.keys(langPayload).length > 0 ? langPayload : undefined,
+        enable_tts: enableTtsMix && ttsGenerated,
+        tts_mix_settings: ttsMixPayload,
+      });
+
+      const es = subscribeSSE(task_id, (eventType, data) => {
+        if (eventType === 'progress') {
+          const platform = (data.platform as string) || '';
+          if (platform && platform !== 'done') {
+            setProcessProgress(prev => ({
+              ...prev,
+              [platform]: { pct: Math.round((data.progress as number) * 100), message: data.message as string },
+            }));
+          }
+        } else if (eventType === 'complete') {
+          setIsProcessing(false);
+          setCompletedOutputs((data.outputs || {}) as Record<string, string>);
+          setProcessProgress(prev => {
+            const updated = { ...prev };
+            for (const p of activePlatforms) updated[p] = { pct: 100, message: 'Complete' };
+            return updated;
+          });
+          if (activePlatforms.length > 0) setActiveOutputTab(activePlatforms[0]);
+          es.close();
+        } else if (eventType === 'error') {
+          setIsProcessing(false);
+          setProcessError(data.message as string);
+          es.close();
+        }
+      });
+    } catch (e) {
+      setIsProcessing(false);
+      setProcessError(e instanceof Error ? e.message : 'Processing failed');
     }
   };
 
@@ -1095,6 +1218,192 @@ function DownloadTranscribePage() {
                     <div className="bg-error/10 border border-error/30 text-error text-xs p-3 rounded-lg flex items-center gap-2">
                       <span className="material-symbols-outlined text-sm">error</span>
                       {ttsError}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Process & Export Panel */}
+            {videoMeta && videoMeta.has_srt && !isDownloading && !isPipeline && (
+              <div className="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/10">
+                <div className="p-4 border-b border-outline-variant/10 flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary text-lg">auto_fix_high</span>
+                    <span className="text-xs font-bold uppercase tracking-widest">Process & Export</span>
+                  </div>
+                  <span className="font-mono text-[10px] text-primary bg-primary/10 px-2 py-0.5 rounded">FFMPEG</span>
+                </div>
+                <div className="p-5 space-y-4">
+                  {/* Collapsible Subtitle Style */}
+                  <div>
+                    <button
+                      onClick={() => setStyleExpanded(!styleExpanded)}
+                      className="flex items-center gap-2 text-[10px] text-on-surface-variant uppercase tracking-tighter font-bold hover:text-on-surface transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-xs">{styleExpanded ? 'expand_less' : 'expand_more'}</span>
+                      Subtitle Style
+                    </button>
+                    {styleExpanded && (
+                      <div className="mt-3 space-y-3 bg-surface-container-lowest rounded-lg p-3 border border-outline-variant/10">
+                        <div className="grid grid-cols-4 gap-3">
+                          <div className="space-y-1">
+                            <label className="font-mono text-[8px] uppercase text-on-surface-variant">Font</label>
+                            <select value={fontName} onChange={e => setFontName(e.target.value)}
+                              className="w-full bg-surface-container border-none text-[10px] rounded h-7 focus:ring-1 focus:ring-primary text-on-surface">
+                              <option value="Arial">Arial</option>
+                              <option value="Helvetica">Helvetica</option>
+                              <option value="Roboto">Roboto</option>
+                              <option value="Impact">Impact</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex justify-between">
+                              <label className="font-mono text-[8px] uppercase text-on-surface-variant">Size</label>
+                              <span className="font-mono text-[8px] text-primary">{fontSize}px</span>
+                            </div>
+                            <input type="range" min={16} max={36} value={fontSize} onChange={e => setFontSize(Number(e.target.value))}
+                              className="w-full accent-primary h-1 bg-surface-container-highest rounded-lg appearance-none cursor-pointer" />
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex justify-between">
+                              <label className="font-mono text-[8px] uppercase text-on-surface-variant">Outline</label>
+                              <span className="font-mono text-[8px] text-primary">{outlineWidth}px</span>
+                            </div>
+                            <input type="range" min={0} max={4} step={0.5} value={outlineWidth} onChange={e => setOutlineWidth(Number(e.target.value))}
+                              className="w-full accent-primary h-1 bg-surface-container-highest rounded-lg appearance-none cursor-pointer" />
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex justify-between">
+                              <label className="font-mono text-[8px] uppercase text-on-surface-variant">Margin</label>
+                              <span className="font-mono text-[8px] text-primary">{verticalMargin}px</span>
+                            </div>
+                            <input type="range" min={20} max={100} value={verticalMargin} onChange={e => setVerticalMargin(Number(e.target.value))}
+                              className="w-full accent-primary h-1 bg-surface-container-highest rounded-lg appearance-none cursor-pointer" />
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <label className="flex items-center gap-1.5 cursor-pointer">
+                            <input type="checkbox" checked={shadowEnabled} onChange={() => setShadowEnabled(!shadowEnabled)}
+                              className="rounded border-outline-variant bg-surface-container text-primary focus:ring-primary w-3 h-3" />
+                            <span className="font-mono text-[9px] uppercase text-on-surface">Shadow</span>
+                          </label>
+                          <label className="flex items-center gap-1.5 cursor-pointer">
+                            <input type="checkbox" checked={boldEnabled} onChange={() => setBoldEnabled(!boldEnabled)}
+                              className="rounded border-outline-variant bg-surface-container text-primary focus:ring-primary w-3 h-3" />
+                            <span className="font-mono text-[9px] uppercase text-on-surface">Bold</span>
+                          </label>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Platform Selection */}
+                  <div className="space-y-2">
+                    <label className="font-mono text-[10px] uppercase text-on-surface-variant">Platforms</label>
+                    {Object.entries(PLATFORM_INFO).map(([id, info]) => {
+                      const effectiveLang = getEffectiveLang(id);
+                      const hasSub = hasSubtitleForPlatform(id);
+                      const availableLangs = videoMeta?.srt_languages || [];
+                      return (
+                        <div key={id} className={`p-2.5 rounded-lg bg-surface-container-lowest border ${selectedPlatforms[id] ? 'border-primary/30' : 'border-outline-variant/10'} flex items-center gap-3 hover:border-primary/40 transition-colors`}>
+                          <input checked={selectedPlatforms[id] || false} onChange={() => togglePlatform(id)}
+                            className="rounded border-outline-variant bg-surface-container text-primary focus:ring-primary w-3.5 h-3.5 cursor-pointer" type="checkbox" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium cursor-pointer" onClick={() => togglePlatform(id)}>{info.label}</span>
+                              <span className="font-mono text-[8px] px-1 py-0.5 bg-zinc-800 text-zinc-400 rounded">{info.constraint}</span>
+                              <select value={langOverrides[id] || ''} onChange={e => { e.stopPropagation(); setLangOverride(id, e.target.value); }}
+                                onClick={e => e.stopPropagation()}
+                                className="bg-surface-container-lowest border border-outline-variant/20 text-[10px] rounded px-1 py-0.5 focus:ring-1 focus:ring-primary text-on-surface ml-auto">
+                                <option value="">Default ({info.subLangLabel})</option>
+                                {availableLangs.map(lang => (
+                                  <option key={lang} value={lang}>{lang === 'en' ? 'English' : lang === 'vi' ? 'Vietnamese' : lang === 'zh' ? 'Chinese' : lang.toUpperCase()}</option>
+                                ))}
+                              </select>
+                              <span className={`font-mono text-[8px] px-1 py-0.5 rounded uppercase ${hasSub ? 'bg-primary/20 text-primary' : 'bg-amber-500/20 text-amber-400'}`}>{effectiveLang}</span>
+                            </div>
+                            {!hasSub && videoMeta && (
+                              <p className="text-[9px] text-amber-400 flex items-center gap-1 mt-0.5">
+                                <span className="material-symbols-outlined text-[10px]">warning</span>
+                                {effectiveLang.toUpperCase()} SRT not available — will use fallback
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* TTS Mix Toggle */}
+                  {ttsGenerated && (
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={enableTtsMix} onChange={() => setEnableTtsMix(!enableTtsMix)}
+                        className="rounded border-outline-variant bg-surface-container text-primary focus:ring-primary w-3.5 h-3.5" />
+                      <span className="text-xs text-on-surface">Mix TTS audio into output</span>
+                      <span className="font-mono text-[9px] text-on-surface-variant">(30% original + 100% TTS)</span>
+                    </label>
+                  )}
+
+                  {/* Process Button */}
+                  <button disabled={!canProcess} onClick={handleProcess}
+                    className={`w-full py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
+                      canProcess
+                        ? 'bg-gradient-to-r from-primary to-primary-container text-on-primary-fixed hover:shadow-[0_0_20px_rgba(160,120,255,0.3)]'
+                        : 'bg-surface-container-highest text-on-surface-variant cursor-not-allowed'
+                    }`}>
+                    {isProcessing ? (
+                      <><span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>PROCESSING...</>
+                    ) : (
+                      <><span className="material-symbols-outlined text-sm">auto_fix_high</span>PROCESS VIDEO</>
+                    )}
+                  </button>
+
+                  {processError && (
+                    <div className="p-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">{processError}</div>
+                  )}
+
+                  {/* Per-platform progress */}
+                  {Object.keys(processProgress).length > 0 && (isProcessing || Object.keys(completedOutputs).length > 0) && (
+                    <div className="space-y-2">
+                      {Object.entries(processProgress).map(([platform, { pct, message }]) => (
+                        <div key={platform} className="space-y-1">
+                          <div className="flex justify-between items-center">
+                            <div className="flex items-center gap-2">
+                              <span className={`w-1.5 h-1.5 rounded-full ${pct >= 100 ? 'bg-emerald-500' : pct > 0 ? 'bg-primary animate-pulse' : 'bg-zinc-600'}`} />
+                              <span className="text-[10px] font-medium">{PLATFORM_INFO[platform]?.label || platform}</span>
+                            </div>
+                            <span className={`font-mono text-[10px] ${pct >= 100 ? 'text-emerald-500' : 'text-primary'}`}>{pct}%</span>
+                          </div>
+                          <div className="h-1 bg-surface-container-highest rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full transition-all duration-300 ${pct >= 100 ? 'bg-emerald-500' : 'bg-primary'}`} style={{ width: `${pct}%` }} />
+                          </div>
+                          <p className="font-mono text-[8px] text-on-surface-variant">{message}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Output Preview */}
+                  {Object.keys(completedOutputs).length > 0 && (
+                    <div>
+                      <div className="flex gap-1.5 mb-2">
+                        {Object.keys(completedOutputs).map(platform => (
+                          <button key={platform} onClick={() => setActiveOutputTab(platform)}
+                            className={`text-[10px] font-medium px-2.5 py-1 rounded ${activeOutputTab === platform ? 'bg-primary/20 text-primary' : 'text-on-surface-variant hover:text-on-surface'}`}>
+                            {PLATFORM_INFO[platform]?.label || platform}
+                          </button>
+                        ))}
+                      </div>
+                      {activeOutputTab && videoMeta && (
+                        <div>
+                          <video controls className="w-full max-h-[300px] rounded-lg bg-black"
+                            src={getProcessedVideoUrl(videoMeta.video_id, activeOutputTab)}>
+                            Your browser does not support the video tag.
+                          </video>
+                          <p className="font-mono text-[8px] text-on-surface-variant mt-1">{videoMeta.video_id}_{activeOutputTab}.mp4</p>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

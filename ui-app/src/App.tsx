@@ -4,7 +4,6 @@ import { lazy, Suspense } from 'react';
 
 const DashboardPage = lazy(() => import('./pages/Dashboard'));
 const DownloadTranscribePage = lazy(() => import('./pages/DownloadTranscribe'));
-const SubtitleProcessPage = lazy(() => import('./pages/SubtitleProcess'));
 const UploadPage = lazy(() => import('./pages/Upload'));
 const SettingsPage = lazy(() => import('./pages/Settings'));
 const SubtitleEditorPage = lazy(() => import('./pages/SubtitleEditor'));
@@ -26,7 +25,6 @@ function App() {
           <Route element={<Layout />}>
             <Route index element={<DashboardPage />} />
             <Route path="/download" element={<DownloadTranscribePage />} />
-            <Route path="/process" element={<SubtitleProcessPage />} />
             <Route path="/editor/:videoId" element={<SubtitleEditorPage />} />
             <Route path="/profiles" element={<TranslationProfilesPage />} />
             <Route path="/upload" element={<UploadPage />} />
