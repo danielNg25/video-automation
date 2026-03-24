@@ -479,6 +479,8 @@ class TaskManager:
         voice_profile_name: str,
         provider_override: str | None,
         config: dict,
+        voice_override: str | None = None,
+        api_key_override: str | None = None,
     ):
         """Execute a TTS generation task in the background."""
         from src.processor.subtitle import parse_srt
@@ -526,9 +528,23 @@ class TaskManager:
             file_meta = extract_metadata_from_file(video_path)
             video_duration = video_info.duration or file_meta.get("duration", 0.0)
 
-            # Create TTS provider
+            # Apply overrides
+            if voice_override:
+                voice_profile = {**voice_profile, "voice": voice_override}
+
+            # Create TTS provider — inject per-request API key if provided
             provider_name = provider_override or voice_profile.get("provider", "edge")
-            tts_provider = get_tts_provider(config, provider=provider_name)
+            effective_config = config
+            if api_key_override:
+                tts_section = dict(config.get("tts", {}))
+                if provider_name == "elevenlabs":
+                    tts_section["elevenlabs_api_key"] = api_key_override
+                elif provider_name == "openai":
+                    tts_section["openai_api_key"] = api_key_override
+                elif provider_name == "google":
+                    tts_section["google_api_key"] = api_key_override
+                effective_config = {**config, "tts": tts_section}
+            tts_provider = get_tts_provider(effective_config, provider=provider_name)
 
             # Progress callback
             total_segments = len(segments)

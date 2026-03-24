@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
-import { postDownload, postTranscribe, getVideos, getVideo, getSrt, subscribeSSE, patchVideoTitle, deleteVideo, getProfiles, postTranslate, postPipeline, getRawVideoUrl, getSrtDownloadUrl, postTTS, getTTSProfiles, getTTSAudioUrl } from '../api/client';
+import { postDownload, postTranscribe, getVideos, getVideo, getSrt, subscribeSSE, patchVideoTitle, deleteVideo, getProfiles, postTranslate, postPipeline, getRawVideoUrl, getSrtDownloadUrl, postTTS, getTTSProfiles, getTTSProviders, getTTSVoices, getTTSAudioUrl } from '../api/client';
 import { TTSPreview } from '../components/TTSPreview';
-import type { VideoMetadata, SubtitleSegment, TranslationProfileSummary, VoiceProfileConfig } from '../api/types';
+import type { VideoMetadata, SubtitleSegment, TranslationProfileSummary, VoiceProfileConfig, TTSProviderInfo, VoiceInfo } from '../api/types';
 import { loadApiKeys, loadLLMPrefs, saveLLMPrefs } from '../utils/storage';
 
 function DownloadTranscribePage() {
@@ -44,9 +44,15 @@ function DownloadTranscribePage() {
   const [llmBaseUrl, setLlmBaseUrl] = useState('');
 
   // TTS state
+  const [ttsProviders, setTtsProviders] = useState<TTSProviderInfo[]>([]);
+  const [selectedTtsProvider, setSelectedTtsProvider] = useState('edge');
   const [ttsProfiles, setTtsProfiles] = useState<Record<string, VoiceProfileConfig>>({});
   const [selectedTtsProfile, setSelectedTtsProfile] = useState('female-vi-natural');
+  const [ttsVoices, setTtsVoices] = useState<VoiceInfo[]>([]);
+  const [selectedVoiceId, setSelectedVoiceId] = useState('');
+  const [ttsApiKey, setTtsApiKey] = useState('');
   const [ttsLanguage, setTtsLanguage] = useState('vi');
+  const [useDirectVoice, setUseDirectVoice] = useState(false);
   const [isGeneratingTts, setIsGeneratingTts] = useState(false);
   const [ttsProgress, setTtsProgress] = useState({ pct: 0, message: '' });
   const [ttsGenerated, setTtsGenerated] = useState(false);
@@ -93,12 +99,25 @@ function DownloadTranscribePage() {
 
   const loadTtsProfiles = useCallback(async () => {
     try {
-      const profiles = await getTTSProfiles();
+      const [profiles, providers] = await Promise.all([getTTSProfiles(), getTTSProviders()]);
       setTtsProfiles(profiles);
+      setTtsProviders(providers);
     } catch {
       // TTS not available
     }
   }, []);
+
+  const loadVoicesForProvider = useCallback(async (provider: string, apiKey?: string) => {
+    try {
+      const voices = await getTTSVoices(undefined, provider, apiKey);
+      setTtsVoices(voices);
+      if (voices.length > 0 && !selectedVoiceId) {
+        setSelectedVoiceId(voices[0].name);
+      }
+    } catch {
+      setTtsVoices([]);
+    }
+  }, [selectedVoiceId]);
 
   useEffect(() => {
     loadProfiles();
@@ -351,13 +370,20 @@ function DownloadTranscribePage() {
   };
 
   const handleGenerateTts = async () => {
-    if (!videoMeta || !selectedTtsProfile) return;
+    if (!videoMeta) return;
     setIsGeneratingTts(true);
     setTtsError('');
     setTtsProgress({ pct: 0, message: 'Starting TTS generation...' });
 
     try {
-      const { task_id } = await postTTS(videoMeta.video_id, ttsLanguage, selectedTtsProfile);
+      const { task_id } = await postTTS(
+        videoMeta.video_id,
+        ttsLanguage,
+        selectedTtsProfile,
+        useDirectVoice ? selectedTtsProvider : undefined,
+        useDirectVoice ? selectedVoiceId : undefined,
+        ttsApiKey || undefined,
+      );
       const es = subscribeSSE(task_id, (eventType, data) => {
         if (eventType === 'progress') {
           setTtsProgress({
@@ -384,8 +410,24 @@ function DownloadTranscribePage() {
   const handleTtsProfileChange = (profileName: string) => {
     setSelectedTtsProfile(profileName);
     const profile = ttsProfiles[profileName];
-    if (profile) setTtsLanguage(profile.language);
+    if (profile) {
+      setTtsLanguage(profile.language);
+      setSelectedTtsProvider(profile.provider);
+    }
     setTtsGenerated(false);
+  };
+
+  const handleTtsProviderChange = (provider: string) => {
+    setSelectedTtsProvider(provider);
+    setUseDirectVoice(true);
+    setTtsVoices([]);
+    setSelectedVoiceId('');
+    setTtsGenerated(false);
+    // Auto-load voices for free providers
+    const info = ttsProviders.find(p => p.id === provider);
+    if (info && !info.requires_key) {
+      loadVoicesForProvider(provider);
+    }
   };
 
   return (
@@ -923,13 +965,84 @@ function DownloadTranscribePage() {
                     <span className="material-symbols-outlined text-primary text-lg">record_voice_over</span>
                     <span className="text-xs font-bold uppercase tracking-widest">TTS Dubbing</span>
                   </div>
-                  <span className="font-mono text-[10px] text-primary bg-primary/10 px-2 py-0.5 rounded">EDGE_TTS</span>
+                  <span className="font-mono text-[10px] text-primary bg-primary/10 px-2 py-0.5 rounded uppercase">
+                    {selectedTtsProvider}
+                  </span>
                 </div>
                 <div className="p-5 space-y-4">
-                  {/* Voice Profile & Language */}
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1">
-                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">Voice Profile</label>
+                  {/* Provider Selector */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">Provider</label>
+                      <select
+                        value={selectedTtsProvider}
+                        onChange={(e) => handleTtsProviderChange(e.target.value)}
+                        className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
+                      >
+                        {ttsProviders.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} {p.free ? '(Free)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">Language</label>
+                      <select
+                        value={ttsLanguage}
+                        onChange={(e) => { setTtsLanguage(e.target.value); setTtsGenerated(false); }}
+                        className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
+                      >
+                        {videoMeta?.srt_languages.filter(l => l !== 'zh').map((lang) => (
+                          <option key={lang} value={lang}>
+                            {lang === 'vi' ? 'Vietnamese' : lang === 'en' ? 'English' : lang.toUpperCase()}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* API Key — for paid providers */}
+                  {ttsProviders.find(p => p.id === selectedTtsProvider)?.requires_key && (
+                    <div>
+                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">API Key</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="password"
+                          value={ttsApiKey}
+                          onChange={(e) => setTtsApiKey(e.target.value)}
+                          placeholder={`Enter ${selectedTtsProvider} API key`}
+                          className="flex-1 bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary placeholder:text-zinc-600"
+                        />
+                        <button
+                          onClick={() => loadVoicesForProvider(selectedTtsProvider, ttsApiKey)}
+                          disabled={!ttsApiKey}
+                          className="bg-primary/20 text-primary px-3 py-2 rounded text-[10px] font-bold uppercase hover:bg-primary/30 disabled:opacity-50"
+                        >
+                          Load Voices
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Voice selection: Profile-based or direct voice */}
+                  <div>
+                    <div className="flex items-center gap-3 mb-2">
+                      <button
+                        onClick={() => setUseDirectVoice(false)}
+                        className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded ${!useDirectVoice ? 'bg-primary/20 text-primary' : 'text-zinc-500 hover:text-on-surface'}`}
+                      >
+                        Profiles
+                      </button>
+                      <button
+                        onClick={() => { setUseDirectVoice(true); if (ttsVoices.length === 0 && !ttsProviders.find(p => p.id === selectedTtsProvider)?.requires_key) loadVoicesForProvider(selectedTtsProvider); }}
+                        className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded ${useDirectVoice ? 'bg-primary/20 text-primary' : 'text-zinc-500 hover:text-on-surface'}`}
+                      >
+                        All Voices
+                      </button>
+                    </div>
+
+                    {!useDirectVoice ? (
                       <select
                         value={selectedTtsProfile}
                         onChange={(e) => handleTtsProfileChange(e.target.value)}
@@ -937,37 +1050,53 @@ function DownloadTranscribePage() {
                       >
                         {Object.entries(ttsProfiles).map(([name, profile]) => (
                           <option key={name} value={name}>
-                            {name} ({profile.language})
+                            {name} ({profile.provider} / {profile.language})
                           </option>
                         ))}
                       </select>
-                    </div>
-                    <div className="flex flex-col items-start mt-4">
-                      <span className="font-mono text-[9px] px-1.5 py-0.5 bg-primary/20 text-primary rounded uppercase">
-                        {ttsLanguage === 'vi' ? 'Vietnamese' : ttsLanguage === 'en' ? 'English' : ttsLanguage}
-                      </span>
-                    </div>
+                    ) : (
+                      <select
+                        value={selectedVoiceId}
+                        onChange={(e) => { setSelectedVoiceId(e.target.value); setTtsGenerated(false); }}
+                        className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
+                      >
+                        {ttsVoices.length === 0 && <option value="">No voices loaded</option>}
+                        {ttsVoices.map((v) => (
+                          <option key={v.name} value={v.name}>
+                            {v.friendly_name || v.name} ({v.gender}) — {v.language}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </div>
 
                   {/* Voice Preview */}
-                  {ttsProfiles[selectedTtsProfile] && (
-                    <div className="flex items-center gap-3">
-                      <TTSPreview
-                        voice={ttsProfiles[selectedTtsProfile].voice}
-                        provider={ttsProfiles[selectedTtsProfile].provider}
-                        speed={ttsProfiles[selectedTtsProfile].speed}
-                        pitch={ttsProfiles[selectedTtsProfile].pitch}
-                        sampleText={
-                          ttsLanguage === 'vi'
-                            ? 'Xin chào các bạn, hôm nay chúng ta sẽ nói về một chủ đề rất thú vị.'
-                            : 'Hello everyone, today we will talk about a very interesting topic.'
-                        }
-                      />
-                      <span className="font-mono text-[9px] text-on-surface-variant">
-                        {ttsProfiles[selectedTtsProfile].voice}
-                      </span>
-                    </div>
-                  )}
+                  {(() => {
+                    const previewVoice = useDirectVoice
+                      ? selectedVoiceId
+                      : ttsProfiles[selectedTtsProfile]?.voice;
+                    const previewProvider = useDirectVoice
+                      ? selectedTtsProvider
+                      : ttsProfiles[selectedTtsProfile]?.provider || 'edge';
+                    return previewVoice ? (
+                      <div className="flex items-center gap-3">
+                        <TTSPreview
+                          voice={previewVoice}
+                          provider={previewProvider}
+                          speed={useDirectVoice ? '+0%' : ttsProfiles[selectedTtsProfile]?.speed}
+                          pitch={useDirectVoice ? '+0Hz' : ttsProfiles[selectedTtsProfile]?.pitch}
+                          sampleText={
+                            ttsLanguage === 'vi'
+                              ? 'Xin chào các bạn, hôm nay chúng ta sẽ nói về một chủ đề rất thú vị.'
+                              : 'Hello everyone, today we will talk about a very interesting topic.'
+                          }
+                        />
+                        <span className="font-mono text-[9px] text-on-surface-variant truncate">
+                          {previewVoice}
+                        </span>
+                      </div>
+                    ) : null;
+                  })()}
 
                   {/* Generate TTS Button */}
                   <button

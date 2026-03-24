@@ -39,21 +39,41 @@ async def start_tts(request: TTSRequest):
             request.voice_profile,
             request.provider,
             config,
+            voice_override=request.voice,
+            api_key_override=request.api_key,
         )
     )
     return TaskResponse(task_id=task.task_id, status=task.status)
 
 
 @router.get("/api/tts/voices", response_model=list[VoiceInfo])
-async def list_voices(language: str | None = None, provider: str = "edge"):
+async def list_voices(language: str | None = None, provider: str = "edge", api_key: str | None = None):
     """List available TTS voices, optionally filtered by language."""
     config = get_config()
 
     from src.tts import get_tts_provider
 
-    tts = get_tts_provider(config, provider=provider)
+    # Inject per-request API key for paid providers
+    effective_config = config
+    if api_key:
+        tts_section = dict(config.get("tts", {}))
+        tts_section[f"{provider}_api_key"] = api_key
+        effective_config = {**config, "tts": tts_section}
+
+    tts = get_tts_provider(effective_config, provider=provider)
     voices = await tts.list_voices(language=language)
     return [VoiceInfo(**v) for v in voices]
+
+
+@router.get("/api/tts/providers")
+async def list_providers():
+    """List available TTS providers."""
+    return [
+        {"id": "edge", "name": "Edge TTS", "free": True, "requires_key": False},
+        {"id": "elevenlabs", "name": "ElevenLabs", "free": False, "requires_key": True},
+        {"id": "openai", "name": "OpenAI TTS", "free": False, "requires_key": True},
+        {"id": "google", "name": "Google Cloud TTS", "free": False, "requires_key": True},
+    ]
 
 
 @router.get("/api/tts/profiles")
@@ -132,7 +152,14 @@ async def preview_tts(request: TTSPreviewRequest):
 
     from src.tts import get_tts_provider
 
-    tts = get_tts_provider(config, provider=request.provider)
+    # Inject per-request API key for paid providers
+    effective_config = config
+    if request.api_key:
+        tts_section = dict(config.get("tts", {}))
+        tts_section[f"{request.provider}_api_key"] = request.api_key
+        effective_config = {**config, "tts": tts_section}
+
+    tts = get_tts_provider(effective_config, provider=request.provider)
     audio_bytes = await tts.synthesize(
         request.text,
         request.voice,

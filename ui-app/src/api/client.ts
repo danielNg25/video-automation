@@ -14,6 +14,8 @@ import type {
   VoiceInfo,
   VoiceProfileConfig,
   TTSPlatformConfig,
+  TTSProviderInfo,
+  VoiceInfo,
 } from './types';
 
 const BASE = '/api';
@@ -247,6 +249,8 @@ export function postTTS(
   language: string,
   voiceProfile: string,
   provider?: string,
+  voice?: string,
+  apiKey?: string,
 ): Promise<TaskResponse> {
   return request('/tts', {
     method: 'POST',
@@ -256,13 +260,20 @@ export function postTTS(
       language,
       voice_profile: voiceProfile,
       provider: provider ?? null,
+      voice: voice ?? null,
+      api_key: apiKey ?? null,
     }),
   });
 }
 
-export function getTTSVoices(language?: string, provider: string = 'edge'): Promise<VoiceInfo[]> {
+export function getTTSProviders(): Promise<TTSProviderInfo[]> {
+  return request('/tts/providers');
+}
+
+export function getTTSVoices(language?: string, provider: string = 'edge', apiKey?: string): Promise<VoiceInfo[]> {
   const params = new URLSearchParams({ provider });
   if (language) params.set('language', language);
+  if (apiKey) params.set('api_key', apiKey);
   return request(`/tts/voices?${params}`);
 }
 

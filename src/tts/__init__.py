@@ -46,6 +46,14 @@ def get_tts_provider(config: dict, provider: str | None = None) -> BaseTTSProvid
         logger.info("Using Google Cloud TTS provider")
         return GoogleTTSProvider(config=tts_config)
 
+    elif provider_name == "elevenlabs":
+        from src.tts.elevenlabs import ElevenLabsTTSProvider
+
+        api_key = tts_config.get("elevenlabs_api_key", "")
+        model = tts_config.get("elevenlabs_model", "eleven_multilingual_v2")
+        logger.info(f"Using ElevenLabs TTS provider (model={model})")
+        return ElevenLabsTTSProvider(api_key=api_key, model=model)
+
     else:
         raise ValueError(f"Unknown TTS provider: {provider_name}")
 

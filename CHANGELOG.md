@@ -28,6 +28,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - OpenAI TTS provider (`src/tts/openai_tts.py`): `/v1/audio/speech` API, tts-1/tts-1-hd models, speed control
 - Google Cloud TTS provider (`src/tts/google_tts.py`): REST API with Wavenet/Standard voices, Vietnamese and English
 
+- ElevenLabs TTS provider (`src/tts/elevenlabs.py`): high-quality multilingual TTS with voice listing from API or curated defaults
+- TTS provider selector on Pipeline page: switch between Edge (free), ElevenLabs, OpenAI, Google with per-request API key input
+- TTS voice browser: "Profiles" tab for saved presets, "All Voices" tab for browsing provider's full voice list
+- `GET /api/tts/providers` endpoint listing available providers with free/key metadata
+- Per-request API key support on TTS generate, preview, and voice list endpoints
+
 ### Changed
 - TTS assembler: clips only speed up when they would overlap the next segment's start, not the current segment's end — produces more natural-sounding speech
 - Renamed "Download & Transcribe" page to "Pipeline" in sidebar navigation

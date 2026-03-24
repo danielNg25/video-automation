@@ -148,6 +148,8 @@ class TTSRequest(BaseModel):
     language: str = "vi"
     voice_profile: str = "female-vi-natural"
     provider: str | None = None  # override default provider
+    voice: str | None = None  # direct voice ID (overrides profile voice)
+    api_key: str | None = None  # per-request API key for paid providers
 
 
 class TTSPreviewRequest(BaseModel):
@@ -156,6 +158,7 @@ class TTSPreviewRequest(BaseModel):
     provider: str = "edge"
     speed: str = "+0%"
     pitch: str = "+0Hz"
+    api_key: str | None = None  # per-request API key for paid providers
 
 
 class VoiceInfo(BaseModel):

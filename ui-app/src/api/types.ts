@@ -112,6 +112,15 @@ export interface TTSRequest {
   language: string;
   voice_profile: string;
   provider?: string;
+  voice?: string;
+  api_key?: string;
+}
+
+export interface TTSProviderInfo {
+  id: string;
+  name: string;
+  free: boolean;
+  requires_key: boolean;
 }
 
 export interface TTSPreviewRequest {
