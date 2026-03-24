@@ -586,56 +586,64 @@ function DownloadTranscribePage() {
               <span className="material-symbols-outlined text-sm">download</span>
             </button>
           </div>
-          {/* Pipeline config row */}
-          <div className="flex items-center gap-4 px-4 py-2.5 border-t border-outline-variant/10">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-zinc-500 uppercase tracking-tighter">Method:</span>
-              <span className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider bg-primary text-on-primary-fixed rounded">OCR</span>
+          {/* Pipeline config panel */}
+          <div className="border-t border-outline-variant/10 px-4 py-3 space-y-3">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* OCR Method */}
+              <div className="space-y-1">
+                <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">Method</label>
+                <div className="flex items-center h-8 px-3 bg-surface-container-highest rounded text-[11px] text-on-surface">
+                  <span className="material-symbols-outlined text-xs mr-1.5 text-primary">document_scanner</span>
+                  OCR (PaddleOCR)
+                </div>
+              </div>
+              {/* Translation Profile */}
+              <div className="space-y-1">
+                <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">Translation</label>
+                <select value={selectedProfile} onChange={(e) => setSelectedProfile(e.target.value)}
+                  className="w-full bg-surface-container-highest border-none text-[11px] text-on-surface h-8 px-2 rounded focus:ring-0">
+                  <option value="">Skip translation</option>
+                  {profiles.map((p) => (
+                    <option key={p.name} value={p.name}>{p.name} ({p.target_language})</option>
+                  ))}
+                </select>
+              </div>
+              {/* LLM Backend */}
+              <div className="space-y-1">
+                <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">LLM Backend</label>
+                <select value={llmBackend}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setLlmBackend(val);
+                    const models = MODEL_OPTIONS[val];
+                    const firstModel = models?.length ? models[0].value : '';
+                    if (firstModel) setLlmModel(firstModel);
+                    saveLLMPrefs(val, firstModel);
+                  }}
+                  className="w-full bg-surface-container-highest border-none text-[11px] text-on-surface h-8 px-2 rounded focus:ring-0">
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="openai">OpenAI</option>
+                </select>
+              </div>
+              {/* TTS Provider */}
+              <div className="space-y-1">
+                <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">TTS Voice</label>
+                <select value={selectedTtsProvider}
+                  onChange={(e) => handleTtsProviderChange(e.target.value)}
+                  className="w-full bg-surface-container-highest border-none text-[11px] text-on-surface h-8 px-2 rounded focus:ring-0">
+                  {ttsProviders.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}{p.free ? ' (Free)' : ''}</option>
+                  ))}
+                </select>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-zinc-500 uppercase tracking-tighter">Translate:</span>
-              <select
-                value={selectedProfile}
-                onChange={(e) => setSelectedProfile(e.target.value)}
-                className="bg-surface-container-highest border-none text-[11px] text-on-surface py-1 px-2 rounded focus:ring-0"
-              >
-                <option value="">Skip translation</option>
-                {profiles.map((p) => (
-                  <option key={p.name} value={p.name}>
-                    {p.name} ({p.target_language})
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-zinc-500 uppercase tracking-tighter">Backend:</span>
-              <select
-                value={llmBackend}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setLlmBackend(val);
-                  const models = MODEL_OPTIONS[val];
-                  const firstModel = models?.length ? models[0].value : '';
-                  if (firstModel) setLlmModel(firstModel);
-                  saveLLMPrefs(val, firstModel);
-                }}
-                className="bg-surface-container-highest border-none text-[11px] text-on-surface py-1 px-2 rounded focus:ring-0"
-              >
-                <option value="deepseek">DeepSeek</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="openai">OpenAI</option>
-              </select>
-            </div>
+            {/* Warnings row */}
             {selectedProfile && !llmApiKey && (
               <div className="flex items-center gap-1.5 text-amber-400">
                 <span className="material-symbols-outlined text-xs">warning</span>
                 <span className="text-[10px]">No <strong>{llmBackend}</strong> API key</span>
-                <button
-                  onClick={() => navigate('/settings#apikeys')}
-                  className="text-[10px] font-bold underline ml-1"
-                >
-                  Configure
-                </button>
+                <button onClick={() => navigate('/settings#apikeys')} className="text-[10px] font-bold underline ml-1">Configure</button>
               </div>
             )}
           </div>
