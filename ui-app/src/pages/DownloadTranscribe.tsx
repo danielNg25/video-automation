@@ -111,13 +111,13 @@ function DownloadTranscribePage() {
     try {
       const voices = await getTTSVoices(undefined, provider, apiKey);
       setTtsVoices(voices);
-      if (voices.length > 0 && !selectedVoiceId) {
+      if (voices.length > 0) {
         setSelectedVoiceId(voices[0].name);
       }
     } catch {
       setTtsVoices([]);
     }
-  }, [selectedVoiceId]);
+  }, []);
 
   useEffect(() => {
     loadProfiles();

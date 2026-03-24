@@ -83,18 +83,17 @@ class ElevenLabsTTSProvider(BaseTTSProvider):
         """List available ElevenLabs voices.
 
         Fetches from the API if an API key is configured, otherwise
-        returns a curated list of popular default voices.
+        returns an empty list (free tier can only use own voices).
 
         Args:
-            language: Optional language filter (ignored for API fetch,
-                      used for filtering defaults).
+            language: Optional language filter (ignored for API fetch).
 
         Returns:
             List of voice dicts.
         """
         if self.api_key:
             return await self._fetch_voices_from_api(language)
-        return self._default_voices(language)
+        return []
 
     async def _fetch_voices_from_api(self, language: str | None) -> list[dict]:
         """Fetch voices from ElevenLabs API."""
