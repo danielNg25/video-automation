@@ -160,10 +160,18 @@ async def preview_tts(request: TTSPreviewRequest):
         effective_config = {**config, "tts": tts_section}
 
     tts = get_tts_provider(effective_config, provider=request.provider)
-    audio_bytes = await tts.synthesize(
-        request.text,
-        request.voice,
-        speed=request.speed,
-        pitch=request.pitch,
-    )
+    try:
+        audio_bytes = await tts.synthesize(
+            request.text,
+            request.voice,
+            speed=request.speed,
+            pitch=request.pitch,
+        )
+    except Exception as e:
+        msg = str(e)
+        if "402" in msg or "Payment Required" in msg:
+            raise HTTPException(status_code=402, detail="ElevenLabs: no credits remaining (free tier is 10k chars/month)")
+        if "401" in msg or "Unauthorized" in msg or "Invalid" in msg:
+            raise HTTPException(status_code=401, detail="Invalid API key")
+        raise HTTPException(status_code=500, detail=msg)
     return Response(content=audio_bytes, media_type="audio/mpeg")

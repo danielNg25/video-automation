@@ -314,7 +314,13 @@ export async function postTTSPreview(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text, voice, provider, speed, pitch, api_key: apiKey ?? null }),
   });
-  if (!res.ok) throw new Error(`TTS preview failed: ${res.status}`);
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    // FastAPI returns {"detail": "..."} JSON
+    let msg = `TTS preview failed (${res.status})`;
+    try { const parsed = JSON.parse(detail); if (parsed.detail) msg = parsed.detail; } catch { if (detail) msg = detail; }
+    throw new Error(msg);
+  }
   return res.blob();
 }
 
