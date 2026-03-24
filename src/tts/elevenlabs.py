@@ -64,7 +64,19 @@ class ElevenLabsTTSProvider(BaseTTSProvider):
             )
             if response.status_code == 401:
                 raise ValueError("Invalid ElevenLabs API key")
-            response.raise_for_status()
+            if not response.is_success:
+                # Parse ElevenLabs error detail
+                try:
+                    err = response.json()
+                    detail = err.get("detail", {})
+                    if isinstance(detail, dict):
+                        msg = detail.get("message", response.text)
+                    else:
+                        msg = str(detail)
+                except Exception:
+                    msg = response.text[:300]
+                logger.error(f"ElevenLabs {response.status_code}: {msg}")
+                raise RuntimeError(f"ElevenLabs ({response.status_code}): {msg}")
             return response.content
 
     async def list_voices(self, language: str | None = None) -> list[dict]:
