@@ -7,6 +7,7 @@ interface TTSPreviewProps {
   speed?: string;
   pitch?: string;
   sampleText?: string;
+  apiKey?: string;
 }
 
 export function TTSPreview({
@@ -15,6 +16,7 @@ export function TTSPreview({
   speed = '+0%',
   pitch = '+0Hz',
   sampleText = 'Xin chào các bạn, hôm nay chúng ta sẽ nói về một chủ đề rất thú vị.',
+  apiKey,
 }: TTSPreviewProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -34,7 +36,7 @@ export function TTSPreview({
     setError('');
 
     try {
-      const blob = await postTTSPreview(sampleText, voice, provider, speed, pitch);
+      const blob = await postTTSPreview(sampleText, voice, provider, speed, pitch, apiKey);
       // Clean up previous URL
       if (urlRef.current) URL.revokeObjectURL(urlRef.current);
 
@@ -57,7 +59,7 @@ export function TTSPreview({
     } finally {
       setIsLoading(false);
     }
-  }, [voice, provider, speed, pitch, sampleText, isPlaying]);
+  }, [voice, provider, speed, pitch, sampleText, apiKey, isPlaying]);
 
   return (
     <div className="flex items-center gap-2">

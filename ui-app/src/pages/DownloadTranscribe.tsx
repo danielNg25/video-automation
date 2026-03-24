@@ -1085,6 +1085,7 @@ function DownloadTranscribePage() {
                           provider={previewProvider}
                           speed={useDirectVoice ? '+0%' : ttsProfiles[selectedTtsProfile]?.speed}
                           pitch={useDirectVoice ? '+0Hz' : ttsProfiles[selectedTtsProfile]?.pitch}
+                          apiKey={ttsApiKey || undefined}
                           sampleText={
                             ttsLanguage === 'vi'
                               ? 'Xin chào các bạn, hôm nay chúng ta sẽ nói về một chủ đề rất thú vị.'

@@ -307,11 +307,12 @@ export async function postTTSPreview(
   provider: string = 'edge',
   speed: string = '+0%',
   pitch: string = '+0Hz',
+  apiKey?: string,
 ): Promise<Blob> {
   const res = await fetch(`${BASE}/tts/preview`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, voice, provider, speed, pitch }),
+    body: JSON.stringify({ text, voice, provider, speed, pitch, api_key: apiKey ?? null }),
   });
   if (!res.ok) throw new Error(`TTS preview failed: ${res.status}`);
   return res.blob();
