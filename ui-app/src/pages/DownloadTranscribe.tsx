@@ -117,9 +117,15 @@ function PipelinePage() {
 
   const steps = [
     { num: 1, key: 'download', icon: 'download', title: 'Download', summary: 'Douyin API + yt-dlp fallback' },
-    { num: 2, key: 'transcribe', icon: 'document_scanner', title: 'Extract Subtitles', summary: 'OCR via PaddleOCR' },
-    { num: 3, key: 'translate', icon: 'translate', title: 'Translate', summary: selectedProfile ? `${selectedProfile}` : 'Skipped' },
-    { num: 4, key: 'tts', icon: 'record_voice_over', title: 'TTS Dubbing', summary: `${selectedTtsProvider} / ${selectedTtsProfile}` },
+    { num: 2, key: 'transcribe', icon: 'document_scanner', title: 'Extract Subtitles', summary: 'PaddleOCR — auto-detect Chinese subtitles' },
+    { num: 3, key: 'translate', icon: 'translate', title: 'Translate', summary: selectedProfile
+        ? `Profile: ${selectedProfile} · ${llmBackend === 'deepseek' ? 'DeepSeek' : llmBackend === 'anthropic' ? 'Anthropic' : 'OpenAI'} / ${(MODEL_OPTIONS[llmBackend] || []).find(m => m.value === llmModel)?.label || llmModel}`
+        : 'Skipped — no translation profile selected' },
+    { num: 4, key: 'tts', icon: 'record_voice_over', title: 'TTS Dubbing', summary: (() => {
+        const prov = ttsProviders.find(p => p.id === selectedTtsProvider);
+        const prof = ttsProfiles[selectedTtsProfile];
+        return `${prov?.name || selectedTtsProvider} · ${selectedTtsProfile}${prof ? ` (${prof.language === 'vi' ? 'Vietnamese' : prof.language === 'en' ? 'English' : prof.language})` : ''}`;
+      })() },
   ];
 
   return (
