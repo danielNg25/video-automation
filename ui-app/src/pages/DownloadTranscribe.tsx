@@ -98,6 +98,30 @@ function PipelinePage() {
 
   const formatDuration = (s: number) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${Math.floor(s % 60).toString().padStart(2, '0')}`;
 
+  // Stepper state
+  const [expandedStep, setExpandedStep] = useState<number | null>(null);
+  const toggleStep = (n: number) => setExpandedStep(prev => prev === n ? null : n);
+
+  // Step state derivation during pipeline execution
+  const stageOrder = ['download', 'transcribe', ...(selectedProfile ? ['translate'] : [])];
+  const getStepState = (key: string) => {
+    if (isDownloading && key === 'download') return 'running';
+    if (!isPipeline) return 'config';
+    const currentIdx = stageOrder.indexOf(pipelineStage);
+    const stepIdx = stageOrder.indexOf(key);
+    if (pipelineStage === key) return 'running';
+    if (pipelineProgress >= 100) return 'done';
+    if (stepIdx < currentIdx) return 'done';
+    return 'pending';
+  };
+
+  const steps = [
+    { num: 1, key: 'download', icon: 'download', title: 'Download', summary: 'Douyin API + yt-dlp fallback' },
+    { num: 2, key: 'transcribe', icon: 'document_scanner', title: 'Extract Subtitles', summary: 'OCR via PaddleOCR' },
+    { num: 3, key: 'translate', icon: 'translate', title: 'Translate', summary: selectedProfile ? `${selectedProfile}` : 'Skipped' },
+    { num: 4, key: 'tts', icon: 'record_voice_over', title: 'TTS Dubbing', summary: `${selectedTtsProvider} / ${selectedTtsProfile}` },
+  ];
+
   return (
     <div className="flex flex-col h-full bg-surface">
       <TopBar breadcrumb="Pipeline" />
@@ -105,9 +129,9 @@ function PipelinePage() {
       <section className="flex-1 overflow-y-auto p-6 space-y-6">
         {/* URL Input + Buttons */}
         <div className="bg-surface-container-low rounded-xl shadow-sm overflow-hidden">
-          <div className="flex items-center bg-surface-container-lowest p-2 rounded-t-lg gap-3 focus-within:ring-1 focus-within:ring-primary/40 transition-shadow">
-            <div className="pl-3 text-on-surface-variant">
-              <span className="material-symbols-outlined">link</span>
+          <div className="flex items-center bg-surface-container-lowest p-3 rounded-lg gap-3 focus-within:ring-1 focus-within:ring-primary/40 transition-shadow">
+            <div className="pl-2 text-on-surface-variant">
+              <span className="material-symbols-outlined text-xl">link</span>
             </div>
             <input
               className="flex-1 bg-transparent border-none focus:ring-0 text-on-surface placeholder:text-zinc-600 text-sm py-3"
@@ -116,88 +140,15 @@ function PipelinePage() {
               onKeyDown={(e) => e.key === 'Enter' && handlePipeline()}
             />
             <button onClick={handlePipeline} disabled={isDownloading || isPipeline || !url.trim()}
-              className="bg-primary text-on-primary-fixed px-6 py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:brightness-110 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-              <span>{isPipeline ? 'Processing...' : 'Process'}</span>
-              <span className="material-symbols-outlined text-sm">play_arrow</span>
+              className="bg-primary text-on-primary-fixed px-8 py-3 rounded-lg font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:brightness-110 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+              <span className="material-symbols-outlined text-sm">rocket_launch</span>
+              <span>{isPipeline ? 'Running...' : 'Run Pipeline'}</span>
             </button>
             <button onClick={handleDownload} disabled={isDownloading || isPipeline || !url.trim()}
-              className="bg-surface-container-highest text-on-surface px-4 py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:bg-surface-container-high active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-              <span>{isDownloading ? 'Downloading...' : 'Download Only'}</span>
+              className="bg-surface-container-highest text-on-surface px-5 py-3 rounded-lg font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:bg-surface-container-high active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
               <span className="material-symbols-outlined text-sm">download</span>
+              <span>{isDownloading ? 'Downloading...' : 'Download Only'}</span>
             </button>
-          </div>
-
-          {/* Pipeline config */}
-          <div className="border-t border-outline-variant/10 px-4 py-3 space-y-3">
-            {/* Row 1: Extraction + Translation */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <div className="space-y-1">
-                <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">Extraction</label>
-                <div className="flex items-center h-8 px-3 bg-surface-container-highest rounded text-[11px] text-on-surface">
-                  <span className="material-symbols-outlined text-xs mr-1.5 text-primary">document_scanner</span>
-                  OCR (PaddleOCR)
-                </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">Translation Profile</label>
-                <select value={selectedProfile} onChange={(e) => setSelectedProfile(e.target.value)}
-                  className="w-full bg-surface-container-highest border-none text-[11px] text-on-surface h-8 px-2 rounded focus:ring-0">
-                  <option value="">Skip translation</option>
-                  {profiles.map((p) => <option key={p.name} value={p.name}>{p.name} ({p.target_language})</option>)}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">LLM Backend</label>
-                <select value={llmBackend} onChange={(e) => {
-                  const val = e.target.value; setLlmBackend(val);
-                  const m = MODEL_OPTIONS[val]; if (m?.length) { setLlmModel(m[0].value); saveLLMPrefs(val, m[0].value); }
-                }} className="w-full bg-surface-container-highest border-none text-[11px] text-on-surface h-8 px-2 rounded focus:ring-0">
-                  <option value="deepseek">DeepSeek</option>
-                  <option value="anthropic">Anthropic</option>
-                  <option value="openai">OpenAI</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">LLM Model</label>
-                <select value={llmModel} onChange={(e) => { setLlmModel(e.target.value); saveLLMPrefs(llmBackend, e.target.value); }}
-                  className="w-full bg-surface-container-highest border-none text-[11px] text-on-surface h-8 px-2 rounded focus:ring-0">
-                  {(MODEL_OPTIONS[llmBackend] || []).map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-                </select>
-              </div>
-            </div>
-            {/* Row 2: TTS config */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <div className="space-y-1">
-                <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">TTS Provider</label>
-                <select value={selectedTtsProvider} onChange={(e) => setSelectedTtsProvider(e.target.value)}
-                  className="w-full bg-surface-container-highest border-none text-[11px] text-on-surface h-8 px-2 rounded focus:ring-0">
-                  {ttsProviders.map((p) => <option key={p.id} value={p.id}>{p.name}{p.free ? ' (Free)' : ''}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">TTS Voice Profile</label>
-                <select value={selectedTtsProfile} onChange={(e) => setSelectedTtsProfile(e.target.value)}
-                  className="w-full bg-surface-container-highest border-none text-[11px] text-on-surface h-8 px-2 rounded focus:ring-0">
-                  {Object.entries(ttsProfiles).map(([name, p]) => (
-                    <option key={name} value={name}>{name} ({p.language})</option>
-                  ))}
-                </select>
-              </div>
-              <div className="lg:col-span-2 flex items-end">
-                <div className="flex items-center gap-3 text-[10px] text-on-surface-variant">
-                  <span className="material-symbols-outlined text-xs text-primary">info</span>
-                  Pipeline runs: Download → OCR → Translate → open in <strong className="text-primary ml-0.5">Video Studio</strong> for TTS & Export
-                </div>
-              </div>
-            </div>
-            {/* API key warning */}
-            {selectedProfile && !llmApiKey && (
-              <div className="flex items-center gap-1.5 text-amber-400">
-                <span className="material-symbols-outlined text-xs">warning</span>
-                <span className="text-[10px]">No <strong>{llmBackend}</strong> API key — </span>
-                <button onClick={() => navigate('/settings#apikeys')} className="text-[10px] font-bold underline">Configure in Settings</button>
-              </div>
-            )}
           </div>
         </div>
 
@@ -210,72 +161,187 @@ function PipelinePage() {
           </div>
         )}
 
-        {/* Download Progress */}
-        {isDownloading && (
-          <div className="bg-surface-container-low rounded-xl overflow-hidden">
-            <div className="p-4 border-b border-outline-variant/10 flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary text-lg">downloading</span>
-                <span className="text-xs font-bold uppercase tracking-widest">Active Download</span>
-              </div>
-              <span className="text-lg font-black font-mono text-primary tracking-tighter">{downloadProgress.toFixed(0)}%</span>
+        {/* Pipeline Stepper */}
+        <div className="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/10">
+          <div className="p-5 border-b border-outline-variant/10 flex justify-between items-center">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary text-lg">account_tree</span>
+              <span className="text-sm font-bold tracking-tight text-on-surface">Pipeline Steps</span>
             </div>
-            <div className="p-5 space-y-3">
-              <div className="text-sm font-semibold truncate">{url}</div>
-              <div className="text-[10px] text-zinc-500 font-mono uppercase">{downloadMessage}</div>
-              <div className="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
-                <div className="bg-primary h-full transition-all duration-500 shadow-[0_0_8px_rgba(208,188,255,0.4)]" style={{ width: `${downloadProgress}%` }} />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Pipeline Progress */}
-        {isPipeline && (
-          <div className="bg-surface-container-low rounded-xl overflow-hidden border border-primary/20">
-            <div className="p-4 border-b border-outline-variant/10 flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary text-lg">rocket_launch</span>
-                <span className="text-xs font-bold uppercase tracking-widest">Pipeline</span>
-              </div>
+            {isPipeline && (
               <span className="text-lg font-black font-mono text-primary tracking-tighter">{pipelineProgress.toFixed(0)}%</span>
-            </div>
-            <div className="p-5 space-y-4">
-              <div className="flex items-center gap-2">
-                {[
-                  { key: 'download', label: 'Download', icon: 'download' },
-                  { key: 'transcribe', label: 'Extract Subtitles', icon: 'document_scanner' },
-                  ...(selectedProfile ? [{ key: 'translate', label: 'Translate', icon: 'translate' }] : []),
-                ].map((s, i) => {
-                  const isDone = (s.key === 'download' && pipelineStage !== 'download') ||
-                    (s.key === 'transcribe' && (pipelineStage === 'translate' || pipelineProgress >= 100)) ||
-                    (s.key === 'translate' && pipelineProgress >= 100);
-                  const isActive = pipelineStage === s.key;
-                  return (
-                    <div key={s.key} className="flex items-center gap-2">
-                      {i > 0 && <div className={`w-8 h-px ${isDone || isActive ? 'bg-primary' : 'bg-zinc-700'}`} />}
-                      <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                        isDone ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                          : isActive ? 'bg-primary/10 text-primary border border-primary/30'
-                            : 'bg-surface-container-highest text-zinc-600 border border-outline-variant/10'
-                      }`}>
-                        <span className="material-symbols-outlined text-xs">{isDone ? 'check_circle' : isActive ? 'pending' : s.icon}</span>
-                        {s.label}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-6 h-6 rounded-full border-2 border-primary border-t-transparent animate-spin shrink-0" />
-                <span className="text-[11px] font-medium text-emerald-400">{pipelineMessage}</span>
-              </div>
-              <div className="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
-                <div className="bg-primary h-full transition-all duration-500 shadow-[0_0_8px_rgba(208,188,255,0.4)]" style={{ width: `${pipelineProgress}%` }} />
-              </div>
-            </div>
+            )}
           </div>
-        )}
+
+          <div className="p-5">
+            {steps.map((step, i) => {
+              const state = getStepState(step.key);
+              const isExpanded = expandedStep === step.num;
+              const isRunning = state === 'running';
+              const isDone = state === 'done';
+              const isSkipped = step.key === 'translate' && !selectedProfile;
+              const isLast = i === steps.length - 1;
+
+              return (
+                <div key={step.key} className="relative">
+                  {/* Connector line */}
+                  {!isLast && (
+                    <div className={`absolute left-[19px] top-[40px] w-0.5 ${isDone ? 'bg-emerald-500/40' : isRunning ? 'bg-primary/40' : 'bg-zinc-700/30'}`}
+                      style={{ height: isExpanded ? 'calc(100% - 20px)' : '24px' }} />
+                  )}
+
+                  {/* Step header */}
+                  <div
+                    className={`flex items-center gap-4 p-3 rounded-lg cursor-pointer transition-colors ${
+                      isRunning ? 'bg-primary/5' : isExpanded ? 'bg-surface-container-highest/30' : 'hover:bg-surface-container-highest/20'
+                    }`}
+                    onClick={() => !isPipeline && toggleStep(step.num)}
+                  >
+                    {/* Step circle */}
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+                      isDone ? 'bg-emerald-500/20 text-emerald-400'
+                        : isRunning ? 'bg-primary/20 text-primary'
+                          : isSkipped ? 'bg-zinc-800 text-zinc-600'
+                            : 'bg-surface-container-highest text-on-surface-variant'
+                    }`}>
+                      {isDone ? (
+                        <span className="material-symbols-outlined text-lg">check</span>
+                      ) : isRunning ? (
+                        <div className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                      ) : (
+                        <span className="text-sm font-bold">{step.num}</span>
+                      )}
+                    </div>
+
+                    {/* Step title + summary */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-sm font-semibold ${isDone ? 'text-emerald-400' : isRunning ? 'text-primary' : isSkipped ? 'text-zinc-600' : 'text-on-surface'}`}>
+                          {step.title}
+                        </span>
+                        {isSkipped && <span className="text-[9px] font-mono uppercase text-zinc-600 bg-zinc-800 px-1.5 py-0.5 rounded">skipped</span>}
+                      </div>
+                      {!isExpanded && (
+                        <p className="text-xs text-on-surface-variant mt-0.5 truncate">
+                          {isRunning ? pipelineMessage : step.summary}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Expand arrow (only when not running pipeline) */}
+                    {!isPipeline && !isSkipped && (
+                      <span className="material-symbols-outlined text-sm text-zinc-500">{isExpanded ? 'expand_less' : 'expand_more'}</span>
+                    )}
+                  </div>
+
+                  {/* Running progress bar (inline) */}
+                  {isRunning && isPipeline && (
+                    <div className="pl-[56px] pr-3 pb-3 space-y-1.5">
+                      <div className="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
+                        <div className="bg-primary h-full transition-all duration-500 shadow-[0_0_8px_rgba(208,188,255,0.4)]"
+                          style={{ width: `${step.key === 'download' && isDownloading ? downloadProgress : pipelineProgress}%` }} />
+                      </div>
+                      <p className="text-[10px] font-mono text-on-surface-variant">{pipelineMessage}</p>
+                    </div>
+                  )}
+
+                  {/* Expanded config panel */}
+                  {isExpanded && !isPipeline && (
+                    <div className="ml-[56px] mr-3 mb-4 mt-1 p-4 bg-surface-container-lowest rounded-lg border border-outline-variant/10 space-y-4">
+                      {step.key === 'download' && (
+                        <p className="text-xs text-on-surface-variant">
+                          No configuration needed. Videos are downloaded from Douyin via API with yt-dlp as fallback.
+                        </p>
+                      )}
+
+                      {step.key === 'transcribe' && (
+                        <div className="space-y-2">
+                          <div>
+                            <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold block mb-1.5">Method</label>
+                            <div className="flex items-center h-10 px-4 bg-surface-container rounded-lg text-xs text-on-surface w-fit">
+                              <span className="material-symbols-outlined text-sm mr-2 text-primary">document_scanner</span>
+                              OCR via PaddleOCR — auto-detects Chinese subtitles
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {step.key === 'translate' && (
+                        <div className="space-y-3">
+                          <div>
+                            <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold block mb-1.5">Translation Profile</label>
+                            <select value={selectedProfile} onChange={(e) => setSelectedProfile(e.target.value)}
+                              className="w-full bg-surface-container border-none text-xs text-on-surface h-10 px-3 rounded-lg focus:ring-1 focus:ring-primary">
+                              <option value="">Skip translation</option>
+                              {profiles.map((p) => <option key={p.name} value={p.name}>{p.name} ({p.target_language})</option>)}
+                            </select>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold block mb-1.5">LLM Backend</label>
+                              <select value={llmBackend} onChange={(e) => {
+                                const val = e.target.value; setLlmBackend(val);
+                                const m = MODEL_OPTIONS[val]; if (m?.length) { setLlmModel(m[0].value); saveLLMPrefs(val, m[0].value); }
+                              }} className="w-full bg-surface-container border-none text-xs text-on-surface h-10 px-3 rounded-lg focus:ring-1 focus:ring-primary">
+                                <option value="deepseek">DeepSeek</option>
+                                <option value="anthropic">Anthropic</option>
+                                <option value="openai">OpenAI</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold block mb-1.5">Model</label>
+                              <select value={llmModel} onChange={(e) => { setLlmModel(e.target.value); saveLLMPrefs(llmBackend, e.target.value); }}
+                                className="w-full bg-surface-container border-none text-xs text-on-surface h-10 px-3 rounded-lg focus:ring-1 focus:ring-primary">
+                                {(MODEL_OPTIONS[llmBackend] || []).map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                              </select>
+                            </div>
+                          </div>
+                          {selectedProfile && !llmApiKey && (
+                            <div className="flex items-center gap-2 text-amber-400 bg-amber-500/10 p-3 rounded-lg">
+                              <span className="material-symbols-outlined text-sm">warning</span>
+                              <span className="text-xs">No <strong>{llmBackend}</strong> API key configured</span>
+                              <button onClick={() => navigate('/settings#apikeys')} className="text-xs font-bold underline ml-auto">Settings</button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {step.key === 'tts' && (
+                        <div className="space-y-3">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold block mb-1.5">Provider</label>
+                              <select value={selectedTtsProvider} onChange={(e) => setSelectedTtsProvider(e.target.value)}
+                                className="w-full bg-surface-container border-none text-xs text-on-surface h-10 px-3 rounded-lg focus:ring-1 focus:ring-primary">
+                                {ttsProviders.map((p) => <option key={p.id} value={p.id}>{p.name}{p.free ? ' (Free)' : ''}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold block mb-1.5">Voice Profile</label>
+                              <select value={selectedTtsProfile} onChange={(e) => setSelectedTtsProfile(e.target.value)}
+                                className="w-full bg-surface-container border-none text-xs text-on-surface h-10 px-3 rounded-lg focus:ring-1 focus:ring-primary">
+                                {Object.entries(ttsProfiles).map(([name, p]) => (
+                                  <option key={name} value={name}>{name} ({p.language})</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                          <p className="text-[10px] text-on-surface-variant flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-xs text-primary">info</span>
+                            TTS generation runs in <strong className="text-primary">Video Studio</strong> after pipeline completes
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Spacer between steps */}
+                  {!isLast && !isExpanded && <div className="h-2" />}
+                </div>
+              );
+            })}
+          </div>
+        </div>
 
         {/* Video Library */}
         <div className="space-y-4">
@@ -322,7 +388,6 @@ function PipelinePage() {
                     </div>
                   </div>
                   <span className="material-symbols-outlined text-xs text-zinc-600 group-hover:text-primary">arrow_forward</span>
-                  {/* Delete */}
                   {isConfirmingDelete ? (
                     <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                       <button onClick={() => handleDeleteVideo(v.video_id)}

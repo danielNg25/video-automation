@@ -42,6 +42,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Video Studio page (`ui-app/src/pages/VideoDetail.tsx`): per-video workspace at `/videos/:videoId` with transcribe, translate, TTS dubbing, process & export, and SRT preview panels
 - "Video Studio" sidebar entry linking to video detail pages
+- Stepper/wizard layout for Pipeline page: 4 numbered steps (Download, Extract, Translate, TTS) with expandable config panels, step state visualization (done/running/pending), inline progress bars during execution
 
 ### Removed
 - `SubtitleProcess.tsx` page and `/process` route
