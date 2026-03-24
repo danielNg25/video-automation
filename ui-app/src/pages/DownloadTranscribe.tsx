@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
-import { postDownload, getVideos, getVideo, subscribeSSE, deleteVideo, getProfiles, postPipeline, getTTSProviders } from '../api/client';
-import type { VideoMetadata, TranslationProfileSummary, TTSProviderInfo } from '../api/types';
+import { postDownload, getVideos, getVideo, subscribeSSE, deleteVideo, getProfiles, postPipeline, getTTSProviders, getTTSProfiles } from '../api/client';
+import type { VideoMetadata, TranslationProfileSummary, TTSProviderInfo, VoiceProfileConfig } from '../api/types';
 import { loadApiKeys, loadLLMPrefs, saveLLMPrefs } from '../utils/storage';
 
 function PipelinePage() {
@@ -26,6 +26,8 @@ function PipelinePage() {
   const [selectedProfile, setSelectedProfile] = useState('');
   const [ttsProviders, setTtsProviders] = useState<TTSProviderInfo[]>([]);
   const [selectedTtsProvider, setSelectedTtsProvider] = useState('edge');
+  const [ttsProfiles, setTtsProfiles] = useState<Record<string, VoiceProfileConfig>>({});
+  const [selectedTtsProfile, setSelectedTtsProfile] = useState('female-vi-natural');
   const [savedPrefs] = useState(loadLLMPrefs);
   const [llmBackend, setLlmBackend] = useState(savedPrefs.backend);
   const [llmModel, setLlmModel] = useState(savedPrefs.model);
@@ -51,6 +53,7 @@ function PipelinePage() {
     loadVideos();
     getProfiles().then(p => { setProfiles(p); if (p.length > 0) setSelectedProfile(p[0].name); }).catch(() => {});
     getTTSProviders().then(setTtsProviders).catch(() => {});
+    getTTSProfiles().then(setTtsProfiles).catch(() => {});
   }, [loadVideos]);
 
   const handleDownload = async () => {
@@ -125,17 +128,18 @@ function PipelinePage() {
           </div>
 
           {/* Pipeline config */}
-          <div className="border-t border-outline-variant/10 px-4 py-3">
+          <div className="border-t border-outline-variant/10 px-4 py-3 space-y-3">
+            {/* Row 1: Extraction + Translation */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <div className="space-y-1">
-                <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">Method</label>
+                <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">Extraction</label>
                 <div className="flex items-center h-8 px-3 bg-surface-container-highest rounded text-[11px] text-on-surface">
                   <span className="material-symbols-outlined text-xs mr-1.5 text-primary">document_scanner</span>
                   OCR (PaddleOCR)
                 </div>
               </div>
               <div className="space-y-1">
-                <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">Translation</label>
+                <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">Translation Profile</label>
                 <select value={selectedProfile} onChange={(e) => setSelectedProfile(e.target.value)}
                   className="w-full bg-surface-container-highest border-none text-[11px] text-on-surface h-8 px-2 rounded focus:ring-0">
                   <option value="">Skip translation</option>
@@ -154,18 +158,44 @@ function PipelinePage() {
                 </select>
               </div>
               <div className="space-y-1">
-                <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">TTS Voice</label>
+                <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">LLM Model</label>
+                <select value={llmModel} onChange={(e) => { setLlmModel(e.target.value); saveLLMPrefs(llmBackend, e.target.value); }}
+                  className="w-full bg-surface-container-highest border-none text-[11px] text-on-surface h-8 px-2 rounded focus:ring-0">
+                  {(MODEL_OPTIONS[llmBackend] || []).map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+              </div>
+            </div>
+            {/* Row 2: TTS config */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="space-y-1">
+                <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">TTS Provider</label>
                 <select value={selectedTtsProvider} onChange={(e) => setSelectedTtsProvider(e.target.value)}
                   className="w-full bg-surface-container-highest border-none text-[11px] text-on-surface h-8 px-2 rounded focus:ring-0">
                   {ttsProviders.map((p) => <option key={p.id} value={p.id}>{p.name}{p.free ? ' (Free)' : ''}</option>)}
                 </select>
               </div>
+              <div className="space-y-1">
+                <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">TTS Voice Profile</label>
+                <select value={selectedTtsProfile} onChange={(e) => setSelectedTtsProfile(e.target.value)}
+                  className="w-full bg-surface-container-highest border-none text-[11px] text-on-surface h-8 px-2 rounded focus:ring-0">
+                  {Object.entries(ttsProfiles).map(([name, p]) => (
+                    <option key={name} value={name}>{name} ({p.language})</option>
+                  ))}
+                </select>
+              </div>
+              <div className="lg:col-span-2 flex items-end">
+                <div className="flex items-center gap-3 text-[10px] text-on-surface-variant">
+                  <span className="material-symbols-outlined text-xs text-primary">info</span>
+                  Pipeline runs: Download → OCR → Translate → open in <strong className="text-primary ml-0.5">Video Studio</strong> for TTS & Export
+                </div>
+              </div>
             </div>
+            {/* API key warning */}
             {selectedProfile && !llmApiKey && (
-              <div className="flex items-center gap-1.5 text-amber-400 mt-2">
+              <div className="flex items-center gap-1.5 text-amber-400">
                 <span className="material-symbols-outlined text-xs">warning</span>
-                <span className="text-[10px]">No <strong>{llmBackend}</strong> API key</span>
-                <button onClick={() => navigate('/settings#apikeys')} className="text-[10px] font-bold underline ml-1">Configure</button>
+                <span className="text-[10px]">No <strong>{llmBackend}</strong> API key — </span>
+                <button onClick={() => navigate('/settings#apikeys')} className="text-[10px] font-bold underline">Configure in Settings</button>
               </div>
             )}
           </div>
