@@ -15,7 +15,6 @@ class TranscribeRequest(BaseModel):
     video_id: str
     language: str = "zh"
     task: str = "transcribe"
-    method: str = "audio"  # "audio" (Whisper) or "ocr" (PaddleOCR)
     ocr_region: dict | None = None  # Optional manual override: {"x", "y", "w", "h"}
     ocr_config: dict | None = None  # Optional OCR settings override from UI
 
@@ -45,7 +44,6 @@ class TranslationProfileCreate(BaseModel):
 
 class PipelineRequest(BaseModel):
     url: str
-    transcribe_method: str = "ocr"
     translate_profile: str | None = None
     source_language: str = "zh"
 

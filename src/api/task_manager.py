@@ -291,21 +291,17 @@ class TaskManager:
         language: str,
         task_type: str,
         config: dict,
-        method: str = "audio",
         ocr_region: dict | None = None,
         ocr_config: dict | None = None,
     ):
-        """Execute a transcription task in the background."""
+        """Execute an OCR transcription task in the background."""
         from src.transcriber import get_transcriber
 
         task = self.tasks[task_id]
         task.status = "running"
         task.video_id = video_id
-
-        is_ocr = method == "ocr"
-        init_msg = "Initializing OCR engine..." if is_ocr else "Loading transcription model..."
-        task.message = init_msg
-        self._emit(task_id, "progress", {"progress": 0.0, "message": init_msg})
+        task.message = "Initializing OCR engine..."
+        self._emit(task_id, "progress", {"progress": 0.0, "message": "Initializing OCR engine..."})
 
         try:
             video_info = self.video_index.get(video_id)
@@ -324,30 +320,20 @@ class TaskManager:
                     self._emit, task_id, "progress", {"progress": progress, "message": message}
                 )
 
-            if is_ocr:
-                ocr_cfg = config.get("ocr", {})
-                # Merge UI overrides into server config
-                if ocr_config:
-                    ocr_cfg = {**ocr_cfg, **ocr_config}
-                    if "subtitle_region" in ocr_cfg and "subtitle_region" in ocr_config:
-                        ocr_cfg["subtitle_region"] = {
-                            **ocr_cfg.get("subtitle_region", {}),
-                            **ocr_config["subtitle_region"],
-                        }
-                transcriber = get_transcriber(
-                    ocr_cfg,
-                    method="ocr",
-                    ocr_region=ocr_region,
-                    progress_callback=ocr_progress,
-                )
-            else:
-                transcriber = get_transcriber(config.get("whisper", {}))
-                task.message = "Transcribing audio..."
-                self._emit(
-                    task_id,
-                    "progress",
-                    {"progress": 0.2, "message": "Transcribing audio..."},
-                )
+            ocr_cfg = config.get("ocr", {})
+            # Merge UI overrides into server config
+            if ocr_config:
+                ocr_cfg = {**ocr_cfg, **ocr_config}
+                if "subtitle_region" in ocr_cfg and "subtitle_region" in ocr_config:
+                    ocr_cfg["subtitle_region"] = {
+                        **ocr_cfg.get("subtitle_region", {}),
+                        **ocr_config["subtitle_region"],
+                    }
+            transcriber = get_transcriber(
+                ocr_cfg,
+                ocr_region=ocr_region,
+                progress_callback=ocr_progress,
+            )
 
             # Run CPU-bound transcription in a thread
             segments = await asyncio.to_thread(
@@ -382,7 +368,6 @@ class TaskManager:
                 "srt_path": str(srt_path),
                 "segment_count": len(segments),
                 "language": lang_suffix,
-                "method": method,
             }
             self._emit(task_id, "complete", task.result)
 
@@ -731,7 +716,6 @@ class TaskManager:
         self,
         task_id: str,
         url: str,
-        transcribe_method: str,
         translate_profile: str | None,
         source_language: str,
         config: dict,
@@ -819,15 +803,11 @@ class TaskManager:
                     {"stage": "transcribe", "progress": pct, "message": message},
                 )
 
-            if transcribe_method == "ocr":
-                ocr_config = config.get("ocr", {})
-                transcriber = get_transcriber(
-                    ocr_config,
-                    method="ocr",
-                    progress_callback=transcribe_progress,
-                )
-            else:
-                transcriber = get_transcriber(config.get("whisper", {}))
+            ocr_config = config.get("ocr", {})
+            transcriber = get_transcriber(
+                ocr_config,
+                progress_callback=transcribe_progress,
+            )
 
             video_path = str(file_path)
             segments = await asyncio.to_thread(

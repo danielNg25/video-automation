@@ -39,6 +39,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - TTS assembler: clips only speed up when they would overlap the next segment's start, not the current segment's end — produces more natural-sounding speech
 - Renamed "Download & Transcribe" page to "Pipeline" in sidebar navigation
+
+### Removed
+- Whisper speech-to-text backends (`src/transcriber/faster.py`, `src/transcriber/mlx.py`) — OCR via PaddleOCR is the only transcription method
+- `faster-whisper` and `mlx-whisper` dependencies from `pyproject.toml`
+- Whisper config section from `config.yaml` and `config.example.yaml`
+- Audio/OCR method toggle from Pipeline page UI — OCR is now the default and only option
+- `translate_srt()` Whisper-based translation function from `src/processor/subtitle.py` (replaced by LLM translator)
 - Moved TTS generation (voice profile selector, preview, generate button) from Subtitle Process page to Pipeline page
 - Subtitle Process page now has a simplified "Mix TTS Audio" toggle with per-platform volume sliders only
 - OCR subtitle extraction via PaddleOCR (`src/transcriber/ocr.py`): auto-detect subtitle regions, filter watermarks by position/frequency/size, two-pass approach (sample + full OCR), deduplication

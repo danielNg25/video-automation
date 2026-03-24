@@ -32,7 +32,6 @@ async def start_transcribe(request: TranscribeRequest):
             request.language,
             request.task,
             config,
-            method=request.method,
             ocr_region=request.ocr_region,
             ocr_config=request.ocr_config,
         )

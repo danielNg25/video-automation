@@ -4,15 +4,6 @@ douyin:
     cookie_file: 'config/douyin_cookie.txt'
     download_timeout: 120
 
-# Whisper Transcription
-whisper:
-    model_size: 'large-v3'       # tiny, base, small, medium, large-v3
-    device: 'auto'               # auto, cpu, cuda, mps
-    compute_type: 'float16'      # float16, int8, float32
-    default_language: 'zh'
-    vad_filter: true
-    vad_min_silence_ms: 500
-
 # ffmpeg Processing
 ffmpeg:
     default_crf: 23

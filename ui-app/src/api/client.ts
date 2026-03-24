@@ -50,7 +50,6 @@ export function postTranscribe(
   videoId: string,
   language: string = 'zh',
   task: string = 'transcribe',
-  transcribeMethod: string = 'audio',
   ocrRegion?: { x: number; y: number; w: number; h: number },
   ocrConfig?: Record<string, unknown>,
 ): Promise<TaskResponse> {
@@ -61,7 +60,6 @@ export function postTranscribe(
       video_id: videoId,
       language,
       task,
-      method: transcribeMethod,
       ocr_region: ocrRegion ?? null,
       ocr_config: ocrConfig ?? null,
     }),
@@ -212,7 +210,6 @@ export function postTranslate(
 
 export function postPipeline(
   url: string,
-  transcribeMethod: string = 'ocr',
   translateProfile?: string,
   sourceLanguage: string = 'zh',
 ): Promise<TaskResponse> {
@@ -221,7 +218,6 @@ export function postPipeline(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       url,
-      transcribe_method: transcribeMethod,
       translate_profile: translateProfile ?? null,
       source_language: sourceLanguage,
     }),
