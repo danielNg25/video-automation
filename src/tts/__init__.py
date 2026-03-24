@@ -54,6 +54,19 @@ def get_tts_provider(config: dict, provider: str | None = None) -> BaseTTSProvid
         logger.info(f"Using ElevenLabs TTS provider (model={model})")
         return ElevenLabsTTSProvider(api_key=api_key, model=model)
 
+    elif provider_name == "gtts":
+        from src.tts.gtts_provider import GTTSProvider
+
+        logger.info("Using gTTS provider (Google Translate)")
+        return GTTSProvider()
+
+    elif provider_name == "piper":
+        from src.tts.piper_tts import PiperTTSProvider
+
+        model_dir = tts_config.get("piper_model_dir")
+        logger.info("Using Piper TTS provider (local)")
+        return PiperTTSProvider(model_dir=model_dir)
+
     else:
         raise ValueError(f"Unknown TTS provider: {provider_name}")
 

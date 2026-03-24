@@ -70,6 +70,8 @@ async def list_providers():
     """List available TTS providers."""
     return [
         {"id": "edge", "name": "Edge TTS", "free": True, "requires_key": False},
+        {"id": "gtts", "name": "Google Translate TTS", "free": True, "requires_key": False},
+        {"id": "piper", "name": "Piper (Local)", "free": True, "requires_key": False},
         {"id": "elevenlabs", "name": "ElevenLabs", "free": False, "requires_key": True},
         {"id": "openai", "name": "OpenAI TTS", "free": False, "requires_key": True},
         {"id": "google", "name": "Google Cloud TTS", "free": False, "requires_key": True},

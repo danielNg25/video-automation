@@ -33,6 +33,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - TTS voice browser: "Profiles" tab for saved presets, "All Voices" tab for browsing provider's full voice list
 - `GET /api/tts/providers` endpoint listing available providers with free/key metadata
 - Per-request API key support on TTS generate, preview, and voice list endpoints
+- gTTS provider (`src/tts/gtts_provider.py`): free Google Translate TTS, no API key, supports Vietnamese/English/10+ languages
+- Piper TTS provider (`src/tts/piper_tts.py`): fully offline local neural TTS with auto-download of ONNX models from HuggingFace
 
 ### Changed
 - TTS assembler: clips only speed up when they would overlap the next segment's start, not the current segment's end — produces more natural-sounding speech
