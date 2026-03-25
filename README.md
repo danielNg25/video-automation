@@ -377,7 +377,7 @@ douyin-automation/
 - [ ] **5.9** README.md (finalize)
 - [ ] **5.10** Integration tests — `tests/test_pipeline.py`
 - [x] **5.11** Pipeline router + service — `server/routers/pipeline.py`
-- [ ] **5.12** Config router — `server/routers/config.py`
+- [x] **5.12** Config router — `server/routers/config.py`
 - [ ] **5.13** Dashboard page — `web/src/pages/DashboardPage.tsx`
 - [ ] **5.14** Settings page — `web/src/pages/SettingsPage.tsx`
 - [ ] **5.15** React Router — route-based navigation

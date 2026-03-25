@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import copy
 import os
+import re
 import sys
 from pathlib import Path
 
 import httpx
+import yaml
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -141,8 +144,20 @@ def _config_path() -> str:
 
 @router.get("/api/settings/config")
 async def get_config_endpoint():
-    """Return the raw config (without env var interpolation) for editing."""
-    return load_raw_config(_config_path())
+    """Return the raw config (without env var interpolation) for editing.
+
+    Secrets are redacted: values matching ${...} patterns and known secret
+    paths (tokens, keys, secrets) are replaced with '***'.
+    """
+    raw = load_raw_config(_config_path())
+    return _redact_secrets(raw)
+
+
+@router.get("/api/config")
+async def get_config_alias():
+    """Alias for /api/settings/config (plan specifies /api/config)."""
+    raw = load_raw_config(_config_path())
+    return _redact_secrets(raw)
 
 
 @router.put("/api/settings/config")
@@ -155,12 +170,66 @@ async def update_config(body: dict):
     )
 
     # Deep merge: update top-level sections, merge nested dicts
-    for key, value in body.items():
-        if isinstance(value, dict) and isinstance(existing.get(key), dict):
-            existing[key] = {**existing[key], **value}
-        else:
-            existing[key] = value
+    _deep_merge(existing, body)
 
     save_config(existing, path)
     reload_config()
     return {"status": "ok", "message": "Config saved"}
+
+
+@router.put("/api/config")
+async def update_config_alias(body: dict):
+    """Alias for /api/settings/config."""
+    return await update_config(body)
+
+
+@router.get("/api/config/platforms")
+async def get_platform_configs():
+    """Return platform configs from platforms.yaml."""
+    platforms_path = Path("config/platforms.yaml")
+    if not platforms_path.exists():
+        return {}
+    with open(platforms_path) as f:
+        return yaml.safe_load(f) or {}
+
+
+# --- Secret redaction ---
+
+SECRET_KEYS = re.compile(
+    r"(api_key|secret|token|password|credential|auth)",
+    re.IGNORECASE,
+)
+
+
+def _redact_secrets(obj: dict | list | str, parent_key: str = "") -> dict | list | str:
+    """Recursively redact secret values in a config dict."""
+    if isinstance(obj, dict):
+        result = {}
+        for k, v in obj.items():
+            result[k] = _redact_secrets(v, k)
+        return result
+    elif isinstance(obj, list):
+        return [_redact_secrets(item, parent_key) for item in obj]
+    elif isinstance(obj, str):
+        # Redact ${ENV_VAR} interpolation patterns
+        if obj.startswith("${") and obj.endswith("}"):
+            return "***"
+        # Redact values under known secret keys
+        if SECRET_KEYS.search(parent_key) and obj:
+            return "***"
+        return obj
+    return obj
+
+
+def _deep_merge(base: dict, override: dict) -> None:
+    """Deep merge override into base dict, modifying base in place.
+
+    Skips '***' values (redacted secrets that shouldn't overwrite real values).
+    """
+    for key, value in override.items():
+        if value == "***":
+            continue  # Don't overwrite real secrets with redacted placeholder
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            _deep_merge(base[key], value)
+        else:
+            base[key] = value
