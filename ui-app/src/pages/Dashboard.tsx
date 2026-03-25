@@ -444,8 +444,11 @@ export default function DashboardPage() {
             </div>
 
             {/* Batch Process */}
-            <div className="bg-surface-container-low p-5 rounded-lg space-y-4">
-              <h3 className="text-xs uppercase tracking-widest font-bold text-primary">Batch Process</h3>
+            <div className="bg-surface-container-low p-5 rounded-lg space-y-4 border border-primary/20">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-sm">playlist_play</span>
+                <h3 className="text-xs uppercase tracking-widest font-bold text-primary">Batch Process</h3>
+              </div>
               <div className="space-y-3">
                 <div className="space-y-1">
                   <label className="text-[10px] text-on-surface-variant font-mono uppercase">

@@ -23,6 +23,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - React Router navigation verified: all routes active with NavLink highlighting, lazy loading, browser back/forward support
 - Integration tests (`tests/test_pipeline.py`): 32 tests covering retry decorator, state persistence, duplicate detection, metadata mapper, pipeline orchestrator (with mocks), CLI argument parsing, structured logging
 - README finalized: updated architecture diagram, tech stack, project structure to reflect all phases
+- Video list page (`ui-app/src/pages/VideoList.tsx`): grid view of all videos with thumbnails, status badges, language tags, search, filter, delete, and navigation to Video Studio
+- `/videos` route in React Router for Video Studio sidebar link
+
+### Fixed
+- Video Studio sidebar link (`/videos`) now renders a video list page instead of blank page
+- Batch Process card on Dashboard highlighted with border accent and icon for better visibility
 - TTS base class (`src/tts/base.py`): `BaseTTSProvider` ABC with `synthesize()`, `list_voices()`, `synthesize_segments()` and text cleanup
 - Voice profiles config (`config/tts_voices.yaml`): per-platform voice/volume settings with Edge TTS defaults
 - TTS infra: `edge-tts` dependency, `data/tts/` gitignore and data dir, TTS config section in `config.example.yaml`
