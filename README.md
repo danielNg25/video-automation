@@ -372,7 +372,7 @@ douyin-automation/
 - [x] **5.4** Pipeline orchestrator — `src/pipeline.py`
 - [x] **5.5** Metadata mapper — `src/utils/metadata.py`
 - [ ] **5.6** CLI interface — `src/cli.py`
-- [ ] **5.7** Structured logging — `src/utils/logger.py` (finalize)
+- [x] **5.7** Structured logging — `src/utils/logger.py` (finalize)
 - [ ] **5.8** Module entry point — `src/__main__.py`
 - [ ] **5.9** README.md (finalize)
 - [ ] **5.10** Integration tests — `tests/test_pipeline.py`

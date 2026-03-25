@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Duplicate detection (`src/utils/state.py`): `is_duplicate()` and `register_processed()` with URL normalization, file-locked `processed_videos.json` registry
 - Pipeline orchestrator (`src/pipeline.py`): `Pipeline` class with `process_single()` and `process_batch()`, crash recovery, duplicate detection, signal handling, concurrency control
 - Metadata mapper (`src/utils/metadata.py`): `map_metadata()` with per-platform formatting (YouTube #Shorts, TikTok hashtags in description, X 280-char truncation)
+- Per-video logging (`src/utils/logger.py`): `get_video_logger()` for per-video log files, structured JSON fields (video_id, stage, duration_ms, extra)
 - TTS base class (`src/tts/base.py`): `BaseTTSProvider` ABC with `synthesize()`, `list_voices()`, `synthesize_segments()` and text cleanup
 - Voice profiles config (`config/tts_voices.yaml`): per-platform voice/volume settings with Edge TTS defaults
 - TTS infra: `edge-tts` dependency, `data/tts/` gitignore and data dir, TTS config section in `config.example.yaml`
