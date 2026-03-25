@@ -44,6 +44,12 @@ function SettingsPage() {
   const [saveMsg, setSaveMsg] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
+  // Pipeline section state
+  const [pipelineDataDir, setPipelineDataDir] = useState('data');
+  const [pipelineMaxConcurrent, setPipelineMaxConcurrent] = useState(3);
+  const [pipelineRetryAttempts, setPipelineRetryAttempts] = useState(3);
+  const [pipelineRetryDelay, setPipelineRetryDelay] = useState(10);
+
   // Find the closest matching option value for a numeric config value
   const matchOption = (val: unknown, options: string[]): string | null => {
     if (val === undefined || val === null) return null;
@@ -82,6 +88,13 @@ function SettingsPage() {
       if (f.default_crf) setFfmpegCrf(Number(f.default_crf));
       if (f.preset) setFfmpegPreset(String(f.preset));
       if (f.audio_bitrate) setFfmpegAudioBitrate(String(f.audio_bitrate));
+      // Pipeline settings
+      const p = (cfg.pipeline || {}) as Record<string, unknown>;
+      if (p.data_dir) setPipelineDataDir(String(p.data_dir));
+      if (p.max_concurrent) setPipelineMaxConcurrent(Number(p.max_concurrent));
+      if (p.retry_attempts) setPipelineRetryAttempts(Number(p.retry_attempts));
+      if (p.retry_delay) setPipelineRetryDelay(Number(p.retry_delay));
+      if (p.skip_existing !== undefined) setSkipExisting(Boolean(p.skip_existing));
     }).catch(() => {});
     // Scroll to section if navigated with hash (e.g., /settings#apikeys)
     const hash = window.location.hash.replace('#', '');
@@ -615,9 +628,9 @@ function SettingsPage() {
               </div>
               <div className="space-y-6">
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Global Data Path</label>
+                  <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Data Directory</label>
                   <div className="flex gap-2">
-                    <input className="flex-1 bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono" type="text" defaultValue="/mnt/storage/video_precision/data" />
+                    <input className="flex-1 bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono" type="text" value={pipelineDataDir} onChange={(e) => setPipelineDataDir(e.target.value)} />
                     <button className="px-4 py-2 bg-surface-container-high hover:bg-surface-variant transition-colors rounded">
                       <span className="material-symbols-outlined text-zinc-400">folder_open</span>
                     </button>
@@ -626,15 +639,15 @@ function SettingsPage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Max Concurrent</label>
-                    <input className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono" type="number" defaultValue={3} />
+                    <input className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono" type="number" min={1} max={10} value={pipelineMaxConcurrent} onChange={(e) => setPipelineMaxConcurrent(Number(e.target.value))} />
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Retry Attempts</label>
-                    <input className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono" type="number" defaultValue={3} />
+                    <input className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono" type="number" min={1} max={5} value={pipelineRetryAttempts} onChange={(e) => setPipelineRetryAttempts(Number(e.target.value))} />
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Retry Delay (s)</label>
-                    <input className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono" type="number" defaultValue={10} />
+                    <input className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono" type="number" min={1} max={120} value={pipelineRetryDelay} onChange={(e) => setPipelineRetryDelay(Number(e.target.value))} />
                   </div>
                 </div>
                 <div className="flex items-center justify-between p-4 bg-primary-container/10 rounded-lg border border-primary/20">
@@ -688,6 +701,12 @@ function SettingsPage() {
                 setFfmpegCrf(Number(f.default_crf) || 23);
                 setFfmpegPreset(String(f.preset || 'medium'));
                 setFfmpegAudioBitrate(String(f.audio_bitrate || '128k'));
+                const p = (cfg.pipeline || {}) as Record<string, unknown>;
+                setPipelineDataDir(String(p.data_dir || 'data'));
+                setPipelineMaxConcurrent(Number(p.max_concurrent) || 3);
+                setPipelineRetryAttempts(Number(p.retry_attempts) || 3);
+                setPipelineRetryDelay(Number(p.retry_delay) || 10);
+                setSkipExisting(p.skip_existing !== false);
                 setSaveMsg('Reset to server defaults');
                 setTimeout(() => setSaveMsg(''), 3000);
               });
@@ -723,6 +742,13 @@ function SettingsPage() {
                     default_crf: ffmpegCrf,
                     preset: ffmpegPreset,
                     audio_bitrate: ffmpegAudioBitrate,
+                  },
+                  pipeline: {
+                    data_dir: pipelineDataDir,
+                    max_concurrent: pipelineMaxConcurrent,
+                    retry_attempts: pipelineRetryAttempts,
+                    retry_delay: pipelineRetryDelay,
+                    skip_existing: skipExisting,
                   },
                 });
                 setSaveMsg('Settings saved to config.yaml');

@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - API models: `FullPipelineRequest`, `BatchPipelineRequest`, `PipelineHistoryEntry`
 - Config API: `GET /api/config` (secrets redacted), `PUT /api/config` (deep merge, skips redacted '***' values), `GET /api/config/platforms`
 - Dashboard page upgrade: live pipeline table from history API, functional batch processing with concurrency slider and progress bar, platform checkboxes, expandable row details, real activity feed from pipeline history
+- Settings page upgrade: Pipeline section wired to config API (data dir, max concurrent, retry attempts, retry delay, skip existing) — values persist on save/reload
 - TTS base class (`src/tts/base.py`): `BaseTTSProvider` ABC with `synthesize()`, `list_voices()`, `synthesize_segments()` and text cleanup
 - Voice profiles config (`config/tts_voices.yaml`): per-platform voice/volume settings with Edge TTS defaults
 - TTS infra: `edge-tts` dependency, `data/tts/` gitignore and data dir, TTS config section in `config.example.yaml`
