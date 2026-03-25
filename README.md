@@ -375,7 +375,7 @@ douyin-automation/
 - [x] **5.7** Structured logging — `src/utils/logger.py` (finalize)
 - [x] **5.8** Module entry point — `src/__main__.py`
 - [ ] **5.9** README.md (finalize)
-- [ ] **5.10** Integration tests — `tests/test_pipeline.py`
+- [x] **5.10** Integration tests — `tests/test_pipeline.py`
 - [x] **5.11** Pipeline router + service — `server/routers/pipeline.py`
 - [x] **5.12** Config router — `server/routers/config.py`
 - [x] **5.13** Dashboard page — `web/src/pages/DashboardPage.tsx`

@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Dashboard page upgrade: live pipeline table from history API, functional batch processing with concurrency slider and progress bar, platform checkboxes, expandable row details, real activity feed from pipeline history
 - Settings page upgrade: Pipeline section wired to config API (data dir, max concurrent, retry attempts, retry delay, skip existing) — values persist on save/reload
 - React Router navigation verified: all routes active with NavLink highlighting, lazy loading, browser back/forward support
+- Integration tests (`tests/test_pipeline.py`): 32 tests covering retry decorator, state persistence, duplicate detection, metadata mapper, pipeline orchestrator (with mocks), CLI argument parsing, structured logging
 - TTS base class (`src/tts/base.py`): `BaseTTSProvider` ABC with `synthesize()`, `list_voices()`, `synthesize_segments()` and text cleanup
 - Voice profiles config (`config/tts_voices.yaml`): per-platform voice/volume settings with Edge TTS defaults
 - TTS infra: `edge-tts` dependency, `data/tts/` gitignore and data dir, TTS config section in `config.example.yaml`
