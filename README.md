@@ -380,7 +380,7 @@ douyin-automation/
 - [x] **5.12** Config router — `server/routers/config.py`
 - [x] **5.13** Dashboard page — `web/src/pages/DashboardPage.tsx`
 - [x] **5.14** Settings page — `web/src/pages/SettingsPage.tsx`
-- [ ] **5.15** React Router — route-based navigation
+- [x] **5.15** React Router — route-based navigation
 
 **Verification (CLI):**
 - [ ] V5.1 — `python -m src --help` displays all commands
