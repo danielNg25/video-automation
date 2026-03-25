@@ -26,6 +26,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Video list page (`ui-app/src/pages/VideoList.tsx`): grid view of all videos with thumbnails, status badges, language tags, search, filter, delete, and navigation to Video Studio
 - `/videos` route in React Router for Video Studio sidebar link
 
+### Changed
+- Pipeline page URL input replaced with multi-URL textarea: paste multiple URLs (one per line) for batch processing with concurrency slider, or single URL for normal pipeline — auto-detects mode
+
 ### Fixed
 - Video Studio sidebar link (`/videos`) now renders a video list page instead of blank page
 - Batch Process card on Dashboard highlighted with border accent and icon for better visibility

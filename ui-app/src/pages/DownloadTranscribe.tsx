@@ -7,7 +7,7 @@ import { loadApiKeys, loadLLMPrefs, saveLLMPrefs } from '../utils/storage';
 
 function PipelinePage() {
   const navigate = useNavigate();
-  const [url, setUrl] = useState('');
+  const [urlInput, setUrlInput] = useState('');
   const [allVideos, setAllVideos] = useState<VideoMetadata[]>([]);
   const [error, setError] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -20,6 +20,10 @@ function PipelinePage() {
   const [pipelineStage, setPipelineStage] = useState('');
   const [pipelineProgress, setPipelineProgress] = useState(0);
   const [pipelineMessage, setPipelineMessage] = useState('');
+
+  // Batch state
+  const [batchConcurrency, setBatchConcurrency] = useState(3);
+  const [batchResults, setBatchResults] = useState<{ completed: number; total: number } | null>(null);
 
   // Pipeline config
   const [profiles, setProfiles] = useState<TranslationProfileSummary[]>([]);
@@ -45,6 +49,11 @@ function PipelinePage() {
     setLlmApiKey(keyMap[llmBackend] || '');
   }, [llmBackend]);
 
+  // Parse URLs from input
+  const parsedUrls = urlInput.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+  const isBatchMode = parsedUrls.length > 1;
+  const url = parsedUrls[0] || '';
+
   const loadVideos = useCallback(async () => {
     try { setAllVideos((await getVideos()).videos); } catch { /* */ }
   }, []);
@@ -57,10 +66,10 @@ function PipelinePage() {
   }, [loadVideos]);
 
   const handleDownload = async () => {
-    if (!url.trim()) return;
+    if (!url) return;
     setError(''); setIsDownloading(true); setDownloadProgress(0); setDownloadMessage('Starting download...');
     try {
-      const { task_id } = await postDownload(url.trim());
+      const { task_id } = await postDownload(url);
       const es = subscribeSSE(task_id, (eventType, data) => {
         if (eventType === 'progress') { setDownloadProgress((data.progress as number) * 100); setDownloadMessage(data.message as string); }
         else if (eventType === 'complete') {
@@ -74,10 +83,53 @@ function PipelinePage() {
   };
 
   const handlePipeline = async () => {
-    if (!url.trim()) return;
+    if (parsedUrls.length === 0) return;
+
+    // Batch mode
+    if (isBatchMode) {
+      setError(''); setIsPipeline(true); setPipelineStage('download'); setPipelineProgress(0);
+      setPipelineMessage(`Starting batch: ${parsedUrls.length} videos...`);
+      setBatchResults({ completed: 0, total: parsedUrls.length });
+      try {
+        const res = await fetch('/api/pipeline/batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            urls: parsedUrls,
+            platforms: ['youtube', 'tiktok'],
+            concurrency: batchConcurrency,
+            translate_profile: selectedProfile || null,
+          }),
+        });
+        const data = await res.json();
+        if (data.batch_id) {
+          const es = subscribeSSE(data.batch_id, (eventType, eventData) => {
+            if (eventType === 'progress') {
+              const completed = (eventData as Record<string, unknown>).completed as number ?? 0;
+              const total = parsedUrls.length;
+              setBatchResults({ completed, total });
+              setPipelineProgress((completed / total) * 100);
+              setPipelineMessage(`Processing ${completed}/${total} videos...`);
+            }
+            if (eventType === 'complete' || eventType === 'error') {
+              setIsPipeline(false);
+              setPipelineProgress(100);
+              setPipelineMessage(eventType === 'complete' ? 'Batch complete' : 'Batch finished with errors');
+              setBatchResults(null);
+              setUrlInput('');
+              loadVideos();
+              es.close();
+            }
+          });
+        }
+      } catch (e) { setIsPipeline(false); setBatchResults(null); setError(e instanceof Error ? e.message : 'Batch failed'); }
+      return;
+    }
+
+    // Single URL mode
     setError(''); setIsPipeline(true); setPipelineStage('download'); setPipelineProgress(0); setPipelineMessage('Starting download...');
     try {
-      const { task_id } = await postPipeline(url.trim(), selectedProfile || undefined);
+      const { task_id } = await postPipeline(url, selectedProfile || undefined);
       const es = subscribeSSE(task_id, (eventType, data) => {
         if (eventType === 'progress') {
           setPipelineStage((data.stage as string) || ''); setPipelineProgress((data.progress as number) * 100); setPipelineMessage(data.message as string);
@@ -133,28 +185,73 @@ function PipelinePage() {
       <TopBar breadcrumb="Pipeline" />
 
       <section className="flex-1 overflow-y-auto p-6 space-y-6">
-        {/* URL Input + Buttons */}
+        {/* URL Input — supports single or multiple URLs */}
         <div className="bg-surface-container-low rounded-xl shadow-sm overflow-hidden">
-          <div className="flex items-center bg-surface-container-lowest p-3 rounded-lg gap-3 focus-within:ring-1 focus-within:ring-primary/40 transition-shadow">
-            <div className="pl-2 text-on-surface-variant">
-              <span className="material-symbols-outlined text-xl">link</span>
+          <div className="p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-lg">link</span>
+                <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">
+                  {isBatchMode ? `${parsedUrls.length} URLs` : 'Source URL'}
+                </span>
+              </div>
+              {isBatchMode && (
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-mono text-zinc-500 uppercase">Concurrency</span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="range" min={1} max={5} value={batchConcurrency}
+                      onChange={(e) => setBatchConcurrency(Number(e.target.value))}
+                      className="w-20 accent-primary h-1 bg-surface-container-highest rounded-lg appearance-none cursor-pointer"
+                    />
+                    <span className="text-xs font-mono text-primary w-4 text-center">{batchConcurrency}</span>
+                  </div>
+                </div>
+              )}
             </div>
-            <input
-              className="flex-1 bg-transparent border-none focus:ring-0 text-on-surface placeholder:text-zinc-600 text-sm py-3"
-              placeholder="Paste Douyin share link or URL"
-              type="text" value={url} onChange={(e) => setUrl(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handlePipeline()}
+
+            <textarea
+              className="w-full bg-surface-container-lowest border-none rounded-lg px-4 py-3 text-sm text-on-surface placeholder:text-zinc-600 focus:ring-1 focus:ring-primary/40 resize-none font-mono"
+              placeholder={"Paste Douyin URLs — one per line for batch processing\nhttps://v.douyin.com/xxx\nhttps://v.douyin.com/yyy"}
+              rows={isBatchMode ? 4 : 2}
+              value={urlInput}
+              onChange={(e) => setUrlInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey && !isBatchMode) {
+                  e.preventDefault();
+                  handlePipeline();
+                }
+              }}
             />
-            <button onClick={handlePipeline} disabled={isDownloading || isPipeline || !url.trim()}
-              className="bg-primary text-on-primary-fixed px-8 py-3 rounded-lg font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:brightness-110 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-              <span className="material-symbols-outlined text-sm">rocket_launch</span>
-              <span>{isPipeline ? 'Running...' : 'Run Pipeline'}</span>
-            </button>
-            <button onClick={handleDownload} disabled={isDownloading || isPipeline || !url.trim()}
-              className="bg-surface-container-highest text-on-surface px-5 py-3 rounded-lg font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:bg-surface-container-high active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-              <span className="material-symbols-outlined text-sm">download</span>
-              <span>{isDownloading ? 'Downloading...' : 'Download Only'}</span>
-            </button>
+
+            {/* Batch progress */}
+            {batchResults && (
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-[10px] font-mono">
+                  <span className="text-primary">Processing {batchResults.completed}/{batchResults.total} videos...</span>
+                  <span className="text-zinc-500">{Math.round((batchResults.completed / batchResults.total) * 100)}%</span>
+                </div>
+                <div className="w-full h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
+                  <div className="h-full bg-primary transition-all duration-300"
+                    style={{ width: `${(batchResults.completed / batchResults.total) * 100}%` }} />
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <button onClick={handlePipeline} disabled={isDownloading || isPipeline || parsedUrls.length === 0}
+                className="bg-primary text-on-primary-fixed px-8 py-3 rounded-lg font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:brightness-110 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                <span className="material-symbols-outlined text-sm">{isBatchMode ? 'playlist_play' : 'rocket_launch'}</span>
+                <span>{isPipeline ? 'Running...' : isBatchMode ? `Process ${parsedUrls.length} Videos` : 'Run Pipeline'}</span>
+              </button>
+              {!isBatchMode && (
+                <button onClick={handleDownload} disabled={isDownloading || isPipeline || !url}
+                  className="bg-surface-container-highest text-on-surface px-5 py-3 rounded-lg font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:bg-surface-container-high active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                  <span className="material-symbols-outlined text-sm">download</span>
+                  <span>{isDownloading ? 'Downloading...' : 'Download Only'}</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
