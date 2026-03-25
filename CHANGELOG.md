@@ -32,6 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - Video Studio sidebar link (`/videos`) now renders a video list page instead of blank page
 - Batch Process card on Dashboard highlighted with border accent and icon for better visibility
+- Pipeline SIGINT handler now raises KeyboardInterrupt to break out of blocking calls immediately; second Ctrl+C force-exits
 - TTS base class (`src/tts/base.py`): `BaseTTSProvider` ABC with `synthesize()`, `list_voices()`, `synthesize_segments()` and text cleanup
 - Voice profiles config (`config/tts_voices.yaml`): per-platform voice/volume settings with Edge TTS defaults
 - TTS infra: `edge-tts` dependency, `data/tts/` gitignore and data dir, TTS config section in `config.example.yaml`

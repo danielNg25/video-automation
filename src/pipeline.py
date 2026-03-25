@@ -29,11 +29,20 @@ class Pipeline:
         self._interrupted = False
 
     def _setup_signal_handlers(self):
-        """Register signal handlers for graceful shutdown."""
+        """Register signal handlers for graceful shutdown.
+
+        First SIGINT/SIGTERM sets interrupted flag and raises KeyboardInterrupt
+        to break out of blocking calls. Second signal force-exits.
+        """
 
         def handler(signum, frame):
-            logger.warning(f"Received signal {signum}, saving state and exiting...")
+            if self._interrupted:
+                # Second signal — force exit
+                logger.warning("Force exit on second signal")
+                raise SystemExit(130)
+            logger.warning("Received interrupt, finishing current stage then exiting...")
             self._interrupted = True
+            raise KeyboardInterrupt
 
         signal.signal(signal.SIGINT, handler)
         signal.signal(signal.SIGTERM, handler)
@@ -293,6 +302,11 @@ class Pipeline:
             })
 
             return self._make_result(state, "done")
+
+        except KeyboardInterrupt:
+            state.save()
+            logger.info(f"Pipeline interrupted for {video_id or url}, state saved")
+            return self._make_result(state, "interrupted")
 
         except Exception as e:
             state.mark_failed(str(e))
