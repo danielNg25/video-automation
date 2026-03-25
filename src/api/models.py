@@ -48,6 +48,36 @@ class PipelineRequest(BaseModel):
     source_language: str = "zh"
 
 
+class FullPipelineRequest(BaseModel):
+    url: str
+    platforms: list[str] = ["youtube", "tiktok"]
+    auto_upload: bool = False
+    translate_profile: str | None = None
+    source_language: str = "zh"
+    force: bool = False
+    metadata: dict | None = None
+
+
+class BatchPipelineRequest(BaseModel):
+    urls: list[str]
+    platforms: list[str] = ["youtube", "tiktok"]
+    concurrency: int = 3
+    translate_profile: str | None = None
+    source_language: str = "zh"
+    force: bool = False
+
+
+class PipelineHistoryEntry(BaseModel):
+    video_id: str
+    url: str = ""
+    status: str = "unknown"
+    completed_stages: list[str] = []
+    platforms: list[str] = []
+    error: str | None = None
+    created_at: str = ""
+    updated_at: str = ""
+
+
 class ProcessRequest(BaseModel):
     video_id: str
     platforms: list[str]
