@@ -1,5 +1,3 @@
-from unittest.mock import patch
-
 from src.transcriber import get_transcriber
 from src.transcriber.base import BaseTranscriber
 from src.transcriber.ocr import OCRTranscriber
@@ -90,75 +88,18 @@ class TestSRTGeneration:
 
 
 class TestTranscriberFactory:
-    """Tests for get_transcriber factory."""
+    """Tests for get_transcriber factory (OCR-only)."""
 
-    def test_selects_mlx_on_darwin(self):
-        with patch("src.transcriber.sys") as mock_sys:
-            mock_sys.platform = "darwin"
-            t = get_transcriber({"model_size": "tiny"})
-        from src.transcriber.mlx import MLXWhisperTranscriber
+    def test_returns_ocr_transcriber(self):
+        t = get_transcriber({"fps": 1.0})
+        assert isinstance(t, OCRTranscriber)
+        assert t.fps == 1.0
 
-        assert isinstance(t, MLXWhisperTranscriber)
-        assert t.model_size == "tiny"
-
-    def test_selects_faster_on_linux(self):
-        with patch("src.transcriber.sys") as mock_sys:
-            mock_sys.platform = "linux"
-            t = get_transcriber({"model_size": "base"})
-        from src.transcriber.faster import FasterWhisperTranscriber
-
-        assert isinstance(t, FasterWhisperTranscriber)
-        assert t.model_size == "base"
-
-    def test_config_override_backend(self):
-        t = get_transcriber({"model_size": "small", "backend": "mlx"})
-        from src.transcriber.mlx import MLXWhisperTranscriber
-
-        assert isinstance(t, MLXWhisperTranscriber)
-
-    def test_faster_whisper_config_options(self):
-        config = {
-            "model_size": "medium",
-            "backend": "faster",
-            "device": "cuda",
-            "compute_type": "int8",
-            "vad_filter": False,
-            "vad_min_silence_ms": 300,
-        }
-        t = get_transcriber(config)
-        from src.transcriber.faster import FasterWhisperTranscriber
-
-        assert isinstance(t, FasterWhisperTranscriber)
-        assert t.device == "cuda"
-        assert t.compute_type == "int8"
-        assert t.vad_filter is False
-        assert t.vad_min_silence_ms == 300
-
-    def test_default_model_size(self):
-        t = get_transcriber({"backend": "mlx"})
-        assert t.model_size == "large-v3"
-
-
-class TestMLXModelMapping:
-    """Tests for MLXWhisperTranscriber model path mapping."""
-
-    def test_known_model(self):
-        from src.transcriber.mlx import MLXWhisperTranscriber
-
-        t = MLXWhisperTranscriber(model_size="large-v3")
-        assert t._get_model_path() == "mlx-community/whisper-large-v3-mlx"
-
-    def test_tiny_model(self):
-        from src.transcriber.mlx import MLXWhisperTranscriber
-
-        t = MLXWhisperTranscriber(model_size="tiny")
-        assert t._get_model_path() == "mlx-community/whisper-tiny-mlx"
-
-    def test_unknown_model_fallback(self):
-        from src.transcriber.mlx import MLXWhisperTranscriber
-
-        t = MLXWhisperTranscriber(model_size="custom-v2")
-        assert t._get_model_path() == "mlx-community/whisper-custom-v2-mlx"
+    def test_default_config(self):
+        t = get_transcriber({})
+        assert isinstance(t, OCRTranscriber)
+        assert t.fps == 2.0
+        assert t.confidence_threshold == 0.7
 
 
 class TestOCRTranscriberClassification:
@@ -378,22 +319,11 @@ class TestOCRParseResult:
 
 
 class TestTranscriberFactoryOCR:
-    """Tests for factory OCR backend selection."""
-
-    def test_factory_returns_ocr_transcriber(self):
-        t = get_transcriber({"fps": 1.0}, method="ocr")
-        assert isinstance(t, OCRTranscriber)
-        assert t.fps == 1.0
-
-    def test_factory_default_is_audio(self):
-        """No method arg should default to audio backend."""
-        t = get_transcriber({"model_size": "tiny", "backend": "mlx"})
-        from src.transcriber.mlx import MLXWhisperTranscriber
-        assert isinstance(t, MLXWhisperTranscriber)
+    """Tests for factory OCR config passthrough."""
 
     def test_factory_ocr_with_region(self):
         region = {"x": 0.1, "y": 0.7, "w": 0.8, "h": 0.25}
-        t = get_transcriber({}, method="ocr", ocr_region=region)
+        t = get_transcriber({}, ocr_region=region)
         assert isinstance(t, OCRTranscriber)
         assert t.ocr_region == region
 
@@ -404,7 +334,7 @@ class TestTranscriberFactoryOCR:
             "similarity_threshold": 0.9,
             "subtitle_region": {"min_y": 0.5, "max_watermark_frequency": 0.7},
         }
-        t = get_transcriber(config, method="ocr")
+        t = get_transcriber(config)
         assert t.fps == 3.0
         assert t.confidence_threshold == 0.8
         assert t.similarity_threshold == 0.9

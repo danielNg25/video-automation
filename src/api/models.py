@@ -15,7 +15,6 @@ class TranscribeRequest(BaseModel):
     video_id: str
     language: str = "zh"
     task: str = "transcribe"
-    method: str = "audio"  # "audio" (Whisper) or "ocr" (PaddleOCR)
     ocr_region: dict | None = None  # Optional manual override: {"x", "y", "w", "h"}
     ocr_config: dict | None = None  # Optional OCR settings override from UI
 
@@ -45,7 +44,6 @@ class TranslationProfileCreate(BaseModel):
 
 class PipelineRequest(BaseModel):
     url: str
-    transcribe_method: str = "ocr"
     translate_profile: str | None = None
     source_language: str = "zh"
 
@@ -55,6 +53,8 @@ class ProcessRequest(BaseModel):
     platforms: list[str]
     subtitle_style: dict | None = None
     subtitle_language_overrides: dict[str, str] | None = None  # {platform: lang_code}
+    enable_tts: bool = False
+    tts_mix_settings: dict[str, dict] | None = None  # {platform: {original_volume, tts_volume}}
 
 
 class SaveSrtRequest(BaseModel):
@@ -139,6 +139,48 @@ class TranslationProfileSummary(BaseModel):
     name: str
     description: str
     target_language: str
+
+
+class TTSRequest(BaseModel):
+    video_id: str
+    language: str = "vi"
+    voice_profile: str = "female-vi-natural"
+    provider: str | None = None  # override default provider
+    voice: str | None = None  # direct voice ID (overrides profile voice)
+    api_key: str | None = None  # per-request API key for paid providers
+
+
+class TTSPreviewRequest(BaseModel):
+    text: str
+    voice: str = "vi-VN-HoaiMyNeural"
+    provider: str = "edge"
+    speed: str = "+0%"
+    pitch: str = "+0Hz"
+    api_key: str | None = None  # per-request API key for paid providers
+
+
+class VoiceInfo(BaseModel):
+    name: str
+    language: str
+    gender: str
+    provider: str
+    friendly_name: str = ""
+
+
+class VoiceProfileConfig(BaseModel):
+    provider: str = "edge"
+    voice: str
+    language: str
+    speed: str = "+0%"
+    pitch: str = "+0Hz"
+
+
+class TTSResult(BaseModel):
+    video_id: str
+    language: str
+    audio_path: str
+    duration: float = 0.0
+    segment_count: int = 0
 
 
 class DashboardStats(BaseModel):

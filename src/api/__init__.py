@@ -14,6 +14,7 @@ from src.api.routers import (
     settings,
     transcribe,
     translate,
+    tts,
 )
 
 
@@ -35,6 +36,7 @@ def create_app() -> FastAPI:
     app.include_router(editor.router)
     app.include_router(settings.router)
     app.include_router(pipeline.router)
+    app.include_router(tts.router)
     app.include_router(events.router)
 
     @app.on_event("startup")
@@ -51,6 +53,11 @@ def create_app() -> FastAPI:
             "/files/proxy",
             StaticFiles(directory=str(data_dir / "proxy")),
             name="proxy_videos",
+        )
+        app.mount(
+            "/files/tts",
+            StaticFiles(directory=str(data_dir / "tts")),
+            name="tts_audio",
         )
 
         tm = get_task_manager()

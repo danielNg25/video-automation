@@ -11,6 +11,11 @@ import type {
   PreviewClipRequest,
   TranslationProfile,
   TranslationProfileSummary,
+  VoiceInfo,
+  VoiceProfileConfig,
+  TTSPlatformConfig,
+  TTSProviderInfo,
+  VoiceInfo,
 } from './types';
 
 const BASE = '/api';
@@ -45,7 +50,6 @@ export function postTranscribe(
   videoId: string,
   language: string = 'zh',
   task: string = 'transcribe',
-  transcribeMethod: string = 'audio',
   ocrRegion?: { x: number; y: number; w: number; h: number },
   ocrConfig?: Record<string, unknown>,
 ): Promise<TaskResponse> {
@@ -56,7 +60,6 @@ export function postTranscribe(
       video_id: videoId,
       language,
       task,
-      method: transcribeMethod,
       ocr_region: ocrRegion ?? null,
       ocr_config: ocrConfig ?? null,
     }),
@@ -207,7 +210,6 @@ export function postTranslate(
 
 export function postPipeline(
   url: string,
-  transcribeMethod: string = 'ocr',
   translateProfile?: string,
   sourceLanguage: string = 'zh',
 ): Promise<TaskResponse> {
@@ -216,7 +218,6 @@ export function postPipeline(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       url,
-      transcribe_method: transcribeMethod,
       translate_profile: translateProfile ?? null,
       source_language: sourceLanguage,
     }),
@@ -235,6 +236,88 @@ export function putConfig(config: Record<string, unknown>): Promise<{ status: st
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
   });
+}
+
+// --- TTS ---
+
+export function postTTS(
+  videoId: string,
+  language: string,
+  voiceProfile: string,
+  provider?: string,
+  voice?: string,
+  apiKey?: string,
+): Promise<TaskResponse> {
+  return request('/tts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      video_id: videoId,
+      language,
+      voice_profile: voiceProfile,
+      provider: provider ?? null,
+      voice: voice ?? null,
+      api_key: apiKey ?? null,
+    }),
+  });
+}
+
+export function getTTSProviders(): Promise<TTSProviderInfo[]> {
+  return request('/tts/providers');
+}
+
+export function getTTSVoices(language?: string, provider: string = 'edge', apiKey?: string): Promise<VoiceInfo[]> {
+  const params = new URLSearchParams({ provider });
+  if (language) params.set('language', language);
+  if (apiKey) params.set('api_key', apiKey);
+  return request(`/tts/voices?${params}`);
+}
+
+export function getTTSProfiles(): Promise<Record<string, VoiceProfileConfig>> {
+  return request('/tts/profiles');
+}
+
+export function getTTSPlatforms(): Promise<Record<string, TTSPlatformConfig>> {
+  return request('/tts/platforms');
+}
+
+export function putTTSProfile(name: string, profile: VoiceProfileConfig): Promise<VoiceProfileConfig> {
+  return request(`/tts/profiles/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(profile),
+  });
+}
+
+export async function deleteTTSProfile(name: string): Promise<void> {
+  await fetch(`${BASE}/tts/profiles/${encodeURIComponent(name)}`, { method: 'DELETE' });
+}
+
+export function getTTSAudioUrl(videoId: string, language: string): string {
+  return `${BASE}/videos/${videoId}/tts/${language}`;
+}
+
+export async function postTTSPreview(
+  text: string,
+  voice: string,
+  provider: string = 'edge',
+  speed: string = '+0%',
+  pitch: string = '+0Hz',
+  apiKey?: string,
+): Promise<Blob> {
+  const res = await fetch(`${BASE}/tts/preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, voice, provider, speed, pitch, api_key: apiKey ?? null }),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    // FastAPI returns {"detail": "..."} JSON
+    let msg = `TTS preview failed (${res.status})`;
+    try { const parsed = JSON.parse(detail); if (parsed.detail) msg = parsed.detail; } catch { if (detail) msg = detail; }
+    throw new Error(msg);
+  }
+  return res.blob();
 }
 
 // --- Download URLs ---

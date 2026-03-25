@@ -32,7 +32,7 @@ def reload_config():
 def get_data_dir() -> Path:
     """Return the data directory, creating subdirs if needed."""
     data = Path("data")
-    for sub in ("raw", "srt", "output", "logs", "proxy"):
+    for sub in ("raw", "srt", "output", "logs", "proxy", "tts"):
         (data / sub).mkdir(parents=True, exist_ok=True)
     return data
 

@@ -20,7 +20,6 @@ async def start_pipeline(request: PipelineRequest):
         tm.run_pipeline(
             task.task_id,
             url=request.url,
-            transcribe_method=request.transcribe_method,
             translate_profile=request.translate_profile,
             source_language=request.source_language,
             config=config,

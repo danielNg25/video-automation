@@ -291,21 +291,17 @@ class TaskManager:
         language: str,
         task_type: str,
         config: dict,
-        method: str = "audio",
         ocr_region: dict | None = None,
         ocr_config: dict | None = None,
     ):
-        """Execute a transcription task in the background."""
+        """Execute an OCR transcription task in the background."""
         from src.transcriber import get_transcriber
 
         task = self.tasks[task_id]
         task.status = "running"
         task.video_id = video_id
-
-        is_ocr = method == "ocr"
-        init_msg = "Initializing OCR engine..." if is_ocr else "Loading transcription model..."
-        task.message = init_msg
-        self._emit(task_id, "progress", {"progress": 0.0, "message": init_msg})
+        task.message = "Initializing OCR engine..."
+        self._emit(task_id, "progress", {"progress": 0.0, "message": "Initializing OCR engine..."})
 
         try:
             video_info = self.video_index.get(video_id)
@@ -324,30 +320,20 @@ class TaskManager:
                     self._emit, task_id, "progress", {"progress": progress, "message": message}
                 )
 
-            if is_ocr:
-                ocr_cfg = config.get("ocr", {})
-                # Merge UI overrides into server config
-                if ocr_config:
-                    ocr_cfg = {**ocr_cfg, **ocr_config}
-                    if "subtitle_region" in ocr_cfg and "subtitle_region" in ocr_config:
-                        ocr_cfg["subtitle_region"] = {
-                            **ocr_cfg.get("subtitle_region", {}),
-                            **ocr_config["subtitle_region"],
-                        }
-                transcriber = get_transcriber(
-                    ocr_cfg,
-                    method="ocr",
-                    ocr_region=ocr_region,
-                    progress_callback=ocr_progress,
-                )
-            else:
-                transcriber = get_transcriber(config.get("whisper", {}))
-                task.message = "Transcribing audio..."
-                self._emit(
-                    task_id,
-                    "progress",
-                    {"progress": 0.2, "message": "Transcribing audio..."},
-                )
+            ocr_cfg = config.get("ocr", {})
+            # Merge UI overrides into server config
+            if ocr_config:
+                ocr_cfg = {**ocr_cfg, **ocr_config}
+                if "subtitle_region" in ocr_cfg and "subtitle_region" in ocr_config:
+                    ocr_cfg["subtitle_region"] = {
+                        **ocr_cfg.get("subtitle_region", {}),
+                        **ocr_config["subtitle_region"],
+                    }
+            transcriber = get_transcriber(
+                ocr_cfg,
+                ocr_region=ocr_region,
+                progress_callback=ocr_progress,
+            )
 
             # Run CPU-bound transcription in a thread
             segments = await asyncio.to_thread(
@@ -382,7 +368,6 @@ class TaskManager:
                 "srt_path": str(srt_path),
                 "segment_count": len(segments),
                 "language": lang_suffix,
-                "method": method,
             }
             self._emit(task_id, "complete", task.result)
 
@@ -471,6 +456,146 @@ class TaskManager:
             self._emit(task_id, "error", {"message": str(e)})
             logger.error(f"Translate task {task_id} failed: {e}")
 
+    async def run_tts(
+        self,
+        task_id: str,
+        video_id: str,
+        language: str,
+        voice_profile_name: str,
+        provider_override: str | None,
+        config: dict,
+        voice_override: str | None = None,
+        api_key_override: str | None = None,
+    ):
+        """Execute a TTS generation task in the background."""
+        from src.processor.subtitle import parse_srt
+        from src.tts import get_tts_provider, load_voice_profiles
+        from src.tts.assembler import TTSAssembler
+
+        task = self.tasks[task_id]
+        task.status = "running"
+        task.video_id = video_id
+        task.message = "Loading voice profile..."
+        self._emit(task_id, "progress", {"progress": 0.0, "message": "Loading voice profile..."})
+
+        try:
+            video_info = self.video_index.get(video_id)
+            if not video_info:
+                raise ValueError(f"Video {video_id} not found")
+
+            # Load voice profiles
+            profiles_data = load_voice_profiles(config)
+            profiles = profiles_data.get("profiles", {})
+            if voice_profile_name not in profiles:
+                raise ValueError(
+                    f"Voice profile '{voice_profile_name}' not found. "
+                    f"Available: {list(profiles.keys())}"
+                )
+            voice_profile = profiles[voice_profile_name]
+
+            # Load SRT segments
+            srt_dir = Path("data/srt")
+            srt_path = srt_dir / f"{video_id}_{language}.srt"
+            if not srt_path.exists():
+                raise FileNotFoundError(
+                    f"SRT not found: {srt_path}. "
+                    f"Translate the video to '{language}' first."
+                )
+
+            segments = parse_srt(srt_path)
+            if not segments:
+                raise ValueError(f"SRT file is empty: {srt_path}")
+
+            # Get video duration
+            from src.utils.metadata import extract_metadata_from_file
+
+            video_path = Path(video_info.file_path)
+            file_meta = extract_metadata_from_file(video_path)
+            video_duration = video_info.duration or file_meta.get("duration", 0.0)
+
+            # Apply overrides
+            if voice_override:
+                voice_profile = {**voice_profile, "voice": voice_override}
+
+            # Create TTS provider — inject per-request API key if provided
+            provider_name = provider_override or voice_profile.get("provider", "edge")
+            effective_config = config
+            if api_key_override:
+                tts_section = dict(config.get("tts", {}))
+                if provider_name == "elevenlabs":
+                    tts_section["elevenlabs_api_key"] = api_key_override
+                elif provider_name == "openai":
+                    tts_section["openai_api_key"] = api_key_override
+                elif provider_name == "google":
+                    tts_section["google_api_key"] = api_key_override
+                effective_config = {**config, "tts": tts_section}
+            tts_provider = get_tts_provider(effective_config, provider=provider_name)
+
+            # Progress callback
+            total_segments = len(segments)
+
+            def on_progress(current: int, total: int, message: str):
+                pct = current / total if total > 0 else 0.0
+                task.progress = pct
+                task.message = message
+                self._emit(task_id, "progress", {"progress": pct, "message": message})
+
+            task.message = f"Generating TTS ({total_segments} segments)..."
+            self._emit(
+                task_id, "progress",
+                {"progress": 0.05, "message": f"Generating TTS ({total_segments} segments)..."},
+            )
+
+            # Generate full track
+            tts_dir = Path("data/tts")
+            tts_dir.mkdir(parents=True, exist_ok=True)
+            output_path = tts_dir / f"{video_id}_{language}.wav"
+
+            assembler = TTSAssembler()
+            await assembler.generate_full_track(
+                provider=tts_provider,
+                segments=segments,
+                voice_profile=voice_profile,
+                video_duration=video_duration,
+                output_path=output_path,
+                on_progress=on_progress,
+            )
+
+            # Get output duration
+            import json as _json
+            import subprocess
+
+            try:
+                probe = subprocess.run(
+                    ["ffprobe", "-v", "quiet", "-print_format", "json",
+                     "-show_format", str(output_path)],
+                    capture_output=True, text=True, timeout=10,
+                )
+                tts_duration = float(
+                    _json.loads(probe.stdout).get("format", {}).get("duration", 0)
+                )
+            except Exception:
+                tts_duration = 0.0
+
+            task.status = "completed"
+            task.progress = 1.0
+            task.message = "TTS generation complete"
+            task.result = {
+                "video_id": video_id,
+                "language": language,
+                "audio_path": str(output_path),
+                "duration": tts_duration,
+                "segment_count": total_segments,
+            }
+            self._emit(task_id, "complete", task.result)
+
+        except Exception as e:
+            task.status = "failed"
+            task.error = str(e)
+            task.message = f"TTS generation failed: {e}"
+            self._emit(task_id, "error", {"message": str(e)})
+            logger.error(f"TTS task {task_id} failed: {e}")
+
     async def run_process(
         self,
         task_id: str,
@@ -479,6 +604,8 @@ class TaskManager:
         style_overrides: dict | None,
         subtitle_language_overrides: dict[str, str] | None,
         config: dict,
+        enable_tts: bool = False,
+        tts_mix_settings: dict[str, dict] | None = None,
     ):
         """Execute a video processing task in the background."""
         from src.processor import process_for_all_platforms
@@ -513,6 +640,37 @@ class TaskManager:
                     {"progress": pct, "message": message, "platform": platform},
                 )
 
+            # Build TTS audio paths if TTS is enabled
+            tts_audio_paths: dict[str, Path] | None = None
+            if enable_tts:
+                from src.tts import load_voice_profiles
+
+                tts_dir = Path("data/tts")
+                profiles_data = load_voice_profiles(config)
+                tts_platforms = profiles_data.get("platforms", {})
+
+                tts_audio_paths = {}
+                for platform in platforms:
+                    plat_cfg = tts_platforms.get(platform, {})
+                    if not plat_cfg.get("enabled", False):
+                        continue
+                    # Determine language from profile
+                    profile_name = plat_cfg.get("profile", "")
+                    profile = profiles_data.get("profiles", {}).get(profile_name, {})
+                    lang = profile.get("language", "vi")
+                    tts_path = tts_dir / f"{video_id}_{lang}.wav"
+                    if tts_path.exists():
+                        tts_audio_paths[platform] = tts_path
+
+                        # Also set mix settings from platform config if not overridden
+                        if tts_mix_settings is None:
+                            tts_mix_settings = {}
+                        if platform not in tts_mix_settings:
+                            tts_mix_settings[platform] = {
+                                "original_volume": plat_cfg.get("original_volume", 0.3),
+                                "tts_volume": plat_cfg.get("tts_volume", 1.0),
+                            }
+
             # Run CPU-bound processing in a thread
             results = await asyncio.to_thread(
                 process_for_all_platforms,
@@ -525,6 +683,8 @@ class TaskManager:
                 style_overrides,
                 on_progress,
                 subtitle_language_overrides,
+                tts_audio_paths,
+                tts_mix_settings,
             )
 
             # Build result data from PlatformResult objects
@@ -556,7 +716,6 @@ class TaskManager:
         self,
         task_id: str,
         url: str,
-        transcribe_method: str,
         translate_profile: str | None,
         source_language: str,
         config: dict,
@@ -644,15 +803,11 @@ class TaskManager:
                     {"stage": "transcribe", "progress": pct, "message": message},
                 )
 
-            if transcribe_method == "ocr":
-                ocr_config = config.get("ocr", {})
-                transcriber = get_transcriber(
-                    ocr_config,
-                    method="ocr",
-                    progress_callback=transcribe_progress,
-                )
-            else:
-                transcriber = get_transcriber(config.get("whisper", {}))
+            ocr_config = config.get("ocr", {})
+            transcriber = get_transcriber(
+                ocr_config,
+                progress_callback=transcribe_progress,
+            )
 
             video_path = str(file_path)
             segments = await asyncio.to_thread(

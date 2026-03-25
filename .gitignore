@@ -16,6 +16,9 @@ data/srt/*.srt
 data/srt/*_style.json
 data/output/*.mp4
 data/proxy/*.mp4
+data/tts/*.mp3
+data/tts/*.wav
+data/tts/piper_models/
 data/logs/*.log
 data/logs/*.json
 

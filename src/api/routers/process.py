@@ -39,6 +39,8 @@ async def start_process(request: ProcessRequest):
             request.subtitle_style,
             request.subtitle_language_overrides,
             config,
+            enable_tts=request.enable_tts,
+            tts_mix_settings=request.tts_mix_settings,
         )
     )
     return TaskResponse(task_id=task.task_id, status=task.status)

@@ -51,6 +51,8 @@ def process_for_all_platforms(
     style_overrides: dict | None = None,
     on_progress: Callable[[str, float, str], None] | None = None,
     subtitle_language_overrides: dict[str, str] | None = None,
+    tts_audio_paths: dict[str, Path] | None = None,
+    tts_mix_settings: dict[str, dict] | None = None,
 ) -> dict[str, PlatformResult]:
     """Process a video for all requested platforms.
 
@@ -71,6 +73,10 @@ def process_for_all_platforms(
         on_progress: Callback(platform, progress_pct, message) for progress updates.
         subtitle_language_overrides: Optional per-platform language override.
             e.g. {"tiktok": "en", "youtube": "vi"} to override defaults.
+        tts_audio_paths: Optional dict mapping platform name to TTS audio WAV path.
+            If provided for a platform, uses burn_reformat_and_dub instead of burn_and_reformat.
+        tts_mix_settings: Optional dict mapping platform name to mix settings
+            (keys: 'original_volume', 'tts_volume').
 
     Returns:
         Dict mapping platform name to PlatformResult (output path + language used).
@@ -125,15 +131,34 @@ def process_for_all_platforms(
         # Output path
         output_path = output_dir / f"{video_id}_{platform}.mp4"
 
-        # Single-pass burn + reformat
-        processor.burn_and_reformat(
-            video_path=video_path,
-            subtitle_path=srt_path,
-            platform=platform,
-            output_path=output_path,
-            style=merged_style,
-            platform_specs=platform_spec,
-        )
+        # Check if TTS audio is available for this platform
+        tts_path = (tts_audio_paths or {}).get(platform)
+        if tts_path and tts_path.exists():
+            mix = (tts_mix_settings or {}).get(platform, {})
+            original_vol = mix.get("original_volume", 0.3)
+            tts_vol = mix.get("tts_volume", 1.0)
+            logger.info(f"Platform {platform}: using TTS dubbing (orig={original_vol}, tts={tts_vol})")
+            processor.burn_reformat_and_dub(
+                video_path=video_path,
+                subtitle_path=srt_path,
+                tts_audio_path=tts_path,
+                platform=platform,
+                output_path=output_path,
+                style=merged_style,
+                platform_specs=platform_spec,
+                original_volume=original_vol,
+                tts_volume=tts_vol,
+            )
+        else:
+            # Single-pass burn + reformat (no TTS)
+            processor.burn_and_reformat(
+                video_path=video_path,
+                subtitle_path=srt_path,
+                platform=platform,
+                output_path=output_path,
+                style=merged_style,
+                platform_specs=platform_spec,
+            )
 
         results[platform] = PlatformResult(
             output_path=output_path, subtitle_language=sub_lang

@@ -7,6 +7,53 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- TTS base class (`src/tts/base.py`): `BaseTTSProvider` ABC with `synthesize()`, `list_voices()`, `synthesize_segments()` and text cleanup
+- Voice profiles config (`config/tts_voices.yaml`): per-platform voice/volume settings with Edge TTS defaults
+- TTS infra: `edge-tts` dependency, `data/tts/` gitignore and data dir, TTS config section in `config.example.yaml`
+- Edge TTS provider (`src/tts/edge.py`): free async TTS with Vietnamese/English voices, rate/pitch control
+- TTS factory (`src/tts/__init__.py`): `get_tts_provider()`, `load_voice_profiles()`, `save_voice_profiles()`
+- TTS audio assembler (`src/tts/assembler.py`): concurrent segment synthesis, ffmpeg atempo duration fitting, silence-padded concatenation
+- Audio mixing in FFmpeg (`src/processor/ffmpeg.py`): `mix_audio()` and `burn_reformat_and_dub()` for TTS dubbing
+- Batch processor TTS support: `tts_audio_paths` and `tts_mix_settings` params for per-platform TTS dubbing
+- TTS API models (`src/api/models.py`): `TTSRequest`, `TTSPreviewRequest`, `VoiceInfo`, `VoiceProfileConfig`, `TTSResult`
+- TTS router (`src/api/routers/tts.py`): generate TTS, list voices, CRUD profiles, preview audio, stream TTS track
+- `run_tts()` in task manager with SSE progress per segment
+- TTS-aware process endpoint: `enable_tts` + `tts_mix_settings` on `ProcessRequest`
+- TTS static file mount at `/files/tts/`
+- TTS TypeScript types (`ui-app/src/api/types.ts`): `TTSRequest`, `VoiceInfo`, `VoiceProfileConfig`, `TTSPlatformConfig`
+- TTS API client (`ui-app/src/api/client.ts`): `postTTS`, `getTTSVoices`, `getTTSProfiles`, `postTTSPreview`, etc.
+- TTS section on Process page: enable toggle, voice profile selector, per-platform volume sliders, generate button with SSE progress, audio playback
+- TTS preview component (`ui-app/src/components/TTSPreview.tsx`): play/stop button with blob audio playback
+- TTS unit tests (`tests/test_tts.py`): 24 tests covering text cleanup, ABC, factory, voice profiles, atempo filter, ffmpeg audio mix, and batch processor TTS integration
+- OpenAI TTS provider (`src/tts/openai_tts.py`): `/v1/audio/speech` API, tts-1/tts-1-hd models, speed control
+- Google Cloud TTS provider (`src/tts/google_tts.py`): REST API with Wavenet/Standard voices, Vietnamese and English
+
+- ElevenLabs TTS provider (`src/tts/elevenlabs.py`): high-quality multilingual TTS with voice listing from API or curated defaults
+- TTS provider selector on Pipeline page: switch between Edge (free), ElevenLabs, OpenAI, Google with per-request API key input
+- TTS voice browser: "Profiles" tab for saved presets, "All Voices" tab for browsing provider's full voice list
+- `GET /api/tts/providers` endpoint listing available providers with free/key metadata
+- Per-request API key support on TTS generate, preview, and voice list endpoints
+- gTTS provider (`src/tts/gtts_provider.py`): free Google Translate TTS, no API key, supports Vietnamese/English/10+ languages
+- Piper TTS provider (`src/tts/piper_tts.py`): fully offline local neural TTS with auto-download of ONNX models from HuggingFace
+
+### Changed
+- TTS assembler: clips only speed up when they would overlap the next segment's start, not the current segment's end — produces more natural-sounding speech
+- Renamed "Download & Transcribe" page to "Pipeline" in sidebar navigation
+
+- Video Studio page (`ui-app/src/pages/VideoDetail.tsx`): per-video workspace at `/videos/:videoId` with transcribe, translate, TTS dubbing, process & export, and SRT preview panels
+- "Video Studio" sidebar entry linking to video detail pages
+- Stepper/wizard layout for Pipeline page: 4 numbered steps (Download, Extract, Translate, TTS) with expandable config panels, step state visualization (done/running/pending), inline progress bars during execution
+
+### Removed
+- `SubtitleProcess.tsx` page and `/process` route
+- Individual video panels from Pipeline page — moved to Video Studio (`/videos/:videoId`)
+- Whisper speech-to-text backends (`src/transcriber/faster.py`, `src/transcriber/mlx.py`) — OCR via PaddleOCR is the only transcription method
+- `faster-whisper` and `mlx-whisper` dependencies from `pyproject.toml`
+- Whisper config section from `config.yaml` and `config.example.yaml`
+- Audio/OCR method toggle from Pipeline page UI — OCR is now the default and only option
+- `translate_srt()` Whisper-based translation function from `src/processor/subtitle.py` (replaced by LLM translator)
+- Moved TTS generation (voice profile selector, preview, generate button) from Subtitle Process page to Pipeline page
+- Subtitle Process page now has a simplified "Mix TTS Audio" toggle with per-platform volume sliders only
 - OCR subtitle extraction via PaddleOCR (`src/transcriber/ocr.py`): auto-detect subtitle regions, filter watermarks by position/frequency/size, two-pass approach (sample + full OCR), deduplication
 - `extract_frames()` method on `FFmpegProcessor` for JPEG frame extraction at configurable FPS
 - OCR transcriber factory integration: `get_transcriber(config, method="ocr")` with full config passthrough
