@@ -366,7 +366,7 @@ douyin-automation/
 
 > Detailed plan: [`plans/phase5-orchestration-batch.md`](plans/phase5-orchestration-batch.md)
 
-- [ ] **5.1** Retry utility — `src/utils/retry.py`
+- [x] **5.1** Retry utility — `src/utils/retry.py`
 - [ ] **5.2** State persistence — `src/utils/state.py`
 - [ ] **5.3** Duplicate detection — `src/utils/state.py`
 - [ ] **5.4** Pipeline orchestrator — `src/pipeline.py`
