@@ -369,7 +369,7 @@ douyin-automation/
 - [x] **5.1** Retry utility — `src/utils/retry.py`
 - [x] **5.2** State persistence — `src/utils/state.py`
 - [x] **5.3** Duplicate detection — `src/utils/state.py`
-- [ ] **5.4** Pipeline orchestrator — `src/pipeline.py`
+- [x] **5.4** Pipeline orchestrator — `src/pipeline.py`
 - [ ] **5.5** Metadata mapper — `src/utils/metadata.py`
 - [ ] **5.6** CLI interface — `src/cli.py`
 - [ ] **5.7** Structured logging — `src/utils/logger.py` (finalize)
