@@ -248,8 +248,10 @@ def _concatenate_with_silence(
         mix_inputs = "[0]" + "".join(f"[d{i}]" for i in range(len(valid_clips)))
         n_inputs = len(valid_clips) + 1
         filter_parts.append(
-            f"{mix_inputs}amix=inputs={n_inputs}:duration=first:dropout_transition=0[out]"
+            f"{mix_inputs}amix=inputs={n_inputs}:duration=first:dropout_transition=0,volume={n_inputs}[boosted]"
         )
+        # Normalize loudness to broadcast standard (-16 LUFS)
+        filter_parts.append("[boosted]loudnorm=I=-16:TP=-1.5:LRA=11[out]")
 
         filter_complex = ";".join(filter_parts)
 

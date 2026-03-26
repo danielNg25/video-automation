@@ -5,9 +5,10 @@ import { TTSPreview } from '../components/TTSPreview';
 import {
   getVideo, getSrt, postTranscribe, postTranslate, postTTS, postProcess,
   subscribeSSE, getProfiles, getTTSProfiles, getTTSProviders, getTTSVoices,
-  getTTSAudioUrl, getPlatforms, getProcessedVideoUrl, getRawVideoUrl,
+  getTTSAudioUrl, getTTSList, getPlatforms, getProcessedVideoUrl, getRawVideoUrl,
   getSrtDownloadUrl, patchVideoTitle, postTTSPreview,
 } from '../api/client';
+import type { TTSAudioEntry } from '../api/client';
 import type {
   VideoMetadata, SubtitleSegment, TranslationProfileSummary,
   VoiceProfileConfig, TTSProviderInfo, VoiceInfo, PlatformSpec,
@@ -65,6 +66,8 @@ function VideoDetailPage() {
   const [ttsProgress, setTtsProgress] = useState({ pct: 0, message: '' });
   const [ttsGenerated, setTtsGenerated] = useState(false);
   const [ttsError, setTtsError] = useState('');
+  const [ttsList, setTtsList] = useState<TTSAudioEntry[]>([]);
+  const [playingTts, setPlayingTts] = useState<string | null>(null);
 
   // Process state
   const [platformSpecs, setPlatformSpecs] = useState<Record<string, PlatformSpec>>({});
@@ -166,6 +169,13 @@ function VideoDetailPage() {
         const specs = await getPlatforms();
         setPlatformSpecs(specs);
       } catch { /* platforms not available */ }
+
+      // Load existing TTS audio files
+      try {
+        const list = await getTTSList(videoId);
+        setTtsList(list);
+        if (list.length > 0) setTtsGenerated(true);
+      } catch { /* no TTS audio yet */ }
     };
 
     loadAll();
@@ -292,6 +302,8 @@ function VideoDetailPage() {
           setIsGeneratingTts(false);
           setTtsGenerated(true);
           setTtsProgress({ pct: 100, message: 'TTS generation complete' });
+          // Refresh TTS list to show new file
+          if (videoMeta) getTTSList(videoMeta.video_id).then(setTtsList).catch(() => {});
           es.close();
         } else if (eventType === 'error') {
           setIsGeneratingTts(false);
@@ -895,15 +907,58 @@ function VideoDetailPage() {
                     </div>
                   )}
 
-                  {/* TTS Audio Playback */}
-                  {ttsGenerated && videoMeta && (
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter">Generated TTS Track</label>
-                      <audio
-                        controls
-                        className="w-full h-8"
-                        src={getTTSAudioUrl(videoMeta.video_id, ttsLanguage)}
-                      />
+                  {/* TTS Audio Library */}
+                  {ttsList.length > 0 && videoMeta && (
+                    <div className="space-y-2">
+                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold">
+                        Generated Dubs ({ttsList.length})
+                      </label>
+                      <div className="space-y-1">
+                        {ttsList.map((entry) => {
+                          const isPlaying = playingTts === entry.filename;
+                          const audioUrl = getTTSAudioUrl(videoMeta.video_id, entry.language, entry.filename);
+                          const ago = (() => {
+                            const diff = (Date.now() / 1000) - entry.created_at;
+                            if (diff < 60) return 'just now';
+                            if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+                            if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+                            return `${Math.floor(diff / 86400)}d ago`;
+                          })();
+                          const sizeMb = (entry.size / 1024 / 1024).toFixed(1);
+                          return (
+                            <div key={entry.filename} className="flex items-center gap-2 px-3 py-2 bg-surface-container-lowest rounded-lg group">
+                              <button
+                                onClick={() => {
+                                  if (isPlaying) {
+                                    document.querySelectorAll<HTMLAudioElement>('audio.tts-player').forEach(a => { a.pause(); a.currentTime = 0; });
+                                    setPlayingTts(null);
+                                  } else {
+                                    document.querySelectorAll<HTMLAudioElement>('audio.tts-player').forEach(a => { a.pause(); a.currentTime = 0; });
+                                    setPlayingTts(entry.filename);
+                                  }
+                                }}
+                                className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${isPlaying ? 'bg-primary text-on-primary-fixed' : 'bg-surface-container-high text-on-surface-variant hover:bg-primary/20'}`}
+                              >
+                                <span className="material-symbols-outlined text-sm">{isPlaying ? 'stop' : 'play_arrow'}</span>
+                              </button>
+                              <div className="flex-1 min-w-0">
+                                <span className="text-[11px] font-semibold text-on-surface">{entry.profile}</span>
+                                <span className="text-[9px] text-zinc-500 ml-2">{entry.provider} · {entry.language} · {sizeMb}MB</span>
+                              </div>
+                              <span className="text-[9px] font-mono text-zinc-600">{ago}</span>
+                              {isPlaying && (
+                                <audio
+                                  className="tts-player"
+                                  autoPlay
+                                  src={audioUrl}
+                                  onEnded={() => setPlayingTts(null)}
+                                  style={{ display: 'none' }}
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
 

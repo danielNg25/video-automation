@@ -72,21 +72,24 @@ class Pipeline:
 
         self._setup_signal_handlers()
 
-        def emit(stage: str, progress: float, message: str):
-            logger.info(f"[{stage}] {message}")
-            if progress_callback:
-                progress_callback(stage, progress, message)
-
         # --- Step 1: Extract video_id (attempt early dedup) ---
         video_id = options.get("video_id")
+
+        # Load or create state early so emit() can persist progress
+        state = PipelineState.load(video_id) if video_id else PipelineState(video_id="pending")
+
+        def emit(stage: str, progress: float, message: str):
+            logger.info(f"[{stage}] {message}")
+            # Persist progress to state file for polling
+            if state.video_id and state.video_id != "pending":
+                state.update_progress(stage, progress, message)
+            if progress_callback:
+                progress_callback(stage, progress, message)
 
         if video_id and not force and is_duplicate(video_id, url):
             msg = f"Video {video_id} already processed, skipping (use --force to re-process)"
             emit("skip", 0.0, msg)
             return {"video_id": video_id, "status": "skipped", "message": msg}
-
-        # Load or create state
-        state = PipelineState.load(video_id) if video_id else PipelineState(video_id="pending")
         state.url = url
         state.platforms = platforms
 
@@ -138,8 +141,17 @@ class Pipeline:
                     "file_path", f"data/raw/{video_id}.mp4"
                 )
 
+                # Wire OCR frame-level progress into pipeline emit
+                # OCR runs in a thread, so bridge back to the event loop
+                loop = asyncio.get_event_loop()
+
+                def ocr_progress(progress: float, message: str):
+                    # Map OCR's 0.0-1.0 range into pipeline's 0.20-0.45 range
+                    mapped = 0.20 + progress * 0.25
+                    loop.call_soon_threadsafe(emit, "transcribe", mapped, message)
+
                 ocr_config = self.config.get("ocr", {})
-                transcriber = get_transcriber(ocr_config)
+                transcriber = get_transcriber(ocr_config, progress_callback=ocr_progress)
 
                 segments = await asyncio.to_thread(
                     transcriber.transcribe, video_path, source_lang, "transcribe"
@@ -174,8 +186,13 @@ class Pipeline:
                 srt_path = Path(state.stage_results["transcribe"]["srt_path"])
                 srt_dir = Path("data/srt")
 
+                def translate_progress(batch_num: int, total_batches: int, message: str):
+                    pct = 0.45 + (batch_num / total_batches) * 0.15
+                    emit("translate", pct, f"Translating batch {batch_num}/{total_batches}...")
+
                 output_path = await translate_with_profile(
-                    srt_path, translate_profile, self.config, srt_dir
+                    srt_path, translate_profile, self.config, srt_dir,
+                    progress_callback=translate_progress,
                 )
 
                 state.mark_stage_complete("translate", {

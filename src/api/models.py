@@ -53,6 +53,7 @@ class FullPipelineRequest(BaseModel):
     platforms: list[str] = ["youtube", "tiktok"]
     auto_upload: bool = False
     translate_profile: str | None = None
+    translation_override: dict | None = None  # {backend, model, api_key, base_url}
     source_language: str = "zh"
     force: bool = False
     metadata: dict | None = None
@@ -63,6 +64,7 @@ class BatchPipelineRequest(BaseModel):
     platforms: list[str] = ["youtube", "tiktok"]
     concurrency: int = 3
     translate_profile: str | None = None
+    translation_override: dict | None = None  # {backend, model, api_key, base_url}
     source_language: str = "zh"
     force: bool = False
 
@@ -71,7 +73,12 @@ class PipelineHistoryEntry(BaseModel):
     video_id: str
     url: str = ""
     status: str = "unknown"
+    current_stage: str = ""
+    progress: float = 0.0
+    message: str = ""
     completed_stages: list[str] = []
+    stage_results: dict = {}
+    timestamps: dict = {}
     platforms: list[str] = []
     error: str | None = None
     created_at: str = ""

@@ -161,6 +161,11 @@ class TaskManager:
         for output in output_dir.glob(f"{video_id}_*"):
             output.unlink()
 
+        # TTS audio files
+        tts_dir = Path("data/tts")
+        for tts in tts_dir.glob(f"{video_id}_*"):
+            tts.unlink()
+
         # Remove from index
         del self.video_index[video_id]
         logger.info(f"Deleted video {video_id} and all associated files")
@@ -202,13 +207,14 @@ class TaskManager:
 
         try:
             while True:
-                event = await asyncio.wait_for(queue.get(), timeout=60.0)
-                yield event
-                if event["event"] in ("complete", "error"):
-                    break
-        except asyncio.TimeoutError:
-            # Send keepalive, then stop
-            yield {"event": "keepalive", "data": {}}
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    yield event
+                    if event["event"] in ("complete", "error"):
+                        break
+                except asyncio.TimeoutError:
+                    # Send keepalive to prevent connection drop, continue waiting
+                    yield {"event": "keepalive", "data": {}}
         finally:
             self._subscribers.get(task_id, []).remove(queue) if queue in self._subscribers.get(
                 task_id, []
@@ -549,7 +555,9 @@ class TaskManager:
             # Generate full track
             tts_dir = Path("data/tts")
             tts_dir.mkdir(parents=True, exist_ok=True)
-            output_path = tts_dir / f"{video_id}_{language}.wav"
+            # Include provider and profile in filename to keep multiple dubs
+            safe_profile = voice_profile_name.replace("/", "-").replace(" ", "-")
+            output_path = tts_dir / f"{video_id}_{language}_{provider_name}_{safe_profile}.wav"
 
             assembler = TTSAssembler()
             await assembler.generate_full_track(

@@ -123,7 +123,7 @@ function SettingsPage() {
 
   return (
     <div className="flex flex-col h-full bg-surface">
-      <TopBar title="VideoPrecision" showSearch={true} searchPlaceholder="Search settings..." />
+      <TopBar breadcrumb="Settings" />
 
       {/* Settings Workspace */}
       <div className="flex flex-1 overflow-hidden">

@@ -212,13 +212,16 @@ export function postPipeline(
   url: string,
   translateProfile?: string,
   sourceLanguage: string = 'zh',
+  translationOverride?: { backend: string; model: string; api_key?: string; base_url?: string },
 ): Promise<TaskResponse> {
-  return request('/pipeline', {
+  return request('/pipeline/full', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       url,
+      platforms: ['youtube', 'tiktok'],
       translate_profile: translateProfile ?? null,
+      translation_override: translationOverride ?? null,
       source_language: sourceLanguage,
     }),
   });
@@ -293,8 +296,22 @@ export async function deleteTTSProfile(name: string): Promise<void> {
   await fetch(`${BASE}/tts/profiles/${encodeURIComponent(name)}`, { method: 'DELETE' });
 }
 
-export function getTTSAudioUrl(videoId: string, language: string): string {
-  return `${BASE}/videos/${videoId}/tts/${language}`;
+export function getTTSAudioUrl(videoId: string, language: string, filename?: string): string {
+  const base = `${BASE}/videos/${videoId}/tts/${language}`;
+  return filename ? `${base}?file=${encodeURIComponent(filename)}` : base;
+}
+
+export interface TTSAudioEntry {
+  filename: string;
+  language: string;
+  provider: string;
+  profile: string;
+  size: number;
+  created_at: number;
+}
+
+export async function getTTSList(videoId: string): Promise<TTSAudioEntry[]> {
+  return request(`/videos/${videoId}/tts`);
 }
 
 export async function postTTSPreview(

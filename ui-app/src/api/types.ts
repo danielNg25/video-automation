@@ -166,7 +166,12 @@ export interface PipelineHistoryEntry {
   video_id: string;
   url: string;
   status: string;
+  current_stage: string;
+  progress: number;
+  message: string;
   completed_stages: string[];
+  stage_results: Record<string, Record<string, unknown>>;
+  timestamps: Record<string, string>;
   platforms: string[];
   error: string | null;
   created_at: string;

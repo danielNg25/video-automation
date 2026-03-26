@@ -30,6 +30,9 @@ class PipelineState:
     video_id: str
     url: str = ""
     status: str = "pending"  # pending|downloading|transcribing|processing|uploading|done|failed
+    current_stage: str = ""  # current pipeline stage name
+    progress: float = 0.0  # 0.0–1.0
+    message: str = ""  # human-readable progress message
     completed_stages: list[str] = field(default_factory=list)
     stage_results: dict = field(default_factory=dict)
     timestamps: dict = field(default_factory=dict)
@@ -65,6 +68,13 @@ class PipelineState:
             f.write(data)
             fcntl.flock(f, fcntl.LOCK_UN)
 
+    def update_progress(self, stage: str, progress: float, message: str) -> None:
+        """Update current progress and persist to disk (called frequently during execution)."""
+        self.current_stage = stage
+        self.progress = progress
+        self.message = message
+        self.save()
+
     def mark_stage_complete(self, stage: str, result: dict | None = None) -> None:
         """Mark a stage as complete and save."""
         if stage not in self.completed_stages:
@@ -92,11 +102,14 @@ class PipelineState:
         """Mark pipeline as failed with error message."""
         self.status = "failed"
         self.error = error
+        self.message = f"Failed: {error[:100]}"
         self.save()
 
     def mark_done(self) -> None:
         """Mark pipeline as successfully completed."""
         self.status = "done"
+        self.progress = 1.0
+        self.message = "Pipeline complete"
         self.error = None
         self.save()
 
@@ -207,3 +220,73 @@ def get_all_states() -> list[dict]:
     # Sort by updated_at descending
     states.sort(key=lambda s: s.get("updated_at", ""), reverse=True)
     return states
+
+
+# ---------- Pipeline Run Log ----------
+
+RUNS_PATH = LOGS_DIR / "pipeline_runs.json"
+
+
+def _load_runs() -> list[dict]:
+    if RUNS_PATH.exists():
+        try:
+            with open(RUNS_PATH) as f:
+                fcntl.flock(f, fcntl.LOCK_SH)
+                data = json.load(f)
+                fcntl.flock(f, fcntl.LOCK_UN)
+            return data
+        except (json.JSONDecodeError, OSError):
+            return []
+    return []
+
+
+def _save_runs(runs: list[dict]) -> None:
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    with open(RUNS_PATH, "w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        json.dump(runs, f, ensure_ascii=False, indent=2)
+        fcntl.flock(f, fcntl.LOCK_UN)
+
+
+def create_pipeline_run(
+    run_id: str,
+    mode: str,
+    urls: list[str],
+    platforms: list[str],
+    video_ids: list[str] | None = None,
+) -> dict:
+    """Create and persist a new pipeline run entry."""
+    run = {
+        "run_id": run_id,
+        "mode": mode,  # "single" or "batch"
+        "urls": urls,
+        "platforms": platforms,
+        "video_ids": video_ids or [],
+        "status": "running",
+        "succeeded": 0,
+        "failed": 0,
+        "errors": [],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    runs = _load_runs()
+    runs.insert(0, run)
+    _save_runs(runs)
+    return run
+
+
+def update_pipeline_run(run_id: str, updates: dict) -> None:
+    """Update a pipeline run entry by run_id."""
+    runs = _load_runs()
+    for run in runs:
+        if run["run_id"] == run_id:
+            run.update(updates)
+            run["updated_at"] = datetime.now(timezone.utc).isoformat()
+            break
+    _save_runs(runs)
+
+
+def get_pipeline_runs(limit: int = 50) -> list[dict]:
+    """Get pipeline runs, most recent first."""
+    runs = _load_runs()
+    return runs[:limit]

@@ -211,6 +211,10 @@ class LLMTranslator:
             return await self._call_anthropic(system, user)
         elif self.backend == "openai":
             return await self._call_openai(system, user)
+        elif self.backend == "deepseek":
+            if not self.base_url:
+                self.base_url = "https://api.deepseek.com"
+            return await self._call_openai(system, user)
         elif self.backend == "local":
             return await self._call_local(system, user)
         else:
