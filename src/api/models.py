@@ -94,6 +94,14 @@ class ProcessRequest(BaseModel):
     tts_mix_settings: dict[str, dict] | None = None  # {platform: {original_volume, tts_volume}}
 
 
+class ExportRequest(BaseModel):
+    subtitle_language: str | None = None  # which SRT to burn, None = no subs
+    tts_file: str | None = None  # specific TTS filename to mix in
+    video_volume: float = 1.0  # 0.0-2.0
+    tts_volume: float = 1.0  # 0.0-2.0
+    resolution: str = "1080x1920"
+
+
 class SaveSrtRequest(BaseModel):
     language: str
     segments: list[SubtitleSegment]

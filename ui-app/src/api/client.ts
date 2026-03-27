@@ -379,6 +379,51 @@ export function testCookie(): Promise<CookieTestResult> {
   return request('/settings/cookie/test', { method: 'POST' });
 }
 
+export function postExport(
+  videoId: string,
+  subtitleLanguage: string | null,
+  ttsFile: string | null,
+  videoVolume: number,
+  ttsVolume: number,
+): Promise<TaskResponse> {
+  return request(`/videos/${videoId}/export`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      subtitle_language: subtitleLanguage,
+      tts_file: ttsFile,
+      video_volume: videoVolume,
+      tts_volume: ttsVolume,
+    }),
+  });
+}
+
+export function postExportPreview(
+  videoId: string,
+  subtitleLanguage: string | null,
+  ttsFile: string | null,
+  videoVolume: number,
+  ttsVolume: number,
+): Promise<Blob> {
+  return fetch(`${BASE}/videos/${videoId}/export/preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      subtitle_language: subtitleLanguage,
+      tts_file: ttsFile,
+      video_volume: videoVolume,
+      tts_volume: ttsVolume,
+    }),
+  }).then(r => {
+    if (!r.ok) throw new Error('Preview failed');
+    return r.blob();
+  });
+}
+
+export function getExportedVideoUrl(videoId: string): string {
+  return `${BASE}/videos/${videoId}/export`;
+}
+
 export function subscribeSSE(
   taskId: string,
   onEvent: (eventType: string, data: Record<string, unknown>) => void,
