@@ -383,7 +383,7 @@ function SubtitleEditorPage() {
         <div className="flex items-center justify-between px-6 py-3 border-b border-outline-variant/10">
           <div className="flex items-center gap-3">
             <button
-              onClick={() => navigate('/download')}
+              onClick={() => navigate(`/videos/${videoId}`)}
               className="text-on-surface-variant hover:text-on-surface transition-colors"
             >
               <span className="material-symbols-outlined text-lg">arrow_back</span>

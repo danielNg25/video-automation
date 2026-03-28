@@ -247,6 +247,20 @@ class FFmpegProcessor:
         s = s.replace("'", "'\\\\\\''")
         return s
 
+    @staticmethod
+    def _escape_filter_chain_value(s: str) -> str:
+        """Escape special chars for use inside an ffmpeg filter option in a chained -vf.
+
+        When filters are chained with commas (scale=...,subtitles=...),
+        commas/semicolons/brackets inside option values must be escaped.
+        """
+        s = s.replace("\\", "\\\\")
+        s = s.replace(",", "\\,")
+        s = s.replace(";", "\\;")
+        s = s.replace("[", "\\[")
+        s = s.replace("]", "\\]")
+        return s
+
     def burn_subtitles(
         self,
         video_path: Path,
@@ -422,7 +436,8 @@ class FFmpegProcessor:
 
         if style:
             style_str = self._build_style_string(style)
-            sub_filter = f"subtitles='{escaped_sub}':force_style='{style_str}'"
+            escaped_style = self._escape_filter_chain_value(style_str)
+            sub_filter = f"subtitles='{escaped_sub}':force_style='{escaped_style}'"
         else:
             sub_filter = f"subtitles='{escaped_sub}'"
 
@@ -564,7 +579,8 @@ class FFmpegProcessor:
 
         if style:
             style_str = self._build_style_string(style)
-            sub_filter = f"subtitles='{escaped_sub}':force_style='{style_str}'"
+            escaped_style = self._escape_filter_chain_value(style_str)
+            sub_filter = f"subtitles='{escaped_sub}':force_style='{escaped_style}'"
         else:
             sub_filter = f"subtitles='{escaped_sub}'"
 

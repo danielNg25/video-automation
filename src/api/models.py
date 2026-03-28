@@ -48,6 +48,43 @@ class PipelineRequest(BaseModel):
     source_language: str = "zh"
 
 
+class FullPipelineRequest(BaseModel):
+    url: str
+    platforms: list[str] = ["youtube", "tiktok"]
+    auto_upload: bool = False
+    translate_profile: str | None = None
+    translation_override: dict | None = None  # {backend, model, api_key, base_url}
+    source_language: str = "zh"
+    force: bool = False
+    metadata: dict | None = None
+
+
+class BatchPipelineRequest(BaseModel):
+    urls: list[str]
+    platforms: list[str] = ["youtube", "tiktok"]
+    concurrency: int = 3
+    translate_profile: str | None = None
+    translation_override: dict | None = None  # {backend, model, api_key, base_url}
+    source_language: str = "zh"
+    force: bool = False
+
+
+class PipelineHistoryEntry(BaseModel):
+    video_id: str
+    url: str = ""
+    status: str = "unknown"
+    current_stage: str = ""
+    progress: float = 0.0
+    message: str = ""
+    completed_stages: list[str] = []
+    stage_results: dict = {}
+    timestamps: dict = {}
+    platforms: list[str] = []
+    error: str | None = None
+    created_at: str = ""
+    updated_at: str = ""
+
+
 class ProcessRequest(BaseModel):
     video_id: str
     platforms: list[str]
@@ -55,6 +92,14 @@ class ProcessRequest(BaseModel):
     subtitle_language_overrides: dict[str, str] | None = None  # {platform: lang_code}
     enable_tts: bool = False
     tts_mix_settings: dict[str, dict] | None = None  # {platform: {original_volume, tts_volume}}
+
+
+class ExportRequest(BaseModel):
+    subtitle_language: str | None = None  # which SRT to burn, None = no subs
+    tts_file: str | None = None  # specific TTS filename to mix in
+    video_volume: float = 1.0  # 0.0-2.0
+    tts_volume: float = 1.0  # 0.0-2.0
+    resolution: str = "1080x1920"
 
 
 class SaveSrtRequest(BaseModel):

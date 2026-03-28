@@ -1,13 +1,16 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
-import { postDownload, getVideos, getVideo, subscribeSSE, deleteVideo, getProfiles, postPipeline, getTTSProviders, getTTSProfiles } from '../api/client';
+import { postDownload, getVideos, subscribeSSE, deleteVideo, getProfiles, postPipeline, getTTSProviders, getTTSProfiles } from '../api/client';
 import type { VideoMetadata, TranslationProfileSummary, TTSProviderInfo, VoiceProfileConfig } from '../api/types';
 import { loadApiKeys, loadLLMPrefs, saveLLMPrefs } from '../utils/storage';
 
+const PIPELINE_TASK_KEY = 'pipeline_active_task';
+const POLL_INTERVAL = 2000; // 2 seconds
+
 function PipelinePage() {
   const navigate = useNavigate();
-  const [url, setUrl] = useState('');
+  const [urlInput, setUrlInput] = useState('');
   const [allVideos, setAllVideos] = useState<VideoMetadata[]>([]);
   const [error, setError] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -20,6 +23,10 @@ function PipelinePage() {
   const [pipelineStage, setPipelineStage] = useState('');
   const [pipelineProgress, setPipelineProgress] = useState(0);
   const [pipelineMessage, setPipelineMessage] = useState('');
+
+  // Batch state
+  const [batchConcurrency, setBatchConcurrency] = useState(3);
+  const [batchResults, setBatchResults] = useState<{ completed: number; total: number } | null>(null);
 
   // Pipeline config
   const [profiles, setProfiles] = useState<TranslationProfileSummary[]>([]);
@@ -45,22 +52,138 @@ function PipelinePage() {
     setLlmApiKey(keyMap[llmBackend] || '');
   }, [llmBackend]);
 
+  // Parse URLs from input
+  const parsedUrls = urlInput.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+  const isBatchMode = parsedUrls.length > 1;
+  const url = parsedUrls[0] || '';
+
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const clearActiveTask = () => sessionStorage.removeItem(PIPELINE_TASK_KEY);
+  const saveActiveTask = (taskId: string, mode: 'single' | 'batch') => {
+    sessionStorage.setItem(PIPELINE_TASK_KEY, JSON.stringify({ taskId, mode }));
+  };
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+  }, []);
+
   const loadVideos = useCallback(async () => {
     try { setAllVideos((await getVideos()).videos); } catch { /* */ }
   }, []);
+
+  // Poll pipeline status endpoint
+  const startPolling = useCallback((taskId: string, mode: 'single' | 'batch') => {
+    stopPolling();
+
+    const poll = async () => {
+      try {
+        const r = await fetch(`/api/pipeline/${taskId}`);
+        if (!r.ok) { stopPolling(); clearActiveTask(); return; }
+        const d = await r.json();
+
+        if (mode === 'batch' && d.children) {
+          // Batch: aggregate children progress
+          const children = d.children as { video_id: string; status: string; current_stage: string; progress: number; message: string; error: string | null }[];
+          const done = children.filter(c => c.status === 'done' || c.status === 'failed').length;
+          const total = children.length;
+          const failed = children.filter(c => c.status === 'failed');
+          // Show the most advanced running child's stage, fall back to batch-level current_stage
+          const running = children.find(c => c.status !== 'done' && c.status !== 'failed' && c.current_stage);
+          const stage = running?.current_stage || (d.current_stage as string) || '';
+          if (stage) {
+            setPipelineStage(stage);
+          }
+          setBatchResults({ completed: done, total });
+
+          // Use average of all children's progress for smooth % updates
+          const avgProgress = children.length > 0
+            ? children.reduce((sum, c) => sum + (c.progress || 0), 0) / children.length
+            : 0;
+          setPipelineProgress(avgProgress * 100);
+
+          // Show all running children's messages, one per line
+          const runningChildren = children.filter(c => c.message && c.status !== 'done' && c.status !== 'failed');
+          const lines = runningChildren.map((c, i) => `#${i + 1} ${c.message}`);
+          setPipelineMessage(`[${done}/${total} done]\n${lines.join('\n') || 'Processing...'}`);
+
+          // Check if batch is done
+          if (d.status === 'completed' || d.status === 'failed') {
+            stopPolling(); setIsPipeline(false); setPipelineProgress(100);
+            if (failed.length > 0) {
+              const errMsgs = failed.map(c => `${c.video_id}: ${c.error || 'Unknown error'}`).join('\n');
+              setError(`${failed.length} of ${total} videos failed:\n${errMsgs}`);
+              setPipelineMessage(`Batch done: ${total - failed.length} succeeded, ${failed.length} failed`);
+            } else {
+              setPipelineMessage('Batch complete');
+            }
+            setBatchResults(null); setUrlInput(''); loadVideos(); clearActiveTask();
+          }
+        } else {
+          // Single: read stage/progress from state
+          setPipelineStage(d.current_stage || '');
+          setPipelineProgress((d.progress ?? 0) * 100);
+          setPipelineMessage(d.message || '');
+
+          if (d.status === 'completed') {
+            stopPolling(); setIsPipeline(false); setPipelineProgress(100); setPipelineMessage('Pipeline complete');
+            if (d.video_id) navigate(`/videos/${d.video_id}`);
+            loadVideos(); clearActiveTask();
+          } else if (d.status === 'failed') {
+            stopPolling(); setIsPipeline(false);
+            setError(d.error || 'Pipeline failed'); clearActiveTask();
+          }
+        }
+      } catch { /* network error, keep polling */ }
+    };
+
+    // Poll immediately then every POLL_INTERVAL
+    poll();
+    pollRef.current = setInterval(poll, POLL_INTERVAL);
+  }, [stopPolling, loadVideos, navigate]);
 
   useEffect(() => {
     loadVideos();
     getProfiles().then(p => { setProfiles(p); if (p.length > 0) setSelectedProfile(p[0].name); }).catch(() => {});
     getTTSProviders().then(setTtsProviders).catch(() => {});
     getTTSProfiles().then(setTtsProfiles).catch(() => {});
-  }, [loadVideos]);
+
+    // Reconnect to active pipeline task if one exists
+    const saved = sessionStorage.getItem(PIPELINE_TASK_KEY);
+    if (saved) {
+      try {
+        const { taskId, mode } = JSON.parse(saved) as { taskId: string; mode: 'single' | 'batch' };
+        fetch(`/api/pipeline/${taskId}`).then(r => {
+          if (!r.ok) { clearActiveTask(); return; }
+          return r.json();
+        }).then(task => {
+          if (!task) return;
+          if (task.status === 'running') {
+            setIsPipeline(true);
+            setPipelineStage(task.current_stage || '');
+            setPipelineProgress((task.progress ?? 0) * 100);
+            setPipelineMessage(task.message || 'Resuming...');
+            startPolling(taskId, mode);
+          } else if (task.status === 'completed') {
+            clearActiveTask();
+          } else if (task.status === 'failed') {
+            clearActiveTask();
+            if (task.error) setError(task.error);
+          } else {
+            clearActiveTask();
+          }
+        }).catch(() => clearActiveTask());
+      } catch { clearActiveTask(); }
+    }
+
+    return () => { stopPolling(); };
+  }, [loadVideos, startPolling, stopPolling]);
 
   const handleDownload = async () => {
-    if (!url.trim()) return;
+    if (!url) return;
     setError(''); setIsDownloading(true); setDownloadProgress(0); setDownloadMessage('Starting download...');
     try {
-      const { task_id } = await postDownload(url.trim());
+      const { task_id } = await postDownload(url);
       const es = subscribeSSE(task_id, (eventType, data) => {
         if (eventType === 'progress') { setDownloadProgress((data.progress as number) * 100); setDownloadMessage(data.message as string); }
         else if (eventType === 'complete') {
@@ -74,20 +197,41 @@ function PipelinePage() {
   };
 
   const handlePipeline = async () => {
-    if (!url.trim()) return;
+    if (parsedUrls.length === 0) return;
+
+    // Batch mode
+    if (isBatchMode) {
+      setError(''); setIsPipeline(true); setPipelineStage('download'); setPipelineProgress(0);
+      setPipelineMessage(`Starting batch: ${parsedUrls.length} videos...`);
+      setBatchResults({ completed: 0, total: parsedUrls.length });
+      try {
+        const res = await fetch('/api/pipeline/batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            urls: parsedUrls,
+            platforms: ['youtube', 'tiktok'],
+            concurrency: batchConcurrency,
+            translate_profile: selectedProfile || null,
+            translation_override: selectedProfile ? { backend: llmBackend, model: llmModel, api_key: llmApiKey || undefined } : null,
+          }),
+        });
+        const data = await res.json();
+        if (data.batch_id) {
+          saveActiveTask(data.batch_id, 'batch');
+          startPolling(data.batch_id, 'batch');
+        }
+      } catch (e) { setIsPipeline(false); setBatchResults(null); setError(e instanceof Error ? e.message : 'Batch failed'); }
+      return;
+    }
+
+    // Single URL mode
     setError(''); setIsPipeline(true); setPipelineStage('download'); setPipelineProgress(0); setPipelineMessage('Starting download...');
     try {
-      const { task_id } = await postPipeline(url.trim(), selectedProfile || undefined);
-      const es = subscribeSSE(task_id, (eventType, data) => {
-        if (eventType === 'progress') {
-          setPipelineStage((data.stage as string) || ''); setPipelineProgress((data.progress as number) * 100); setPipelineMessage(data.message as string);
-        } else if (eventType === 'complete') {
-          setIsPipeline(false); setPipelineProgress(100); setPipelineMessage('Pipeline complete');
-          const videoId = (data as Record<string, unknown>).video_id as string;
-          if (videoId) navigate(`/videos/${videoId}`);
-          loadVideos(); es.close();
-        } else if (eventType === 'error') { setIsPipeline(false); setError(data.message as string); es.close(); }
-      });
+      const translationOverride = selectedProfile ? { backend: llmBackend, model: llmModel, api_key: llmApiKey || undefined } : undefined;
+      const { task_id } = await postPipeline(url, selectedProfile || undefined, 'zh', translationOverride);
+      saveActiveTask(task_id, 'single');
+      startPolling(task_id, 'single');
     } catch (e) { setIsPipeline(false); setError(e instanceof Error ? e.message : 'Pipeline failed'); }
   };
 
@@ -103,15 +247,35 @@ function PipelinePage() {
   const toggleStep = (n: number) => setExpandedStep(prev => prev === n ? null : n);
 
   // Step state derivation during pipeline execution
-  const stageOrder = ['download', 'transcribe', ...(selectedProfile ? ['translate'] : [])];
-  const getStepState = (key: string) => {
+  // All backend stages in order. Steps map to: download→download, transcribe→transcribe,
+  // translate→translate, tts→tts, process/upload are post-TTS (all steps done).
+  const allStages = ['download', 'transcribe', 'translate', 'tts', 'process', 'upload'];
+  const stepStages: Record<string, string[]> = {
+    download: ['download'],
+    transcribe: ['transcribe'],
+    translate: ['translate'],
+    tts: ['tts', 'process', 'upload'],  // tts is running, process/upload mean tts is done
+  };
+
+  const getStepState = (key: string): 'config' | 'running' | 'done' | 'pending' => {
     if (isDownloading && key === 'download') return 'running';
     if (!isPipeline) return 'config';
-    const currentIdx = stageOrder.indexOf(pipelineStage);
-    const stepIdx = stageOrder.indexOf(key);
-    if (pipelineStage === key) return 'running';
     if (pipelineProgress >= 100) return 'done';
-    if (stepIdx < currentIdx) return 'done';
+
+    const currentIdx = allStages.indexOf(pipelineStage);
+    if (currentIdx === -1) return 'pending';
+
+    // The last stage this step "owns"
+    const ownedStages = stepStages[key] || [key];
+    const lastOwnedIdx = Math.max(...ownedStages.map(s => allStages.indexOf(s)));
+    const firstOwnedIdx = Math.min(...ownedStages.map(s => allStages.indexOf(s)));
+
+    if (currentIdx > lastOwnedIdx) return 'done';
+    if (currentIdx >= firstOwnedIdx && currentIdx <= lastOwnedIdx) {
+      // For TTS step: 'tts' stage means running, 'process'/'upload' means done
+      if (key === 'tts' && (pipelineStage === 'process' || pipelineStage === 'upload')) return 'done';
+      return 'running';
+    }
     return 'pending';
   };
 
@@ -133,37 +297,82 @@ function PipelinePage() {
       <TopBar breadcrumb="Pipeline" />
 
       <section className="flex-1 overflow-y-auto p-6 space-y-6">
-        {/* URL Input + Buttons */}
+        {/* URL Input — supports single or multiple URLs */}
         <div className="bg-surface-container-low rounded-xl shadow-sm overflow-hidden">
-          <div className="flex items-center bg-surface-container-lowest p-3 rounded-lg gap-3 focus-within:ring-1 focus-within:ring-primary/40 transition-shadow">
-            <div className="pl-2 text-on-surface-variant">
-              <span className="material-symbols-outlined text-xl">link</span>
+          <div className="p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-lg">link</span>
+                <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">
+                  {isBatchMode ? `${parsedUrls.length} URLs` : 'Source URL'}
+                </span>
+              </div>
+              {isBatchMode && (
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-mono text-zinc-500 uppercase">Concurrency</span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="range" min={1} max={5} value={batchConcurrency}
+                      onChange={(e) => setBatchConcurrency(Number(e.target.value))}
+                      className="w-20 accent-primary h-1 bg-surface-container-highest rounded-lg appearance-none cursor-pointer"
+                    />
+                    <span className="text-xs font-mono text-primary w-4 text-center">{batchConcurrency}</span>
+                  </div>
+                </div>
+              )}
             </div>
-            <input
-              className="flex-1 bg-transparent border-none focus:ring-0 text-on-surface placeholder:text-zinc-600 text-sm py-3"
-              placeholder="Paste Douyin share link or URL"
-              type="text" value={url} onChange={(e) => setUrl(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handlePipeline()}
+
+            <textarea
+              className="w-full bg-surface-container-lowest border-none rounded-lg px-4 py-3 text-sm text-on-surface placeholder:text-zinc-600 focus:ring-1 focus:ring-primary/40 resize-none font-mono"
+              placeholder={"Paste Douyin URLs — one per line for batch processing\nhttps://v.douyin.com/xxx\nhttps://v.douyin.com/yyy"}
+              rows={isBatchMode ? 4 : 2}
+              value={urlInput}
+              onChange={(e) => setUrlInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey && !isBatchMode) {
+                  e.preventDefault();
+                  handlePipeline();
+                }
+              }}
             />
-            <button onClick={handlePipeline} disabled={isDownloading || isPipeline || !url.trim()}
-              className="bg-primary text-on-primary-fixed px-8 py-3 rounded-lg font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:brightness-110 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-              <span className="material-symbols-outlined text-sm">rocket_launch</span>
-              <span>{isPipeline ? 'Running...' : 'Run Pipeline'}</span>
-            </button>
-            <button onClick={handleDownload} disabled={isDownloading || isPipeline || !url.trim()}
-              className="bg-surface-container-highest text-on-surface px-5 py-3 rounded-lg font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:bg-surface-container-high active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-              <span className="material-symbols-outlined text-sm">download</span>
-              <span>{isDownloading ? 'Downloading...' : 'Download Only'}</span>
-            </button>
+
+            {/* Batch progress */}
+            {batchResults && (
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-[10px] font-mono">
+                  <span className="text-primary">Processing {batchResults.completed}/{batchResults.total} videos...</span>
+                  <span className="text-zinc-500">{Math.round((batchResults.completed / batchResults.total) * 100)}%</span>
+                </div>
+                <div className="w-full h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
+                  <div className="h-full bg-primary transition-all duration-300"
+                    style={{ width: `${(batchResults.completed / batchResults.total) * 100}%` }} />
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <button onClick={handlePipeline} disabled={isDownloading || isPipeline || parsedUrls.length === 0}
+                className="bg-primary text-on-primary-fixed px-8 py-3 rounded-lg font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:brightness-110 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                <span className="material-symbols-outlined text-sm">{isBatchMode ? 'playlist_play' : 'rocket_launch'}</span>
+                <span>{isPipeline ? 'Running...' : isBatchMode ? `Process ${parsedUrls.length} Videos` : 'Run Pipeline'}</span>
+              </button>
+              {!isBatchMode && (
+                <button onClick={handleDownload} disabled={isDownloading || isPipeline || !url}
+                  className="bg-surface-container-highest text-on-surface px-5 py-3 rounded-lg font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:bg-surface-container-high active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                  <span className="material-symbols-outlined text-sm">download</span>
+                  <span>{isDownloading ? 'Downloading...' : 'Download Only'}</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Error Banner */}
         {error && (
-          <div className="bg-error/10 border border-error/30 text-error text-xs p-3 rounded-lg flex items-center gap-2">
-            <span className="material-symbols-outlined text-sm">error</span>
-            {error}
-            <button onClick={() => setError('')} className="ml-auto"><span className="material-symbols-outlined text-sm">close</span></button>
+          <div className="bg-error/10 border border-error/30 text-error text-xs p-3 rounded-lg flex items-start gap-2 whitespace-pre-line">
+            <span className="material-symbols-outlined text-sm mt-0.5">error</span>
+            <span className="flex-1">{error}</span>
+            <button onClick={() => setError('')} className="shrink-0"><span className="material-symbols-outlined text-sm">close</span></button>
           </div>
         )}
 
@@ -227,9 +436,9 @@ function PipelinePage() {
                         </span>
                         {isSkipped && <span className="text-[9px] font-mono uppercase text-zinc-600 bg-zinc-800 px-1.5 py-0.5 rounded">skipped</span>}
                       </div>
-                      {!isExpanded && (
+                      {!isExpanded && !isRunning && (
                         <p className="text-xs text-on-surface-variant mt-0.5 truncate">
-                          {isRunning ? pipelineMessage : step.summary}
+                          {step.summary}
                         </p>
                       )}
                     </div>
@@ -247,7 +456,7 @@ function PipelinePage() {
                         <div className="bg-primary h-full transition-all duration-500 shadow-[0_0_8px_rgba(208,188,255,0.4)]"
                           style={{ width: `${step.key === 'download' && isDownloading ? downloadProgress : pipelineProgress}%` }} />
                       </div>
-                      <p className="text-[10px] font-mono text-on-surface-variant">{pipelineMessage}</p>
+                      <p className="text-[10px] font-mono text-on-surface-variant whitespace-pre-line">{pipelineMessage}</p>
                     </div>
                   )}
 

@@ -7,6 +7,60 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Retry utility (`src/utils/retry.py`): `retry` and `async_retry` decorators with exponential backoff, jitter, and configurable retryable exceptions
+- State persistence (`src/utils/state.py`): `PipelineState` class with per-video JSON state files, stage tracking, crash recovery via `get_resume_stage()`
+- Duplicate detection (`src/utils/state.py`): `is_duplicate()` and `register_processed()` with URL normalization, file-locked `processed_videos.json` registry
+- Pipeline orchestrator (`src/pipeline.py`): `Pipeline` class with `process_single()` and `process_batch()`, crash recovery, duplicate detection, signal handling, concurrency control
+- Metadata mapper (`src/utils/metadata.py`): `map_metadata()` with per-platform formatting (YouTube #Shorts, TikTok hashtags in description, X 280-char truncation)
+- Per-video logging (`src/utils/logger.py`): `get_video_logger()` for per-video log files, structured JSON fields (video_id, stage, duration_ms, extra)
+- CLI interface (`src/cli.py`): Click commands — process, download, transcribe, upload, batch, status, server — with Rich formatted output
+- Module entry point (`src/__main__.py`): enables `python -m src` execution
+- Pipeline API router: `POST /api/pipeline/full` (full pipeline), `POST /api/pipeline/batch` (batch with concurrency), `GET /api/pipeline/history` (filterable), `POST /api/pipeline/{task_id}/retry`, `GET /api/dashboard/stats`
+- API models: `FullPipelineRequest`, `BatchPipelineRequest`, `PipelineHistoryEntry`
+- Config API: `GET /api/config` (secrets redacted), `PUT /api/config` (deep merge, skips redacted '***' values), `GET /api/config/platforms`
+- Dashboard page upgrade: live pipeline table from history API, functional batch processing with concurrency slider and progress bar, platform checkboxes, expandable row details, real activity feed from pipeline history
+- Settings page upgrade: Pipeline section wired to config API (data dir, max concurrent, retry attempts, retry delay, skip existing) — values persist on save/reload
+- React Router navigation verified: all routes active with NavLink highlighting, lazy loading, browser back/forward support
+- Integration tests (`tests/test_pipeline.py`): 32 tests covering retry decorator, state persistence, duplicate detection, metadata mapper, pipeline orchestrator (with mocks), CLI argument parsing, structured logging
+- README finalized: updated architecture diagram, tech stack, project structure to reflect all phases
+- Video list page (`ui-app/src/pages/VideoList.tsx`): grid view of all videos with thumbnails, status badges, language tags, search, filter, delete, and navigation to Video Studio
+- `/videos` route in React Router for Video Studio sidebar link
+
+- Video export API: `POST /api/videos/{id}/export` (full export with SSE progress), `POST /api/videos/{id}/export/preview` (5-second preview clip), `GET /api/videos/{id}/export` (serve exported file)
+- Export UI on Video Studio: subtitle language selector, dub audio selector from generated TTS files, separate video/dub volume sliders (0-200%), preview player, export with progress bar and download link
+- Multiple TTS dubs per video: files saved as `{id}_{lang}_{provider}_{profile}.wav` instead of overwriting
+- TTS audio list API: `GET /api/videos/{id}/tts` lists all generated dubs with metadata
+- TTS audio library panel on Video Studio: browse/play all generated dubs with provider, profile, size, and relative time
+- Pipeline run persistence: `data/logs/pipeline_runs.json` tracks batch and single runs across server restarts
+- Pipeline runs API: `GET /api/pipeline/runs` with stale run detection (interrupted runs auto-marked)
+- Dashboard pipeline table: shows runs (batch/single) with expandable child videos, replaces per-video history
+- Pipeline polling: frontend polls `GET /api/pipeline/{task_id}` instead of SSE for progress, survives page navigation and refresh
+- OCR frame-level progress wired to pipeline: "Running OCR on frame 42/362..." visible on Pipeline page during transcription
+- Translation batch progress wired to pipeline: "Translating batch 4/7..." visible during translation stage
+- DeepSeek LLM backend support for translation
+- LLM backend/model/API key passed from Pipeline UI to translation backend (previously ignored, defaulted to Anthropic)
+- TTS volume boost: `loudnorm` normalization to -16 LUFS after `amix` volume compensation
+
+### Changed
+- Pipeline page URL input replaced with multi-URL textarea: paste multiple URLs (one per line) for batch processing with concurrency slider, or single URL for normal pipeline — auto-detects mode
+- Single URL pipeline now uses `POST /api/pipeline/full` (same as batch children) instead of old `POST /api/pipeline`
+- Dashboard: removed Success Rate card, Quick Process, and Batch Process sections (duplicated Pipeline page); pipeline table now full-width
+- Upload page: replaced fake/hardcoded content with "Coming Soon" placeholder
+- UI cleanup: removed non-functional bell/help/avatar from TopBar, "New Project" button and "Documentation" link from Sidebar, "VideoPrecision" branding replaced with "Douyin Auto"
+- SSE keepalive: now loops with 30s timeout instead of disconnecting after one timeout
+
+### Fixed
+- Video Studio sidebar link (`/videos`) now renders a video list page instead of blank page
+- Batch Process card on Dashboard highlighted with border accent and icon for better visibility
+- Pipeline SIGINT handler now raises KeyboardInterrupt to break out of blocking calls immediately; second Ctrl+C force-exits
+- Pipeline stepper stage tracking: `current_stage` now stored on in-memory Task object, available before video_id is resolved
+- Batch children progress: uses average of children's progress for smooth % updates, shows per-child OCR frame messages
+- `PipelineState.mark_done()` now sets `progress=1.0` so completed pipelines show 100%
+- Subtitle editor back button navigates to Video Studio (`/videos/{id}`) instead of Pipeline page
+- TTS audio persists across page refresh (detected via list API on mount)
+- Video delete now cleans up TTS audio files
+- ffmpeg subtitle filter quoting: commas in `force_style` escaped for chained `-vf` filters
+- Dashboard Activity Feed: fixed crash from referencing removed `history` variable
 - TTS base class (`src/tts/base.py`): `BaseTTSProvider` ABC with `synthesize()`, `list_voices()`, `synthesize_segments()` and text cleanup
 - Voice profiles config (`config/tts_voices.yaml`): per-platform voice/volume settings with Edge TTS defaults
 - TTS infra: `edge-tts` dependency, `data/tts/` gitignore and data dir, TTS config section in `config.example.yaml`

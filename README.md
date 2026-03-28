@@ -5,17 +5,18 @@ Automated pipeline to download videos from Douyin, generate AI subtitles (Chines
 ## Architecture
 
 ```
-┌──────────────┐    ┌───────────────┐    ┌──────────────┐    ┌────────────────┐
-│  1. Download │    │ 2. Transcribe │    │ 3. Process   │    │ 4. Upload      │
-│              │───▶│               │───▶│              │───▶│                │
-│  Douyin API  │    │ Whisper AI    │    │ ffmpeg burn  │    │ YT/TT/FB/X API │
-│  + yt-dlp    │    │ SRT generate  │    │ + reformat   │    │ (per-platform) │
-└──────────────┘    └───────────────┘    └──────────────┘    └────────────────┘
-       │                    │                    │                    │
-       ▼                    ▼                    ▼                    ▼
-   /data/raw/          /data/srt/          /data/output/        /data/logs/
-   {id}.mp4            {id}.srt            {id}_{platform}.mp4  {id}_state.json
+┌──────────┐   ┌───────────┐   ┌───────────┐   ┌─────┐   ┌─────────┐   ┌────────┐
+│ Download │──▶│Transcribe │──▶│ Translate  │──▶│ TTS │──▶│ Process │──▶│ Upload │
+│ Douyin + │   │ OCR/SRT   │   │ LLM       │   │ Dub │   │ ffmpeg  │   │ APIs   │
+│ yt-dlp   │   │ PaddleOCR │   │ Anthropic/ │   │     │   │ burn-in │   │        │
+└──────────┘   └───────────┘   │ OpenAI    │   └─────┘   │+reformat│   └────────┘
+     │              │          └───────────┘      │       └─────────┘       │
+     ▼              ▼               ▼             ▼            ▼            ▼
+ /data/raw/    /data/srt/     /data/srt/     /data/tts/  /data/output/  /data/logs/
+ {id}.mp4      {id}_zh.srt    {id}_vi.srt    {id}.wav    {id}_{plat}.mp4 {id}_state.json
 ```
+
+**Orchestration**: Pipeline state persisted to `data/logs/{id}_state.json` for crash recovery. Duplicate detection via `processed_videos.json`. Batch processing with configurable concurrency.
 
 ## Tech Stack
 
@@ -23,13 +24,18 @@ Automated pipeline to download videos from Douyin, generate AI subtitles (Chines
 | ------------- | ---------------------------------------------- |
 | Language      | Python 3.11+                                   |
 | Download      | Self-hosted Douyin API + yt-dlp fallback       |
-| Transcription | faster-whisper (Linux/CUDA), mlx-whisper (macOS) |
+| Transcription | PaddleOCR (subtitle extraction from video frames) |
 | Video Process | ffmpeg (subtitle burn-in + platform reformat)  |
 | YouTube       | YouTube Data API v3 (OAuth 2.0)                |
 | TikTok        | TikTok Content Posting API (OAuth 2.0 + PKCE)  |
 | Facebook      | Facebook Graph API (Page token)                |
 | X/Twitter     | X API v2 (OAuth 1.0a) — *stretch goal*         |
+| Translation   | Anthropic/OpenAI LLM (profile-guided)          |
+| TTS Dubbing   | Edge TTS (free), OpenAI, Google, ElevenLabs     |
 | CLI           | Click + Rich                                   |
+| Web UI        | React 19 + Tailwind CSS + Vite                 |
+| API           | FastAPI + SSE for real-time progress             |
+| Orchestration | Pipeline with state persistence + crash recovery |
 
 ## Prerequisites
 
@@ -133,6 +139,15 @@ python -m src status              # Show all recent
 python -m src status <video_id>   # Show specific video
 ```
 
+### Web UI
+
+```bash
+python -m src server              # Start API + web server at :8000
+cd ui-app && npm run dev          # Start React dev server at :5173
+```
+
+The web UI provides a Dashboard (pipeline monitoring, batch processing), Pipeline page (download + transcribe + translate + TTS), Video Studio (per-video workspace), Subtitle Editor, and Settings page.
+
 ## Project Structure
 
 ```
@@ -142,8 +157,9 @@ douyin-automation/
 │   ├── platforms.yaml           # Per-platform settings
 │   └── subtitle_styles.yaml    # Subtitle styling (ASS format)
 ├── src/
-│   ├── cli.py                  # CLI entry point (Click)
-│   ├── pipeline.py             # Pipeline orchestrator
+│   ├── __main__.py            # Module entry (python -m src)
+│   ├── cli.py                  # CLI entry point (Click + Rich)
+│   ├── pipeline.py             # Pipeline orchestrator (crash recovery + batch)
 │   ├── downloader/
 │   │   ├── douyin.py           # Douyin API client
 │   │   └── ytdlp.py           # yt-dlp fallback
@@ -160,11 +176,20 @@ douyin-automation/
 │   │   ├── tiktok.py          # TikTok Content Posting API
 │   │   ├── facebook.py        # Facebook Graph API
 │   │   └── x.py               # X/Twitter API v2
+│   ├── translator/
+│   │   ├── llm.py             # LLM translator (Anthropic/OpenAI)
+│   │   └── profiles.py        # Translation profile system
+│   ├── tts/
+│   │   ├── edge.py            # Edge TTS (free, default)
+│   │   ├── openai_tts.py      # OpenAI TTS
+│   │   ├── google_tts.py      # Google Cloud TTS
+│   │   ├── elevenlabs.py      # ElevenLabs TTS
+│   │   └── assembler.py       # Multi-segment TTS assembler
 │   └── utils/
 │       ├── config.py           # YAML config loader
-│       ├── logger.py           # Structured JSON logging
-│       ├── metadata.py         # Video metadata + platform mapping
-│       ├── retry.py            # Exponential backoff decorator
+│       ├── logger.py           # Structured JSON logging + per-video logs
+│       ├── metadata.py         # Video metadata + per-platform mapping
+│       ├── retry.py            # Exponential backoff decorator (tenacity)
 │       └── state.py            # Pipeline state + duplicate detection
 ├── data/
 │   ├── raw/                    # Downloaded original videos
@@ -366,21 +391,21 @@ douyin-automation/
 
 > Detailed plan: [`plans/phase5-orchestration-batch.md`](plans/phase5-orchestration-batch.md)
 
-- [ ] **5.1** Retry utility — `src/utils/retry.py`
-- [ ] **5.2** State persistence — `src/utils/state.py`
-- [ ] **5.3** Duplicate detection — `src/utils/state.py`
-- [ ] **5.4** Pipeline orchestrator — `src/pipeline.py`
-- [ ] **5.5** Metadata mapper — `src/utils/metadata.py`
-- [ ] **5.6** CLI interface — `src/cli.py`
-- [ ] **5.7** Structured logging — `src/utils/logger.py` (finalize)
-- [ ] **5.8** Module entry point — `src/__main__.py`
-- [ ] **5.9** README.md (finalize)
-- [ ] **5.10** Integration tests — `tests/test_pipeline.py`
-- [ ] **5.11** Pipeline router + service — `server/routers/pipeline.py`
-- [ ] **5.12** Config router — `server/routers/config.py`
-- [ ] **5.13** Dashboard page — `web/src/pages/DashboardPage.tsx`
-- [ ] **5.14** Settings page — `web/src/pages/SettingsPage.tsx`
-- [ ] **5.15** React Router — route-based navigation
+- [x] **5.1** Retry utility — `src/utils/retry.py`
+- [x] **5.2** State persistence — `src/utils/state.py`
+- [x] **5.3** Duplicate detection — `src/utils/state.py`
+- [x] **5.4** Pipeline orchestrator — `src/pipeline.py`
+- [x] **5.5** Metadata mapper — `src/utils/metadata.py`
+- [x] **5.6** CLI interface — `src/cli.py`
+- [x] **5.7** Structured logging — `src/utils/logger.py` (finalize)
+- [x] **5.8** Module entry point — `src/__main__.py`
+- [x] **5.9** README.md (finalize)
+- [x] **5.10** Integration tests — `tests/test_pipeline.py`
+- [x] **5.11** Pipeline router + service — `server/routers/pipeline.py`
+- [x] **5.12** Config router — `server/routers/config.py`
+- [x] **5.13** Dashboard page — `web/src/pages/DashboardPage.tsx`
+- [x] **5.14** Settings page — `web/src/pages/SettingsPage.tsx`
+- [x] **5.15** React Router — route-based navigation
 
 **Verification (CLI):**
 - [ ] V5.1 — `python -m src --help` displays all commands

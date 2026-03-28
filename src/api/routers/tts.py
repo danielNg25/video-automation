@@ -130,20 +130,70 @@ async def delete_profile(name: str):
     return {"status": "deleted", "name": name}
 
 
-@router.get("/api/videos/{video_id}/tts/{language}")
-async def get_tts_audio(video_id: str, language: str):
-    """Stream generated TTS audio file."""
+@router.get("/api/videos/{video_id}/tts")
+async def list_tts_audio(video_id: str):
+    """List all generated TTS audio files for a video."""
+    import os
+
     data_dir = get_data_dir()
-    audio_path = data_dir / "tts" / f"{video_id}_{language}.wav"
+    tts_dir = data_dir / "tts"
+    if not tts_dir.exists():
+        return []
+
+    results = []
+    for f in tts_dir.glob(f"{video_id}_*.wav"):
+        # Parse filename: {video_id}_{lang}_{provider}_{profile}.wav
+        # or legacy: {video_id}_{lang}.wav
+        stem = f.stem  # without .wav
+        parts = stem[len(video_id) + 1:]  # remove "{video_id}_"
+        segments = parts.split("_", 2)  # lang, provider, profile
+        language = segments[0] if len(segments) >= 1 else "unknown"
+        provider = segments[1] if len(segments) >= 2 else "unknown"
+        profile = segments[2] if len(segments) >= 3 else "default"
+
+        stat = f.stat()
+        results.append({
+            "filename": f.name,
+            "language": language,
+            "provider": provider,
+            "profile": profile,
+            "size": stat.st_size,
+            "created_at": os.path.getmtime(f),
+        })
+
+    # Sort by most recent first
+    results.sort(key=lambda r: r["created_at"], reverse=True)
+    return results
+
+
+@router.get("/api/videos/{video_id}/tts/{language}")
+async def get_tts_audio(video_id: str, language: str, file: str | None = None):
+    """Stream generated TTS audio file. Optionally specify exact filename."""
+    data_dir = get_data_dir()
+    tts_dir = data_dir / "tts"
+
+    if file:
+        # Serve specific file (prevent path traversal)
+        safe_file = Path(file).name
+        audio_path = tts_dir / safe_file
+    else:
+        # Serve most recent file matching video_id + language
+        matches = sorted(
+            tts_dir.glob(f"{video_id}_{language}*.wav"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        audio_path = matches[0] if matches else tts_dir / f"{video_id}_{language}.wav"
+
     if not audio_path.exists():
         raise HTTPException(
             status_code=404,
-            detail=f"TTS audio not found: {video_id}_{language}.wav",
+            detail=f"TTS audio not found for {video_id}/{language}",
         )
     return FileResponse(
         path=str(audio_path),
         media_type="audio/wav",
-        filename=f"{video_id}_{language}.wav",
+        filename=audio_path.name,
     )
 
 
