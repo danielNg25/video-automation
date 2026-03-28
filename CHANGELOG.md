@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Phase 6 plan: Subtitle replacement — blur original Chinese subs, auto-detect region from OCR, reposition translated subs to match original location/size
+- Renamed Phase 6 (uploads) → Phase 7 to accommodate new phase
 - TTS gap redistribution (`src/tts/assembler.py`): 3-phase timing pipeline — borrows unused gap time from adjacent segments, LLM-shortens text if ratio > 1.25x, hard-caps speedup at 1.5x with fade-out truncation
 - `LLMTranslator.shorten_text()` method for condensing subtitle text while preserving meaning
 - Retry utility (`src/utils/retry.py`): `retry` and `async_retry` decorators with exponential backoff, jitter, and configurable retryable exceptions
