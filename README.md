@@ -382,7 +382,7 @@ douyin-automation/
 - [ ] V4.5 — Audio mixing: dubbed video has correct volume levels
 - [ ] V4.6 — Per-platform voice: TikTok/FB get Vietnamese, YouTube/X get English
 - [ ] V4.7 — UI: enable TTS → select voice → preview → generate → process
-- [ ] V4.8 — Segment duration fitting: long TTS clips speed up to fit time window
+- [x] V4.8 — Segment duration fitting: long TTS clips speed up to fit time window
 - [x] V4.9 — Unit tests pass
 
 ---

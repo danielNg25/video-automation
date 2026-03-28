@@ -342,3 +342,37 @@ class LLMTranslator:
         )
 
         return output_path
+
+    async def shorten_text(self, text: str, target_ratio: float, language: str | None = None) -> str:
+        """Shorten text for TTS timing, preserving core meaning.
+
+        Args:
+            text: Original subtitle text.
+            target_ratio: Target length as fraction of original (e.g., 0.6 = 60%).
+            language: Optional language hint.
+
+        Returns:
+            Shortened text, or original if shortening fails.
+        """
+        target_pct = max(30, int(target_ratio * 100))
+        lang_hint = f" The text is in {language}." if language else ""
+
+        system = (
+            "You are a subtitle editor. Shorten subtitle text while preserving "
+            "the core meaning. Output must be natural speech for TTS."
+        )
+        user = (
+            f"Shorten the following text to approximately {target_pct}% of its length. "
+            f"Keep the core meaning. Return ONLY the shortened text, nothing else.{lang_hint}\n\n"
+            f"Original: {text}"
+        )
+
+        try:
+            result = await self._call_llm(system, user)
+            shortened = result.strip().split("\n")[0].strip()
+            if not shortened or len(shortened) >= len(text):
+                return text
+            return shortened
+        except Exception as e:
+            logger.warning(f"Text shortening failed: {e}")
+            return text

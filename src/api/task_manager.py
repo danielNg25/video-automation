@@ -559,7 +559,25 @@ class TaskManager:
             safe_profile = voice_profile_name.replace("/", "-").replace(" ", "-")
             output_path = tts_dir / f"{video_id}_{language}_{provider_name}_{safe_profile}.wav"
 
-            assembler = TTSAssembler()
+            # Build optional LLM translator for text shortening (Phase 2)
+            translator = None
+            try:
+                from src.utils.config import load_config
+                cfg = load_config()
+                trans_cfg = cfg.get("translation", {})
+                if trans_cfg.get("api_key") or trans_cfg.get("backend") == "local":
+                    from src.translator.llm import LLMTranslator
+                    translator = LLMTranslator(
+                        backend=trans_cfg.get("backend", "anthropic"),
+                        model=trans_cfg.get("model"),
+                        api_key=trans_cfg.get("api_key"),
+                        base_url=trans_cfg.get("base_url"),
+                        temperature=0.3,
+                    )
+            except Exception:
+                pass  # No translator available, Phase 2 skipped
+
+            assembler = TTSAssembler(translator=translator)
             await assembler.generate_full_track(
                 provider=tts_provider,
                 segments=segments,
