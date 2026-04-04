@@ -19,7 +19,8 @@ logger = setup_logger(__name__)
 # Warn if TTS clip needs to be sped up beyond this ratio
 MAX_SAFE_SPEED_RATIO = 2.5
 # Trigger LLM text shortening above this ratio
-SHORTENING_TRIGGER = 1.25
+# 1.5x speedup still sounds natural; only shorten above that
+SHORTENING_TRIGGER = 1.5
 # Borrow up to this fraction of neighbor's unused time
 GAP_BORROW_FRACTION = 0.80
 # Punctuation that signals end of a sentence
@@ -54,15 +55,16 @@ class SentenceGroup:
 async def _detect_sentence_boundaries_llm(
     segments: list[dict],
     llm_caller: Callable,
-) -> list[list[int]]:
-    """Ask LLM to group segment indices into complete sentences.
+) -> list[tuple[list[int], str]]:
+    """Ask LLM to group segment indices into complete sentences with proper punctuation.
 
     Args:
         segments: Non-empty subtitle segments with 'text' field.
         llm_caller: Async function(system, user, max_tokens) -> str.
 
     Returns:
-        List of groups, each group is a list of 0-based segment indices.
+        List of (group_indices, merged_text) tuples. merged_text has proper
+        punctuation added by the LLM for natural TTS speech.
     """
     numbered = []
     for i, seg in enumerate(segments):
@@ -71,50 +73,76 @@ async def _detect_sentence_boundaries_llm(
             numbered.append(f"{i + 1}. {text}")
 
     system = (
-        "You are a subtitle analyst. Group subtitle segments into complete sentences. "
-        "Each group should contain segment numbers that form ONE complete thought or sentence."
+        "You are a subtitle analyst preparing text for text-to-speech. "
+        "Group subtitle segments into complete sentences, then merge each group "
+        "into a single natural sentence with proper punctuation (commas, periods, etc.) "
+        "so it sounds natural when spoken aloud."
     )
     user = (
-        f"Here are {len(numbered)} subtitle segments from a video. "
-        "Group them into complete sentences.\n"
-        "Return one group per line as comma-separated numbers. "
-        "Every segment number must appear in exactly one group.\n"
-        "Return ONLY the grouped numbers, nothing else.\n\n"
+        f"Here are {len(numbered)} subtitle segments from a video.\n"
+        "For each complete sentence, output one line in this format:\n"
+        "[segment numbers] merged text with proper punctuation\n\n"
+        "Example:\n"
+        "[1,2,3] Nếu bạn ngẩng đầu lên, thấy có ai giơ tay chào, đừng vội sợ nha.\n"
+        "[4] Nó chỉ muốn xin đồ ăn thôi.\n\n"
+        "Rules:\n"
+        "- Every segment number must appear in exactly one group\n"
+        "- Add commas, periods, and other punctuation where natural for speech\n"
+        "- Keep the original meaning, just combine and punctuate naturally\n"
+        "- Return ONLY the formatted lines, nothing else\n\n"
         + "\n".join(numbered)
     )
 
-    response = await llm_caller(system, user, 2048)
+    response = await llm_caller(system, user, 4096)
 
-    # Parse response: each line should be comma-separated numbers
-    groups: list[list[int]] = []
+    # Parse response: [1,2,3] merged text
+    results: list[tuple[list[int], str]] = []
     seen = set()
     for line in response.strip().split("\n"):
         line = line.strip()
         if not line:
             continue
-        # Extract numbers from the line
-        nums = re.findall(r"\d+", line)
-        if nums:
+
+        # Match [numbers] text pattern
+        m = re.match(r"\[([^\]]+)\]\s*(.+)", line)
+        if m:
+            nums_str = m.group(1)
+            merged_text = m.group(2).strip()
+            nums = re.findall(r"\d+", nums_str)
             group = []
             for n in nums:
                 idx = int(n) - 1  # convert to 0-based
                 if 0 <= idx < len(segments) and idx not in seen:
                     group.append(idx)
                     seen.add(idx)
-            if group:
-                groups.append(sorted(group))
+            if group and merged_text:
+                results.append((sorted(group), merged_text))
+        else:
+            # Fallback: try plain comma-separated numbers (old format)
+            nums = re.findall(r"\d+", line)
+            if nums:
+                group = []
+                for n in nums:
+                    idx = int(n) - 1
+                    if 0 <= idx < len(segments) and idx not in seen:
+                        group.append(idx)
+                        seen.add(idx)
+                if group:
+                    # No merged text from LLM, will fall back to joining later
+                    results.append((sorted(group), ""))
 
     # Add any missing segments as individual groups
     for i in range(len(segments)):
         if i not in seen:
-            groups.append([i])
+            text = _clean_text(segments[i].get("text", ""))
+            results.append(([i], text))
             seen.add(i)
 
-    # Sort groups by first segment index
-    groups.sort(key=lambda g: g[0])
+    # Sort by first segment index
+    results.sort(key=lambda r: r[0][0])
 
-    logger.info(f"LLM grouped {len(segments)} segments into {len(groups)} sentences")
-    return groups
+    logger.info(f"LLM grouped {len(segments)} segments into {len(results)} sentences")
+    return results
 
 
 def _merge_into_sentences_heuristic(
@@ -166,37 +194,52 @@ async def _merge_into_sentences(
     Uses LLM detection if available, falls back to punctuation + gap heuristics.
     """
     # Get groupings
+    llm_results: list[tuple[list[int], str]] | None = None
     if llm_caller:
         try:
-            groups = await _detect_sentence_boundaries_llm(segments, llm_caller)
+            llm_results = await _detect_sentence_boundaries_llm(segments, llm_caller)
         except Exception as e:
             logger.warning(f"LLM sentence detection failed ({e}), using heuristic fallback")
-            groups = _merge_into_sentences_heuristic(segments, max_gap)
+
+    if llm_results:
+        # LLM provided both grouping and punctuated text
+        sentence_groups: list[SentenceGroup] = []
+        for group_indices, llm_text in llm_results:
+            # Use LLM-punctuated text if available, otherwise join raw texts
+            if llm_text:
+                merged_text = llm_text
+            else:
+                texts = [_clean_text(segments[idx].get("text", "")) for idx in group_indices]
+                merged_text = " ".join(t for t in texts if t)
+
+            if not merged_text:
+                continue
+
+            start = segments[group_indices[0]]["start"]
+            end = segments[group_indices[-1]]["end"]
+            sentence_groups.append(SentenceGroup(
+                segment_indices=group_indices,
+                text=merged_text,
+                start=start,
+                end=end,
+            ))
     else:
+        # Heuristic fallback — join with spaces (no LLM punctuation)
         groups = _merge_into_sentences_heuristic(segments, max_gap)
-
-    # Convert grouped indices to SentenceGroup objects
-    sentence_groups: list[SentenceGroup] = []
-    for group_indices in groups:
-        texts = []
-        for idx in group_indices:
-            text = _clean_text(segments[idx].get("text", ""))
-            if text:
-                texts.append(text)
-
-        if not texts:
-            continue
-
-        merged_text = " ".join(texts)
-        start = segments[group_indices[0]]["start"]
-        end = segments[group_indices[-1]]["end"]
-
-        sentence_groups.append(SentenceGroup(
-            segment_indices=group_indices,
-            text=merged_text,
-            start=start,
-            end=end,
-        ))
+        sentence_groups = []
+        for group_indices in groups:
+            texts = [_clean_text(segments[idx].get("text", "")) for idx in group_indices]
+            merged_text = " ".join(t for t in texts if t)
+            if not merged_text:
+                continue
+            start = segments[group_indices[0]]["start"]
+            end = segments[group_indices[-1]]["end"]
+            sentence_groups.append(SentenceGroup(
+                segment_indices=group_indices,
+                text=merged_text,
+                start=start,
+                end=end,
+            ))
 
     return sentence_groups
 
@@ -311,7 +354,9 @@ class TTSAssembler:
             # === Stage 2: Redistribute — anchor at midpoint, expand into neighbors ===
             _redistribute_slots(slots, video_duration)
 
-            # === Stage 3: LLM shortening for items still > 1.25x ===
+            # === Stage 3: LLM shortening for sentences exceeding speedup threshold ===
+            # Shorten the WHOLE sentence (not per-segment), then re-synthesize.
+            # Also update synth_items text so exported SRT stays in sync.
             needs_shortening: list[tuple[SegmentSlot, str, float]] = []
             for slot in slots:
                 if slot.clip_path is None or slot.clip_duration <= 0:
@@ -327,15 +372,15 @@ class TTSAssembler:
 
             if needs_shortening and not self._translator:
                 logger.warning(
-                    f"{len(needs_shortening)} segments need >1.25x speedup but no LLM translator configured. "
+                    f"{len(needs_shortening)} sentences need >1.25x speedup but no LLM translator configured. "
                     f"Set DEEPSEEK_API_KEY or ANTHROPIC_API_KEY env var to enable text shortening."
                 )
 
             if needs_shortening and self._translator:
                 if on_progress:
-                    on_progress(0, total, f"Shortening {len(needs_shortening)} segments via LLM...")
+                    on_progress(0, total, f"Shortening {len(needs_shortening)} sentences via LLM...")
 
-                # Single batch LLM call for all segments
+                # Single batch LLM call — shorten whole sentences
                 batch_items = []
                 for slot, text, ratio in needs_shortening:
                     effective_window = slot.effective_end - slot.effective_start
@@ -349,8 +394,8 @@ class TTSAssembler:
 
                 shortened_texts = await self._translator.shorten_texts_batch(batch_items)
 
-                # Re-synthesize shortened segments concurrently
-                async def resynth(idx: int, slot: SegmentSlot, original_text: str, shortened: str):
+                # Re-synthesize shortened sentences and update synth_items
+                async def resynth(slot: SegmentSlot, original_text: str, shortened: str):
                     if shortened == original_text or len(shortened) >= len(original_text):
                         return
                     try:
@@ -362,12 +407,19 @@ class TTSAssembler:
                         if new_duration > 0 and new_duration < slot.clip_duration:
                             slot.clip_path = new_path
                             slot.clip_duration = new_duration
+                            # Update synth_items so the text stays in sync
+                            old = synth_items[slot.index]
+                            synth_items[slot.index] = (shortened, old[1], old[2], old[3])
+                            logger.info(
+                                f"Sentence {slot.index}: shortened '{original_text[:40]}' "
+                                f"→ '{shortened[:40]}'"
+                            )
                     except Exception as e:
-                        logger.warning(f"Segment {slot.index}: re-synthesis failed: {e}")
+                        logger.warning(f"Sentence {slot.index}: re-synthesis failed: {e}")
 
                 resynth_tasks = []
-                for i, ((slot, text, _ratio), shortened) in enumerate(zip(needs_shortening, shortened_texts)):
-                    resynth_tasks.append(resynth(i, slot, text, shortened))
+                for (slot, text, _ratio), shortened in zip(needs_shortening, shortened_texts):
+                    resynth_tasks.append(resynth(slot, text, shortened))
                 await asyncio.gather(*resynth_tasks)
 
                 if on_progress:
@@ -408,6 +460,17 @@ class TTSAssembler:
 
             # === Stage 5: Concatenate with silence gaps ===
             _concatenate_with_silence(fitted_clips, video_duration, output_path)
+
+        # Save the sentences SRT (with any shortening applied) alongside the WAV
+        if merge_sentences and synth_items:
+            from src.processor.subtitle import write_srt
+            sentences_srt = output_path.with_suffix(".sentences.srt")
+            sentence_segments = [
+                {"start": item[1], "end": item[2], "text": item[0]}
+                for item in synth_items if item[0]
+            ]
+            write_srt(sentence_segments, sentences_srt)
+            logger.info(f"Saved sentences SRT: {sentences_srt}")
 
         logger.info(f"Generated TTS track: {output_path}")
         return output_path
