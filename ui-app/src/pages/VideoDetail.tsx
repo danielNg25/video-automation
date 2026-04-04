@@ -286,6 +286,8 @@ function VideoDetailPage() {
         useDirectVoice ? selectedTtsProvider : undefined,
         useDirectVoice ? selectedVoiceId : undefined,
         ttsApiKey || undefined,
+        llmApiKey || undefined,
+        llmBackend || undefined,
       );
       const es = subscribeSSE(task_id, (eventType, data) => {
         if (eventType === 'progress') {
