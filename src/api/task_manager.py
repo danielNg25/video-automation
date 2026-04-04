@@ -472,6 +472,8 @@ class TaskManager:
         config: dict,
         voice_override: str | None = None,
         api_key_override: str | None = None,
+        llm_api_key: str | None = None,
+        llm_backend: str | None = None,
     ):
         """Execute a TTS generation task in the background."""
         from src.processor.subtitle import parse_srt
@@ -560,22 +562,45 @@ class TaskManager:
             output_path = tts_dir / f"{video_id}_{language}_{provider_name}_{safe_profile}.wav"
 
             # Build optional LLM translator for text shortening (Phase 2)
+            # Priority: per-request params > config > env vars
             translator = None
             try:
-                from src.utils.config import load_config
-                cfg = load_config()
-                trans_cfg = cfg.get("translation", {})
-                if trans_cfg.get("api_key") or trans_cfg.get("backend") == "local":
-                    from src.translator.llm import LLMTranslator
+                import os
+                from src.translator.llm import LLMTranslator
+                trans_cfg = config.get("translation", {})
+                logger.info(f"TTS shortening init: llm_api_key={'yes' if llm_api_key else 'no'}, llm_backend={llm_backend}, env_deepseek={'yes' if os.environ.get('DEEPSEEK_API_KEY') else 'no'}")
+                backend = llm_backend or trans_cfg.get("backend", "deepseek")
+                api_key = (
+                    llm_api_key
+                    or trans_cfg.get("api_key")
+                    or os.environ.get("DEEPSEEK_API_KEY")
+                    or os.environ.get("ANTHROPIC_API_KEY")
+                    or os.environ.get("OPENAI_API_KEY")
+                )
+                base_url = trans_cfg.get("base_url")
+                if backend == "deepseek" and not base_url:
+                    base_url = "https://api.deepseek.com/v1"
+                if api_key:
+                    # Use correct model for the backend — config model may be for a different provider
+                    default_models = {"deepseek": "deepseek-chat", "anthropic": "claude-sonnet-4-20250514", "openai": "gpt-4o-mini"}
+                    model = default_models.get(backend, trans_cfg.get("model"))
                     translator = LLMTranslator(
-                        backend=trans_cfg.get("backend", "anthropic"),
-                        model=trans_cfg.get("model"),
-                        api_key=trans_cfg.get("api_key"),
-                        base_url=trans_cfg.get("base_url"),
+                        backend=backend,
+                        model=model,
+                        api_key=api_key,
+                        base_url=base_url,
                         temperature=0.3,
                     )
-            except Exception:
-                pass  # No translator available, Phase 2 skipped
+                    logger.info(f"TTS text shortening enabled (backend={backend}, model={model}, base_url={base_url})")
+                else:
+                    logger.info("TTS text shortening disabled (no API key found)")
+            except Exception as e:
+                logger.warning(f"Could not init translator for TTS shortening: {e}")
+
+            # Build LLM caller for sentence boundary detection
+            llm_caller = None
+            if translator:
+                llm_caller = translator._call_llm
 
             assembler = TTSAssembler(translator=translator)
             await assembler.generate_full_track(
@@ -585,6 +610,8 @@ class TaskManager:
                 video_duration=video_duration,
                 output_path=output_path,
                 on_progress=on_progress,
+                merge_sentences=True,
+                llm_caller=llm_caller,
             )
 
             # Get output duration

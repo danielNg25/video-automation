@@ -4,36 +4,201 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import subprocess
 import tempfile
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
-from src.tts.base import BaseTTSProvider
+from src.tts.base import BaseTTSProvider, _clean_text
 from src.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
-# --- Timing constants ---
-GAP_BORROW_FRACTION = 0.80  # borrow up to 80% of adjacent gaps
-SPEEDUP_TRIGGER = 1.05      # apply atempo above this ratio
-SHORTENING_TRIGGER = 1.25   # trigger LLM text shortening above this
-HARD_CAP_SPEED = 1.50       # absolute max speedup; truncate beyond this
-FADE_OUT_MS = 300            # fade-out duration when truncating
+# Warn if TTS clip needs to be sped up beyond this ratio
+MAX_SAFE_SPEED_RATIO = 2.5
+# Trigger LLM text shortening above this ratio
+SHORTENING_TRIGGER = 1.25
+# Borrow up to this fraction of neighbor's unused time
+GAP_BORROW_FRACTION = 0.80
+# Punctuation that signals end of a sentence
+_SENTENCE_END_CHARS = set('.!?。！？…)）"」』')
 
 
 @dataclass
-class SegmentTiming:
-    """Timing info for a single TTS segment after gap redistribution."""
+class SegmentSlot:
+    """Timing slot for a TTS segment after gap redistribution."""
     index: int
-    original_start: float
-    original_end: float
+    clip_path: Path | None
+    clip_duration: float
+    # Original window: next_start - current_start
+    window_start: float
+    window_end: float
+    # Anchor: midpoint of window where the dub is centered
+    anchor: float
+    # Effective placement after redistribution
     effective_start: float
     effective_end: float
-    clip_duration: float
-    clip_path: Path | None
+
+
+@dataclass
+class SentenceGroup:
+    """A group of consecutive subtitle segments forming one complete sentence."""
+    segment_indices: list[int]
     text: str
-    speed_ratio: float = 0.0
+    start: float
+    end: float
+
+
+async def _detect_sentence_boundaries_llm(
+    segments: list[dict],
+    llm_caller: Callable,
+) -> list[list[int]]:
+    """Ask LLM to group segment indices into complete sentences.
+
+    Args:
+        segments: Non-empty subtitle segments with 'text' field.
+        llm_caller: Async function(system, user, max_tokens) -> str.
+
+    Returns:
+        List of groups, each group is a list of 0-based segment indices.
+    """
+    numbered = []
+    for i, seg in enumerate(segments):
+        text = _clean_text(seg.get("text", "")).replace("\n", " ")
+        if text:
+            numbered.append(f"{i + 1}. {text}")
+
+    system = (
+        "You are a subtitle analyst. Group subtitle segments into complete sentences. "
+        "Each group should contain segment numbers that form ONE complete thought or sentence."
+    )
+    user = (
+        f"Here are {len(numbered)} subtitle segments from a video. "
+        "Group them into complete sentences.\n"
+        "Return one group per line as comma-separated numbers. "
+        "Every segment number must appear in exactly one group.\n"
+        "Return ONLY the grouped numbers, nothing else.\n\n"
+        + "\n".join(numbered)
+    )
+
+    response = await llm_caller(system, user, 2048)
+
+    # Parse response: each line should be comma-separated numbers
+    groups: list[list[int]] = []
+    seen = set()
+    for line in response.strip().split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        # Extract numbers from the line
+        nums = re.findall(r"\d+", line)
+        if nums:
+            group = []
+            for n in nums:
+                idx = int(n) - 1  # convert to 0-based
+                if 0 <= idx < len(segments) and idx not in seen:
+                    group.append(idx)
+                    seen.add(idx)
+            if group:
+                groups.append(sorted(group))
+
+    # Add any missing segments as individual groups
+    for i in range(len(segments)):
+        if i not in seen:
+            groups.append([i])
+            seen.add(i)
+
+    # Sort groups by first segment index
+    groups.sort(key=lambda g: g[0])
+
+    logger.info(f"LLM grouped {len(segments)} segments into {len(groups)} sentences")
+    return groups
+
+
+def _merge_into_sentences_heuristic(
+    segments: list[dict], max_gap: float = 1.5
+) -> list[list[int]]:
+    """Group segments into sentences using punctuation and time gap heuristics.
+
+    Returns list of groups, each group is a list of 0-based segment indices.
+    """
+    groups: list[list[int]] = []
+    current_group: list[int] = []
+
+    for i, seg in enumerate(segments):
+        text = _clean_text(seg.get("text", ""))
+        if not text:
+            continue
+
+        current_group.append(i)
+
+        # Check for sentence boundary
+        is_sentence_end = text[-1] in _SENTENCE_END_CHARS if text else False
+
+        # Check for time gap to next segment
+        has_gap = False
+        if i + 1 < len(segments):
+            gap = segments[i + 1]["start"] - seg["end"]
+            has_gap = gap > max_gap
+
+        is_last = i == len(segments) - 1
+
+        if is_sentence_end or has_gap or is_last:
+            if current_group:
+                groups.append(current_group)
+                current_group = []
+
+    if current_group:
+        groups.append(current_group)
+
+    return groups
+
+
+async def _merge_into_sentences(
+    segments: list[dict],
+    llm_caller: Callable | None = None,
+    max_gap: float = 1.5,
+) -> list[SentenceGroup]:
+    """Merge consecutive segments into sentence groups for TTS.
+
+    Uses LLM detection if available, falls back to punctuation + gap heuristics.
+    """
+    # Get groupings
+    if llm_caller:
+        try:
+            groups = await _detect_sentence_boundaries_llm(segments, llm_caller)
+        except Exception as e:
+            logger.warning(f"LLM sentence detection failed ({e}), using heuristic fallback")
+            groups = _merge_into_sentences_heuristic(segments, max_gap)
+    else:
+        groups = _merge_into_sentences_heuristic(segments, max_gap)
+
+    # Convert grouped indices to SentenceGroup objects
+    sentence_groups: list[SentenceGroup] = []
+    for group_indices in groups:
+        texts = []
+        for idx in group_indices:
+            text = _clean_text(segments[idx].get("text", ""))
+            if text:
+                texts.append(text)
+
+        if not texts:
+            continue
+
+        merged_text = " ".join(texts)
+        start = segments[group_indices[0]]["start"]
+        end = segments[group_indices[-1]]["end"]
+
+        sentence_groups.append(SentenceGroup(
+            segment_indices=group_indices,
+            text=merged_text,
+            start=start,
+            end=end,
+        ))
+
+    return sentence_groups
 
 
 class TTSAssembler:
@@ -41,7 +206,7 @@ class TTSAssembler:
 
     def __init__(self, max_concurrent: int = 5, translator=None):
         self._semaphore = asyncio.Semaphore(max_concurrent)
-        self._translator = translator  # LLMTranslator or None (for Phase 2)
+        self._translator = translator  # LLMTranslator or None
 
     async def generate_full_track(
         self,
@@ -51,15 +216,18 @@ class TTSAssembler:
         video_duration: float,
         output_path: Path,
         on_progress: callable | None = None,
+        merge_sentences: bool = True,
+        llm_caller: Callable | None = None,
     ) -> Path:
         """Generate a full-length TTS audio track from subtitle segments.
 
         Pipeline:
-        1. Synthesize each segment concurrently
-        2. Redistribute gap time to overflowing segments (Phase 1)
-        3. LLM-shorten text for segments still > 1.25x (Phase 2, if translator available)
-        4. Speed-adjust with hard cap at 1.5x + truncation (Phase 3)
-        5. Concatenate all clips with silence padding
+        0. Merge segments into sentence groups (LLM or heuristic)
+        1. Synthesize each sentence concurrently
+        2. Anchor each dub at midpoint of its window, redistribute unused time
+        3. LLM-shorten text for sentences still needing > 1.25x speedup
+        4. Speed-adjust with atempo
+        5. Concatenate with silence padding
         """
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -72,12 +240,37 @@ class TTSAssembler:
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
-            total = len(segments)
 
-            # === Stage A: Synthesize all segments concurrently ===
-            async def synth_one(i: int, seg: dict) -> Path | None:
-                from src.tts.base import _clean_text
-                text = _clean_text(seg.get("text", ""))
+            # === Stage 0: Merge segments into sentence groups ===
+            if merge_sentences:
+                sentence_groups = await _merge_into_sentences(
+                    segments, llm_caller=llm_caller
+                )
+                synth_items = [
+                    (sg.text, sg.start, sg.end, sg.segment_indices)
+                    for sg in sentence_groups
+                ]
+                logger.info(
+                    f"Merged {len(segments)} segments into {len(synth_items)} sentence groups"
+                )
+            else:
+                synth_items = []
+                for i, seg in enumerate(segments):
+                    text = _clean_text(seg.get("text", ""))
+                    synth_items.append((text, seg["start"], seg["end"], [i]))
+
+            # Tile windows: each item's window_end = next item's start
+            for i in range(len(synth_items) - 1):
+                text, start, _, idxs = synth_items[i]
+                synth_items[i] = (text, start, synth_items[i + 1][1], idxs)
+            if synth_items:
+                text, start, _, idxs = synth_items[-1]
+                synth_items[-1] = (text, start, video_duration, idxs)
+
+            total = len(synth_items)
+
+            # === Stage 1: Synthesize all items concurrently ===
+            async def synth_one(i: int, text: str) -> Path | None:
                 if not text:
                     return None
                 async with self._semaphore:
@@ -86,250 +279,221 @@ class TTSAssembler:
                 clip_path.write_bytes(audio_bytes)
                 return clip_path
 
-            tasks = [synth_one(i, seg) for i, seg in enumerate(segments)]
+            tasks = [synth_one(i, item[0]) for i, item in enumerate(synth_items)]
             raw_clips = await asyncio.gather(*tasks, return_exceptions=True)
 
-            # Build clip data
-            clip_paths: list[Path | None] = []
-            clip_durations: list[float] = []
-            for i, clip_result in enumerate(raw_clips):
-                if isinstance(clip_result, Exception):
-                    logger.warning(f"Segment {i} synthesis failed: {clip_result}")
-                    clip_paths.append(None)
-                    clip_durations.append(0.0)
-                elif clip_result is None:
-                    clip_paths.append(None)
-                    clip_durations.append(0.0)
-                else:
-                    clip_paths.append(clip_result)
-                    clip_durations.append(_get_audio_duration(clip_result))
+            # Build slots with window info
+            slots: list[SegmentSlot] = []
+            for i, ((text, window_start, window_end, _idxs), clip_result) in enumerate(
+                zip(synth_items, raw_clips)
+            ):
+                clip_path = None
+                clip_duration = 0.0
+                if not isinstance(clip_result, Exception) and clip_result is not None:
+                    clip_path = clip_result
+                    clip_duration = _get_audio_duration(clip_result)
+
+                anchor = (window_start + window_end) / 2.0
+                slots.append(SegmentSlot(
+                    index=i,
+                    clip_path=clip_path,
+                    clip_duration=clip_duration,
+                    window_start=window_start,
+                    window_end=window_end,
+                    anchor=anchor,
+                    effective_start=window_start,
+                    effective_end=window_end,
+                ))
 
             if on_progress:
                 on_progress(total, total, "Optimizing segment timing...")
 
-            # === Stage B: Gap redistribution (Phase 1) ===
-            timings = _redistribute_gaps(segments, clip_durations, clip_paths, video_duration)
+            # === Stage 2: Redistribute — anchor at midpoint, expand into neighbors ===
+            _redistribute_slots(slots, video_duration)
 
-            # === Stage C: LLM text shortening (Phase 2) ===
-            if self._translator:
-                for t in timings:
-                    if t.clip_path and t.speed_ratio > SHORTENING_TRIGGER:
-                        if on_progress:
-                            on_progress(t.index + 1, total, f"Shortening segment {t.index + 1} text (ratio {t.speed_ratio:.1f}x)...")
-                        try:
-                            await _shorten_and_resynthesize(
-                                t, provider, voice, kwargs, self._translator, tmp,
-                            )
-                        except Exception as e:
-                            logger.warning(f"Segment {t.index}: text shortening failed: {e}")
+            # === Stage 3: LLM shortening for items still > 1.25x ===
+            needs_shortening: list[tuple[SegmentSlot, str, float]] = []
+            for slot in slots:
+                if slot.clip_path is None or slot.clip_duration <= 0:
+                    continue
+                effective_window = slot.effective_end - slot.effective_start
+                if effective_window <= 0:
+                    continue
+                ratio = slot.clip_duration / effective_window
+                if ratio > SHORTENING_TRIGGER:
+                    text = synth_items[slot.index][0]
+                    if text:
+                        needs_shortening.append((slot, text, ratio))
 
-            # === Stage D: Speed adjustment with hard cap (Phase 3) ===
+            if needs_shortening and not self._translator:
+                logger.warning(
+                    f"{len(needs_shortening)} segments need >1.25x speedup but no LLM translator configured. "
+                    f"Set DEEPSEEK_API_KEY or ANTHROPIC_API_KEY env var to enable text shortening."
+                )
+
+            if needs_shortening and self._translator:
+                if on_progress:
+                    on_progress(0, total, f"Shortening {len(needs_shortening)} segments via LLM...")
+
+                # Single batch LLM call for all segments
+                batch_items = []
+                for slot, text, ratio in needs_shortening:
+                    effective_window = slot.effective_end - slot.effective_start
+                    batch_items.append({
+                        "text": text,
+                        "target_pct": max(30, int((effective_window / slot.clip_duration) * 100)),
+                        "current_duration": slot.clip_duration,
+                        "target_duration": effective_window,
+                        "speed_ratio": ratio,
+                    })
+
+                shortened_texts = await self._translator.shorten_texts_batch(batch_items)
+
+                # Re-synthesize shortened segments concurrently
+                async def resynth(idx: int, slot: SegmentSlot, original_text: str, shortened: str):
+                    if shortened == original_text or len(shortened) >= len(original_text):
+                        return
+                    try:
+                        async with self._semaphore:
+                            new_bytes = await provider.synthesize(shortened, voice, **kwargs)
+                        new_path = tmp / f"short_{slot.index:04d}.mp3"
+                        new_path.write_bytes(new_bytes)
+                        new_duration = _get_audio_duration(new_path)
+                        if new_duration > 0 and new_duration < slot.clip_duration:
+                            slot.clip_path = new_path
+                            slot.clip_duration = new_duration
+                    except Exception as e:
+                        logger.warning(f"Segment {slot.index}: re-synthesis failed: {e}")
+
+                resynth_tasks = []
+                for i, ((slot, text, _ratio), shortened) in enumerate(zip(needs_shortening, shortened_texts)):
+                    resynth_tasks.append(resynth(i, slot, text, shortened))
+                await asyncio.gather(*resynth_tasks)
+
+                if on_progress:
+                    on_progress(total, total, "Text shortening complete")
+
+            # === Stage 4: Speed adjustment ===
             fitted_clips: list[tuple[float, Path | None]] = []
 
-            for i, t in enumerate(timings):
+            for slot in slots:
                 if on_progress:
-                    on_progress(i + 1, total, f"Fitting segment {i + 1}/{total}")
+                    on_progress(slot.index + 1, total, f"Fitting segment {slot.index + 1}/{total}")
 
-                if t.clip_path is None or t.clip_duration <= 0:
-                    fitted_clips.append((t.effective_start, None))
+                if slot.clip_path is None or slot.clip_duration <= 0:
+                    fitted_clips.append((slot.effective_start, None))
                     continue
 
-                effective_window = t.effective_end - t.effective_start
+                effective_window = slot.effective_end - slot.effective_start
                 if effective_window <= 0:
-                    fitted_clips.append((t.effective_start, None))
+                    fitted_clips.append((slot.effective_start, None))
                     continue
 
-                speed_ratio = t.clip_duration / effective_window
+                speed_ratio = slot.clip_duration / effective_window
 
-                if speed_ratio > HARD_CAP_SPEED:
-                    # Apply capped speedup + truncate with fade-out
-                    logger.warning(
-                        f"Segment {t.index}: {speed_ratio:.1f}x needed, capping at {HARD_CAP_SPEED}x + truncation"
-                    )
-                    sped_path = tmp / f"sped_{t.index:04d}.mp3"
-                    _speed_up_audio(t.clip_path, sped_path, HARD_CAP_SPEED)
-                    truncated_path = tmp / f"trunc_{t.index:04d}.mp3"
-                    _truncate_with_fade(sped_path, truncated_path, effective_window)
-                    fitted_clips.append((t.effective_start, truncated_path))
-                elif speed_ratio > SPEEDUP_TRIGGER:
-                    fitted_path = tmp / f"fitted_{t.index:04d}.mp3"
-                    _speed_up_audio(t.clip_path, fitted_path, speed_ratio)
-                    fitted_clips.append((t.effective_start, fitted_path))
+                if speed_ratio > 1.05:
+                    if speed_ratio > MAX_SAFE_SPEED_RATIO:
+                        logger.warning(
+                            f"Segment {slot.index}: TTS is {slot.clip_duration:.1f}s for "
+                            f"{effective_window:.1f}s available ({speed_ratio:.1f}x speedup)"
+                        )
+                    fitted_path = tmp / f"fitted_{slot.index:04d}.mp3"
+                    _speed_up_audio(slot.clip_path, fitted_path, speed_ratio)
+                    fitted_clips.append((slot.effective_start, fitted_path))
                 else:
-                    fitted_clips.append((t.effective_start, t.clip_path))
+                    fitted_clips.append((slot.effective_start, slot.clip_path))
 
             if on_progress:
                 on_progress(total, total, "Concatenating audio track...")
 
-            # === Stage E: Concatenate with silence gaps ===
+            # === Stage 5: Concatenate with silence gaps ===
             _concatenate_with_silence(fitted_clips, video_duration, output_path)
 
         logger.info(f"Generated TTS track: {output_path}")
         return output_path
 
 
-# --- Phase 1: Gap redistribution ---
+def _redistribute_slots(slots: list[SegmentSlot], video_duration: float) -> None:
+    """Redistribute unused time from short segments to overflowing ones.
 
-def _redistribute_gaps(
-    segments: list[dict],
-    clip_durations: list[float],
-    clip_paths: list[Path | None],
-    video_duration: float,
-) -> list[SegmentTiming]:
-    """Redistribute unused gap time to segments that need more space.
+    Each segment has a window = [window_start, window_end) where window_end = next_start.
+    If a clip is shorter than its window, the leftover time is free for neighbors.
+    If a clip is longer, it borrows from neighbors' free time.
 
-    Processes worst-ratio segments first so the most constrained get
-    priority access to adjacent gap time.
+    Key insight: a segment's "free time" = window_size - clip_duration.
+    This free time exists at the END of the window (after the audio finishes).
+    An overflowing segment can expand backward into the previous segment's
+    free time, or forward into the next segment's free time.
     """
-    n = len(segments)
-    timings: list[SegmentTiming] = []
+    n = len(slots)
+    if n == 0:
+        return
 
-    for i, seg in enumerate(segments):
-        from src.tts.base import _clean_text
-        timings.append(SegmentTiming(
-            index=i,
-            original_start=seg["start"],
-            original_end=seg.get("end", seg["start"]),
-            effective_start=seg["start"],
-            effective_end=seg.get("end", seg["start"]),
-            clip_duration=clip_durations[i],
-            clip_path=clip_paths[i],
-            text=_clean_text(seg.get("text", "")),
-        ))
-
-    # Calculate initial speed ratios using original subtitle window
-    for t in timings:
-        window = t.original_end - t.original_start
-        if window > 0 and t.clip_duration > 0:
-            t.speed_ratio = t.clip_duration / window
+    # Calculate free time per segment (positive = has spare, negative = overflows)
+    free_time = []
+    for s in slots:
+        window_size = s.window_end - s.window_start
+        if s.clip_duration > 0:
+            free_time.append(window_size - s.clip_duration)
         else:
-            t.speed_ratio = 0.0
+            free_time.append(window_size)
 
-    # Process segments by worst ratio first
-    sorted_indices = sorted(range(n), key=lambda i: timings[i].speed_ratio, reverse=True)
+    # Process overflowing segments (negative free_time) by worst first
+    overflow_indices = [i for i in range(n) if free_time[i] < 0]
+    overflow_indices.sort(key=lambda i: free_time[i])  # most negative first
 
-    for idx in sorted_indices:
-        t = timings[idx]
-        if t.clip_duration <= 0 or t.speed_ratio <= SPEEDUP_TRIGGER:
-            continue
+    for idx in overflow_indices:
+        s = slots[idx]
+        needed = -free_time[idx]  # how much extra time we need
 
-        effective_window = t.effective_end - t.effective_start
-        needed_extra = t.clip_duration - effective_window
-        if needed_extra <= 0:
-            continue
+        # Check previous segment's free time (free time sits at END of prev's window)
+        can_borrow_before = 0.0
+        if idx > 0 and free_time[idx - 1] > 0:
+            can_borrow_before = free_time[idx - 1] * GAP_BORROW_FRACTION
 
-        # Calculate available gap before and after
-        if idx > 0:
-            gap_before = t.effective_start - timings[idx - 1].effective_end
-        else:
-            gap_before = t.effective_start  # gap from video start
+        # Check next segment's free time (free time sits at END of next's window,
+        # but we need it at the START — so we shift next's audio later)
+        can_borrow_after = 0.0
+        if idx + 1 < n and free_time[idx + 1] > 0:
+            can_borrow_after = free_time[idx + 1] * GAP_BORROW_FRACTION
 
-        if idx + 1 < n:
-            gap_after = timings[idx + 1].effective_start - t.effective_end
-        else:
-            gap_after = video_duration - t.effective_end  # gap to video end
+        # Borrow: prefer before (shifts start earlier), then after
+        borrow_before = min(needed * 0.6, can_borrow_before)
+        borrow_after = min(needed - borrow_before, can_borrow_after)
+        # If not enough from after, try more from before
+        if borrow_before + borrow_after < needed:
+            borrow_before = min(needed - borrow_after, can_borrow_before)
 
-        gap_before = max(gap_before, 0.0)
-        gap_after = max(gap_after, 0.0)
+        total_borrowed = borrow_before + borrow_after
 
-        # Borrow from both sides, up to 80% of each gap
-        borrow_before = min(needed_extra * 0.5, gap_before * GAP_BORROW_FRACTION)
-        borrow_after = min(needed_extra - borrow_before, gap_after * GAP_BORROW_FRACTION)
-        # If we couldn't get enough from after, try more from before
-        if borrow_before + borrow_after < needed_extra:
-            borrow_before = min(needed_extra - borrow_after, gap_before * GAP_BORROW_FRACTION)
+        if total_borrowed > 0:
+            # Expand this segment's effective window
+            s.effective_start = s.window_start - borrow_before
+            s.effective_end = s.window_end + borrow_after
 
-        if borrow_before > 0 or borrow_after > 0:
-            t.effective_start -= borrow_before
-            t.effective_end += borrow_after
-            new_window = t.effective_end - t.effective_start
-            t.speed_ratio = t.clip_duration / max(new_window, 0.1)
+            # Reduce neighbors' free time
+            if borrow_before > 0 and idx > 0:
+                free_time[idx - 1] -= borrow_before
+            if borrow_after > 0 and idx + 1 < n:
+                free_time[idx + 1] -= borrow_after
+
+            old_window = s.window_end - s.window_start
+            new_window = s.effective_end - s.effective_start
+            old_ratio = s.clip_duration / max(old_window, 0.1)
+            new_ratio = s.clip_duration / max(new_window, 0.1)
             logger.info(
                 f"Segment {idx}: borrowed {borrow_before:.2f}s before + {borrow_after:.2f}s after "
-                f"→ ratio {t.speed_ratio:.2f}x (was {t.clip_duration / max(effective_window, 0.1):.2f}x)"
+                f"(prev_free={can_borrow_before / GAP_BORROW_FRACTION:.2f}s, next_free={can_borrow_after / GAP_BORROW_FRACTION:.2f}s) "
+                f"→ window {old_window:.2f}s→{new_window:.2f}s, ratio {old_ratio:.1f}x→{new_ratio:.1f}x"
             )
 
-    # Clamp overlapping effective windows (sequential pass)
+    # Clamp: ensure no overlapping effective windows
     for i in range(n - 1):
-        if timings[i].effective_end > timings[i + 1].effective_start:
-            timings[i].effective_end = timings[i + 1].effective_start
-            window = timings[i].effective_end - timings[i].effective_start
-            if window > 0 and timings[i].clip_duration > 0:
-                timings[i].speed_ratio = timings[i].clip_duration / window
+        if slots[i].effective_end > slots[i + 1].effective_start:
+            mid = (slots[i].effective_end + slots[i + 1].effective_start) / 2.0
+            slots[i].effective_end = mid
+            slots[i + 1].effective_start = mid
 
-    return timings
-
-
-# --- Phase 2: LLM text shortening + re-synthesis ---
-
-async def _shorten_and_resynthesize(
-    timing: SegmentTiming,
-    provider: BaseTTSProvider,
-    voice: str,
-    kwargs: dict,
-    translator,
-    tmp_dir: Path,
-) -> None:
-    """Shorten segment text via LLM and re-synthesize. Modifies timing in-place."""
-    effective_window = timing.effective_end - timing.effective_start
-    if effective_window <= 0:
-        return
-
-    target_ratio = effective_window / timing.clip_duration
-    target_pct = max(30, int(target_ratio * 100))
-
-    shortened = await translator.shorten_text(timing.text, target_ratio)
-
-    if not shortened or len(shortened) >= len(timing.text):
-        logger.info(f"Segment {timing.index}: shortening produced no improvement")
-        return
-
-    logger.info(
-        f"Segment {timing.index}: shortened '{timing.text[:40]}...' → '{shortened[:40]}...' "
-        f"(target {target_pct}%)"
-    )
-
-    # Re-synthesize with shortened text
-    audio_bytes = await provider.synthesize(shortened, voice, **kwargs)
-    new_path = tmp_dir / f"short_{timing.index:04d}.mp3"
-    new_path.write_bytes(audio_bytes)
-
-    new_duration = _get_audio_duration(new_path)
-    if new_duration <= 0:
-        return
-
-    # Update timing
-    timing.text = shortened
-    timing.clip_path = new_path
-    timing.clip_duration = new_duration
-    timing.speed_ratio = new_duration / effective_window
-
-
-# --- Phase 3 helpers ---
-
-def _truncate_with_fade(
-    input_path: Path,
-    output_path: Path,
-    max_duration_s: float,
-    fade_ms: int = FADE_OUT_MS,
-) -> None:
-    """Hard-cut audio at max_duration_s with a gentle fade-out."""
-    fade_s = fade_ms / 1000.0
-    fade_start = max(0, max_duration_s - fade_s)
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", str(input_path),
-        "-af", f"afade=t=out:st={fade_start:.3f}:d={fade_s:.3f}",
-        "-t", f"{max_duration_s:.3f}",
-        "-c:a", "libmp3lame", "-q:a", "4",
-        str(output_path),
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-    if result.returncode != 0:
-        raise RuntimeError(f"Audio truncation failed: {result.stderr[-300:]}")
-
-
-# --- Shared utilities ---
 
 def _get_audio_duration(audio_path: Path) -> float:
     """Get audio duration in seconds via ffprobe."""

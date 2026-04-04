@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Changed
+- TTS now merges subtitle segments into sentence groups before synthesis (LLM-detected boundaries, heuristic fallback), producing natural-sounding speech instead of choppy per-line audio
 - Translation now sends all segments in a single LLM call for full narrative context (was batching 8 at a time)
 - For videos >100 segments, uses smart chunking with full transcript as context per chunk
 - Added robust numbered-response parser with positional fallback

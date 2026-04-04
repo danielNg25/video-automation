@@ -243,6 +243,7 @@ class Pipeline:
                     voice_profile=voice_profile,
                     video_duration=video_duration,
                     output_path=output_path,
+                    merge_sentences=True,
                 )
 
                 state.mark_stage_complete("tts", {
