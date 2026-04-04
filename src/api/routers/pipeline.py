@@ -72,6 +72,7 @@ async def start_full_pipeline(request: FullPipelineRequest):
             source_language=request.source_language,
             force=request.force,
             config=config,
+            tts_profile=request.tts_profile,
         )
     )
     return TaskResponse(task_id=task.task_id, status=task.status)
@@ -87,6 +88,7 @@ async def _run_full_pipeline(
     force: bool,
     config: dict,
     translation_override: dict | None = None,
+    tts_profile: str | None = None,
 ):
     """Execute the full pipeline as a background task with SSE events."""
     from src.pipeline import Pipeline
@@ -117,6 +119,7 @@ async def _run_full_pipeline(
             "force": force,
             "subtitle_lang": source_language,
             "translate_profile": translate_profile,
+            "tts_profile": tts_profile,
         }
 
         result = await pipeline.process_single(url, platforms, options, emit)

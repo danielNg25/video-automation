@@ -57,6 +57,7 @@ class FullPipelineRequest(BaseModel):
     source_language: str = "zh"
     force: bool = False
     metadata: dict | None = None
+    tts_profile: str | None = None  # e.g. "female-vi-natural" — if set, generates TTS dub
 
 
 class BatchPipelineRequest(BaseModel):
@@ -193,6 +194,8 @@ class TTSRequest(BaseModel):
     provider: str | None = None  # override default provider
     voice: str | None = None  # direct voice ID (overrides profile voice)
     api_key: str | None = None  # per-request API key for paid providers
+    llm_api_key: str | None = None  # API key for LLM text shortening
+    llm_backend: str | None = None  # deepseek, openai, anthropic
 
 
 class TTSPreviewRequest(BaseModel):
