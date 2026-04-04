@@ -166,6 +166,24 @@ class TaskManager:
         for tts in tts_dir.glob(f"{video_id}_*"):
             tts.unlink()
 
+        # State + duplicate registry
+        logs_dir = Path("data/logs")
+        state_file = logs_dir / f"{video_id}_state.json"
+        if state_file.exists():
+            state_file.unlink()
+
+        # Remove from processed_videos.json registry
+        registry_path = logs_dir / "processed_videos.json"
+        if registry_path.exists():
+            try:
+                import json
+                registry = json.loads(registry_path.read_text())
+                if video_id in registry:
+                    del registry[video_id]
+                    registry_path.write_text(json.dumps(registry, indent=2))
+            except Exception:
+                pass
+
         # Remove from index
         del self.video_index[video_id]
         logger.info(f"Deleted video {video_id} and all associated files")
