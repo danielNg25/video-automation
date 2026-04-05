@@ -184,12 +184,29 @@ def _run_export_ffmpeg(
     tts_volume: float,
     seek_seconds: float | None = None,
     duration_seconds: float | None = None,
+    video_id: str | None = None,
 ) -> None:
-    """Run ffmpeg export with optional subtitles and TTS mixing."""
+    """Run ffmpeg export with optional subtitles, blur, and TTS mixing."""
     from src.processor.ffmpeg import FFmpegProcessor
 
     w, h = resolution.split("x")
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Auto-detect blur region from OCR metadata
+    blur_filter = None
+    if video_id:
+        from src.processor.region_detector import load_subtitle_region
+        region = load_subtitle_region(Path("data/srt"), video_id)
+        if region:
+            blur_filter = FFmpegProcessor._build_blur_filter(region, blur_strength=15, blur_mode="blur")
+
+            # Apply style matching from detected region
+            from src.processor.style_matcher import SubtitleStyleMatcher
+            proc = FFmpegProcessor()
+            info = proc.get_video_info(video_path)
+            matcher = SubtitleStyleMatcher()
+            matched = matcher.match_style(region, info["width"], info["height"], style)
+            style = {**style, **matched}
 
     # Build video filter
     scale_pad = f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2"
@@ -204,8 +221,7 @@ def _run_export_ffmpeg(
 
     has_tts = tts_path and tts_path.exists()
 
-    # Step 1: Build intermediate (scale + pad + subtitles) without audio mixing
-    # This avoids filter_complex escaping hell by keeping -vf simple
+    # Step 1: Build intermediate (blur + scale + pad + subtitles) without audio mixing
     intermediate = output_path.with_suffix(".tmp.mp4") if has_tts else output_path
     intermediate.parent.mkdir(parents=True, exist_ok=True)
 
@@ -216,19 +232,34 @@ def _run_export_ffmpeg(
     if duration_seconds is not None:
         cmd1 += ["-t", str(duration_seconds)]
 
-    # Video filter: scale + pad + optional ASS subtitles
-    if use_subs_filter:
-        vf = f"{scale_pad},ass='{ass_path}'"
+    if blur_filter:
+        # Use filter_complex for blur, then chain scale+pad+subtitles
+        if use_subs_filter:
+            fc = f"{blur_filter};[blurred]{scale_pad},ass='{ass_path}'[out]"
+        else:
+            fc = f"{blur_filter};[blurred]{scale_pad}[out]"
+        cmd1 += [
+            "-filter_complex", fc,
+            "-map", "[out]",
+            "-map", "0:a",
+            "-af", f"volume={video_volume}",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+            "-c:a", "aac", "-b:a", "192k",
+            str(intermediate),
+        ]
     else:
-        vf = scale_pad
-
-    cmd1 += [
-        "-vf", vf,
-        "-af", f"volume={video_volume}",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "20",
-        "-c:a", "aac", "-b:a", "192k",
-        str(intermediate),
-    ]
+        # Simple -vf path (no blur)
+        if use_subs_filter:
+            vf = f"{scale_pad},ass='{ass_path}'"
+        else:
+            vf = scale_pad
+        cmd1 += [
+            "-vf", vf,
+            "-af", f"volume={video_volume}",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+            "-c:a", "aac", "-b:a", "192k",
+            str(intermediate),
+        ]
 
     result = subprocess.run(cmd1, capture_output=True, text=True, timeout=600)
     if result.returncode != 0:
@@ -294,6 +325,7 @@ async def export_video(video_id: str, request: ExportRequest):
                 video_path, srt_path, tts_path, output_path,
                 style, request.resolution,
                 request.video_volume, request.tts_volume,
+                video_id=video_id,
             )
 
             task_obj.status = "completed"
@@ -332,6 +364,7 @@ async def preview_export(video_id: str, request: ExportRequest):
         style, request.resolution,
         request.video_volume, request.tts_volume,
         seek_seconds=midpoint, duration_seconds=5,
+        video_id=video_id,
     )
 
     return FileResponse(path=str(output_path), media_type="video/mp4", filename=f"{video_id}_preview.mp4")
