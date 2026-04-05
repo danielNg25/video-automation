@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useRef, useState } from 'react';
+import { useMemo, useCallback, useRef, useState, useEffect } from 'react';
 import type { SubtitleSegment } from '../../api/types';
 import { srtTimestampToSeconds } from '../../utils/srtTime';
 
@@ -24,7 +24,20 @@ interface SubtitleOverlayProps {
 export function SubtitleOverlay({ segments, currentTime, style, onDragPosition }: SubtitleOverlayProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [containerHeight, setContainerHeight] = useState(0);
   const dragStart = useRef({ x: 0, y: 0, marginH: 0, marginV: 0 });
+
+  // Track the parent container height for scaling ASS PlayRes → pixels
+  useEffect(() => {
+    const el = overlayRef.current?.parentElement;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) setContainerHeight(entry.contentRect.height);
+    });
+    ro.observe(el);
+    setContainerHeight(el.clientHeight);
+    return () => ro.disconnect();
+  }, []);
 
   // Find active segment via binary search
   const activeSegment = useMemo(() => {
@@ -79,8 +92,12 @@ export function SubtitleOverlay({ segments, currentTime, style, onDragPosition }
 
   if (!activeSegment) return null;
 
-  const scaledFontSize = Math.max(10, style.fontSize * 0.55);
-  const scaledOutline = Math.max(0.3, style.outlineWidth * 0.35);
+  // Scale ASS PlayRes values (1920px) to actual container pixels
+  const ASS_PLAY_RES_Y = 1920;
+  const scale = containerHeight > 0 ? containerHeight / ASS_PLAY_RES_Y : 0.25;
+  const scaledFontSize = Math.max(8, style.fontSize * scale);
+  const scaledMarginV = Math.max(2, style.marginV * scale);
+  const scaledOutline = Math.max(0.5, style.outlineWidth * scale);
 
   const textStyle: React.CSSProperties = {
     fontFamily: style.fontName,
@@ -90,7 +107,7 @@ export function SubtitleOverlay({ segments, currentTime, style, onDragPosition }
     textShadow: style.shadow
       ? `0 0 ${scaledOutline}px black, 0 0 ${scaledOutline * 2}px black, 1px 1px 2px rgba(0,0,0,0.8)`
       : `0 0 ${scaledOutline}px black, 0 0 ${scaledOutline * 2}px black`,
-    WebkitTextStroke: `${scaledOutline}px black`,
+    WebkitTextStroke: `${Math.max(0.3, scaledOutline * 0.5)}px black`,
     lineHeight: '1.4',
     cursor: onDragPosition ? (isDragging ? 'grabbing' : 'grab') : 'default',
     userSelect: 'none',
@@ -109,8 +126,8 @@ export function SubtitleOverlay({ segments, currentTime, style, onDragPosition }
       ref={overlayRef}
       className="absolute left-0 right-0 flex justify-center px-3 text-center pointer-events-none"
       style={{
-        bottom: `${Math.max(4, style.marginV * 0.4)}px`,
-        transform: `translateX(${style.marginH * 0.3}px)`,
+        bottom: `${scaledMarginV}px`,
+        transform: `translateX(${style.marginH * scale}px)`,
       }}
     >
       <p

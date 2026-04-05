@@ -31,6 +31,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - Editor style now applies OCR-detected positioning (fontSize, marginV) on top of any saved style — previously the saved default style overwrote OCR values
+- Subtitle overlay now scales proportionally to the video player size using ResizeObserver — previously used hardcoded pixel multipliers causing mismatched positioning between editor preview and ffmpeg export
 - Subtitle editor auto-loads OCR region data to match subtitle position (marginV, fontSize) to where original Chinese subtitles were detected
 - Video Studio panels (Translation, TTS Dubbing, Subtitle Replacement, Export) are now collapsible — click header to toggle open/closed
 
