@@ -72,15 +72,16 @@ class SubtitleRegionDetector:
 
         region = SubtitleRegion.from_dict(region_data)
 
-        # Expand width to cover full video width (translated text is often longer
-        # than original Chinese). Keep small margins on each side.
+        # Add horizontal padding so blur covers the full text area
         video_width = meta.get("video_width", 0)
         if video_width > 0:
-            margin = max(10, int(video_width * 0.03))
+            pad = max(10, int(region.width * 0.05))
+            new_x = max(0, region.x - pad)
+            new_w = min(video_width - new_x, region.width + 2 * pad)
             region = SubtitleRegion(
-                x=margin,
+                x=new_x,
                 y=region.y,
-                width=video_width - 2 * margin,
+                width=new_w,
                 height=region.height,
             )
 

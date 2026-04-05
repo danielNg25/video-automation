@@ -48,6 +48,30 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
   // OCR region for CSS blur approximation in live editor
   const [ocrRegion, setOcrRegion] = useState<{ x: number; y: number; width: number; height: number; videoWidth: number; videoHeight: number } | null>(null);
 
+  // Track actual video element rect within its container for accurate blur positioning
+  const [videoRect, setVideoRect] = useState<{ offsetX: number; offsetY: number; width: number; height: number } | null>(null);
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    const update = () => {
+      const parent = el.parentElement;
+      if (!parent) return;
+      const pr = parent.getBoundingClientRect();
+      const vr = el.getBoundingClientRect();
+      setVideoRect({
+        offsetX: vr.left - pr.left,
+        offsetY: vr.top - pr.top,
+        width: vr.width,
+        height: vr.height,
+      });
+    };
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    el.addEventListener('loadeddata', update);
+    update();
+    return () => { ro.disconnect(); el.removeEventListener('loadeddata', update); };
+  }, []);
+
   // Export controls
   const [selectedTtsFile, setSelectedTtsFile] = useState<string | null>(null);
   const [videoVol, setVideoVol] = useState(30);
@@ -245,14 +269,14 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
       {/* Video Player + Blur Region + Subtitle Overlay */}
       <VideoPlayer ref={videoRef} src={videoSrc} state={playerState} controls={playerControls} loading={videoLoading} onLoadingChange={setVideoLoading}>
         {/* CSS blur approximation of OCR-detected subtitle region */}
-        {ocrRegion && ocrRegion.videoHeight > 0 && (
+        {ocrRegion && ocrRegion.videoHeight > 0 && videoRect && videoRect.width > 0 && (
           <div
             className="absolute pointer-events-none"
             style={{
-              left: `${(ocrRegion.x / ocrRegion.videoWidth) * 100}%`,
-              top: `${(ocrRegion.y / ocrRegion.videoHeight) * 100}%`,
-              width: `${(ocrRegion.width / ocrRegion.videoWidth) * 100}%`,
-              height: `${(ocrRegion.height / ocrRegion.videoHeight) * 100}%`,
+              left: `${videoRect.offsetX + (ocrRegion.x / ocrRegion.videoWidth) * videoRect.width}px`,
+              top: `${videoRect.offsetY + (ocrRegion.y / ocrRegion.videoHeight) * videoRect.height}px`,
+              width: `${(ocrRegion.width / ocrRegion.videoWidth) * videoRect.width}px`,
+              height: `${(ocrRegion.height / ocrRegion.videoHeight) * videoRect.height}px`,
               backdropFilter: 'blur(8px)',
               WebkitBackdropFilter: 'blur(8px)',
               backgroundColor: 'rgba(0,0,0,0.15)',
