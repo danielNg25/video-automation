@@ -2,20 +2,17 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
 import { TTSPreview } from '../components/TTSPreview';
-import { SubtitleReplacement } from '../components/SubtitleReplacement';
 import { SubtitleEditorPanel } from '../components/SubtitleEditorPanel';
 import {
   getVideo, getSrt, postTranscribe, postTranslate, postTTS,
   subscribeSSE, getProfiles, getTTSProfiles, getTTSProviders, getTTSVoices,
-  getTTSAudioUrl, getTTSList, getPlatforms, getRawVideoUrl,
-  getSrtDownloadUrl, patchVideoTitle, postTTSPreview,
-  postExport, postExportPreview, getExportedVideoUrl,
+  getTTSAudioUrl, getTTSList, getRawVideoUrl,
+  patchVideoTitle, postTTSPreview,
 } from '../api/client';
 import type { TTSAudioEntry } from '../api/client';
 import type {
   VideoMetadata, SubtitleSegment, TranslationProfileSummary,
-  VoiceProfileConfig, TTSProviderInfo, VoiceInfo, PlatformSpec,
-  BlurSettings, SubtitleRegion,
+  VoiceProfileConfig, TTSProviderInfo, VoiceInfo,
 } from '../api/types';
 import { loadApiKeys, loadLLMPrefs, saveLLMPrefs } from '../utils/storage';
 
@@ -73,26 +70,7 @@ function VideoDetailPage() {
   const [ttsList, setTtsList] = useState<TTSAudioEntry[]>([]);
   const [playingTts, setPlayingTts] = useState<string | null>(null);
 
-  // Export state
-  const [platformSpecs, setPlatformSpecs] = useState<Record<string, PlatformSpec>>({});
-  const [exportSubLang, setExportSubLang] = useState<string | null>(null);
-  const [exportTtsFile, setExportTtsFile] = useState<string | null>(null);
-  const [exportVideoVol, setExportVideoVol] = useState(100);
-  const [exportTtsVol, setExportTtsVol] = useState(100);
-  const [isExporting, setIsExporting] = useState(false);
-  const [exportProgress, setExportProgress] = useState({ pct: 0, message: '' });
-  const [exportError, setExportError] = useState('');
-  const [exportDone, setExportDone] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [isPreviewing, setIsPreviewing] = useState(false);
-
-  // Blur state (Phase 6)
-  const [activeBlurSettings, setActiveBlurSettings] = useState<BlurSettings | null>(null);
-  const [activeBlurRegion, setActiveBlurRegion] = useState<SubtitleRegion | null>(null);
-  const handleBlurChange = useCallback((settings: BlurSettings | null, region: SubtitleRegion | null) => {
-    setActiveBlurSettings(settings);
-    setActiveBlurRegion(region);
-  }, []);
+  // Export state (managed by SubtitleEditorPanel, just need previewLanguage for pass-through)
 
   // Panel collapse state — editor open by default
   const [openPanels, setOpenPanels] = useState<Set<string>>(new Set(['editor']));
@@ -180,11 +158,6 @@ function VideoDetailPage() {
         setTtsProfiles(profs);
         setTtsProviders(provs);
       } catch { /* TTS not available */ }
-
-      try {
-        const specs = await getPlatforms();
-        setPlatformSpecs(specs);
-      } catch { /* platforms not available */ }
 
       // Load existing TTS audio files
       try {
@@ -357,7 +330,6 @@ function VideoDetailPage() {
     }
   };
 
-  void platformSpecs; // loaded for potential future use
 
   return (
     <div className="flex flex-col h-full bg-surface">
@@ -414,7 +386,8 @@ function VideoDetailPage() {
                 <SubtitleEditorPanel
                   videoId={videoMeta.video_id}
                   srtLanguages={videoMeta.srt_languages}
-                  defaultLang={previewLanguage || videoMeta.srt_languages[0]}
+                  defaultLang={previewLanguage || videoMeta.srt_languages.find(l => l !== 'zh') || videoMeta.srt_languages[0]}
+                  ttsList={ttsList}
                 />
               </div>
             </div>
@@ -869,185 +842,6 @@ function VideoDetailPage() {
               </div>
             )}
 
-            {/* Subtitle Replacement Panel (Phase 6) */}
-            {videoMeta && (
-              <SubtitleReplacement
-                videoId={videoMeta.video_id}
-                onBlurSettingsChange={handleBlurChange}
-              />
-            )}
-
-            {/* Export Panel */}
-            {videoMeta && (
-              <div className="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/10">
-                <button
-                  onClick={() => togglePanel('export')}
-                  className="w-full p-4 border-b border-outline-variant/10 flex justify-between items-center hover:bg-surface-container/50 transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-primary text-lg">movie_edit</span>
-                    <span className="text-xs font-bold uppercase tracking-widest">Export Video</span>
-                  </div>
-                  <span className={`material-symbols-outlined text-sm text-zinc-500 transition-transform ${openPanels.has('export') ? 'rotate-180' : ''}`}>expand_more</span>
-                </button>
-                {openPanels.has('export') && <div className="p-5 space-y-4">
-                  {/* Subtitle Language */}
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold">Subtitles</label>
-                    <div className="flex gap-2">
-                      <button onClick={() => setExportSubLang(null)}
-                        className={`px-3 py-1.5 rounded text-[10px] font-bold uppercase ${exportSubLang === null ? 'bg-primary/20 text-primary' : 'bg-surface-container-highest text-zinc-400 hover:text-on-surface'}`}>
-                        None
-                      </button>
-                      {(videoMeta.srt_languages || []).map(lang => (
-                        <button key={lang} onClick={() => setExportSubLang(lang)}
-                          className={`px-3 py-1.5 rounded text-[10px] font-bold uppercase ${exportSubLang === lang ? 'bg-primary/20 text-primary' : 'bg-surface-container-highest text-zinc-400 hover:text-on-surface'}`}>
-                          {lang === 'zh' ? 'Chinese' : lang === 'vi' ? 'Vietnamese' : lang === 'en' ? 'English' : lang}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Dub Audio Selection */}
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold">Dub Audio</label>
-                    <select value={exportTtsFile || ''} onChange={e => setExportTtsFile(e.target.value || null)}
-                      className="w-full bg-surface-container border-none text-xs text-on-surface h-9 px-3 rounded-lg focus:ring-1 focus:ring-primary">
-                      <option value="">No dub</option>
-                      {ttsList.map(entry => (
-                        <option key={entry.filename} value={entry.filename}>
-                          {entry.profile} ({entry.provider} · {entry.language})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Volume Sliders */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between">
-                        <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold">Video Volume</label>
-                        <span className="text-[10px] font-mono text-primary">{exportVideoVol}%</span>
-                      </div>
-                      <input type="range" min={0} max={200} value={exportVideoVol}
-                        onChange={e => setExportVideoVol(Number(e.target.value))}
-                        className="w-full accent-primary h-1 bg-surface-container-highest rounded-lg appearance-none cursor-pointer" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between">
-                        <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold">Dub Volume</label>
-                        <span className="text-[10px] font-mono text-primary">{exportTtsVol}%</span>
-                      </div>
-                      <input type="range" min={0} max={200} value={exportTtsVol}
-                        onChange={e => setExportTtsVol(Number(e.target.value))}
-                        className="w-full accent-primary h-1 bg-surface-container-highest rounded-lg appearance-none cursor-pointer"
-                        disabled={!exportTtsFile} />
-                    </div>
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="flex gap-3">
-                    <button
-                      disabled={isPreviewing}
-                      onClick={async () => {
-                        if (!videoMeta) return;
-                        setIsPreviewing(true); setExportError('');
-                        try {
-                          const blob = await postExportPreview(
-                            videoMeta.video_id, exportSubLang, exportTtsFile,
-                            exportVideoVol / 100, exportTtsVol / 100,
-                          );
-                          if (previewUrl) URL.revokeObjectURL(previewUrl);
-                          setPreviewUrl(URL.createObjectURL(blob));
-                        } catch (e) {
-                          setExportError(e instanceof Error ? e.message : 'Preview failed');
-                        } finally {
-                          setIsPreviewing(false);
-                        }
-                      }}
-                      className="flex-1 py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 bg-surface-container-highest text-on-surface hover:bg-surface-container-high transition-colors disabled:opacity-50">
-                      <span className="material-symbols-outlined text-sm">{isPreviewing ? 'progress_activity' : 'preview'}</span>
-                      {isPreviewing ? 'Rendering...' : 'Preview 5s'}
-                    </button>
-                    <button
-                      disabled={isExporting}
-                      onClick={async () => {
-                        if (!videoMeta) return;
-                        setIsExporting(true); setExportError(''); setExportDone(false);
-                        setExportProgress({ pct: 0, message: 'Starting...' });
-                        try {
-                          const { task_id } = await postExport(
-                            videoMeta.video_id, exportSubLang, exportTtsFile,
-                            exportVideoVol / 100, exportTtsVol / 100,
-                          );
-                          const es = subscribeSSE(task_id, (eventType, data) => {
-                            if (eventType === 'progress') {
-                              setExportProgress({
-                                pct: Math.round((data.progress as number) * 100),
-                                message: data.message as string,
-                              });
-                            } else if (eventType === 'complete') {
-                              setIsExporting(false); setExportDone(true);
-                              setExportProgress({ pct: 100, message: 'Export complete' });
-                              es.close();
-                            } else if (eventType === 'error') {
-                              setIsExporting(false);
-                              setExportError(data.message as string);
-                              es.close();
-                            }
-                          });
-                        } catch (e) {
-                          setIsExporting(false);
-                          setExportError(e instanceof Error ? e.message : 'Export failed');
-                        }
-                      }}
-                      className="flex-1 py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 bg-gradient-to-r from-primary to-primary-container text-on-primary-fixed hover:shadow-[0_0_20px_rgba(160,120,255,0.3)] transition-all disabled:opacity-50">
-                      <span className="material-symbols-outlined text-sm">{isExporting ? 'progress_activity' : 'movie_edit'}</span>
-                      {isExporting ? 'Exporting...' : 'Export Full Video'}
-                    </button>
-                  </div>
-
-                  {/* Export Progress */}
-                  {isExporting && (
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[10px] font-mono">
-                        <span className="text-on-surface-variant">{exportProgress.message}</span>
-                        <span className="text-primary">{exportProgress.pct}%</span>
-                      </div>
-                      <div className="h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
-                        <div className="h-full bg-primary transition-all duration-300" style={{ width: `${exportProgress.pct}%` }} />
-                      </div>
-                    </div>
-                  )}
-
-                  {exportError && (
-                    <div className="p-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">{exportError}</div>
-                  )}
-
-                  {/* Preview Player */}
-                  {previewUrl && (
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold">Preview</label>
-                      <video controls autoPlay className="w-full max-h-[300px] rounded-lg bg-black" src={previewUrl} />
-                    </div>
-                  )}
-
-                  {/* Export Output Player */}
-                  {exportDone && videoMeta && (
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold">Exported Video</label>
-                      <video controls className="w-full max-h-[300px] rounded-lg bg-black"
-                        src={getExportedVideoUrl(videoMeta.video_id)} />
-                      <a href={getExportedVideoUrl(videoMeta.video_id)} download
-                        className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline font-bold mt-1">
-                        <span className="material-symbols-outlined text-xs">download</span>
-                        Download
-                      </a>
-                    </div>
-                  )}
-                </div>}
-              </div>
-            )}
         </div>
       </section>
     </div>

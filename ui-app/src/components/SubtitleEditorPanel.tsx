@@ -1,104 +1,53 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { VideoPlayer } from './editor/VideoPlayer';
-import { SubtitleOverlay } from './editor/SubtitleOverlay';
-import type { SubtitleStyle } from './editor/SubtitleOverlay';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { SegmentList } from './editor/SegmentList';
-import { Timeline } from './editor/Timeline';
-import { StylePanel } from './editor/StylePanel';
-import { useVideoPlayer } from '../hooks/useVideoPlayer';
 import { srtTimestampToSeconds, secondsToSrtTimestamp } from '../utils/srtTime';
 import {
-  getSrt, putSrt, getProxyVideoUrl, getRawVideoUrl,
-  getSubtitleRegion, getVideoStyle, putVideoStyle,
+  getSrt, putSrt, postExportPreview, postExport, getExportedVideoUrl,
+  subscribeSSE,
 } from '../api/client';
+import type { TTSAudioEntry } from '../api/client';
 import type { SubtitleSegment } from '../api/types';
 
 interface SubtitleEditorPanelProps {
   videoId: string;
   srtLanguages: string[];
   defaultLang?: string;
+  ttsList: TTSAudioEntry[];
+  onExportDone?: () => void;
 }
 
-export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang }: SubtitleEditorPanelProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [playerState, playerControls] = useVideoPlayer(videoRef);
-
+export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsList, onExportDone }: SubtitleEditorPanelProps) {
   const [segments, setSegments] = useState<SubtitleSegment[]>([]);
   const [originalSegments, setOriginalSegments] = useState<SubtitleSegment[]>([]);
-  const [activeLang, setActiveLang] = useState(defaultLang || srtLanguages[0] || 'zh');
+  const [activeLang, setActiveLang] = useState(defaultLang || srtLanguages.find(l => l !== 'zh') || srtLanguages[0] || 'vi');
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
-  const [useProxy, setUseProxy] = useState(true);
-  const [videoLoading, setVideoLoading] = useState(true);
-  const [rightTab, setRightTab] = useState<'segments' | 'style'>('segments');
 
-  const [style, setStyle] = useState<SubtitleStyle>({
-    fontName: 'Arial',
-    fontSize: 24,
-    outlineWidth: 2,
-    marginV: 30,
-    marginH: 0,
-    bold: true,
-    shadow: true,
-    backgroundColor: '',
-    backgroundOpacity: 0,
-  });
-  const [originalStyle, setOriginalStyle] = useState<SubtitleStyle | null>(null);
+  // Preview / Export controls
+  const [selectedTtsFile, setSelectedTtsFile] = useState<string | null>(null);
+  const [videoVol, setVideoVol] = useState(30);
+  const [dubVol, setDubVol] = useState(100);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isPreviewing, setIsPreviewing] = useState(false);
+  const [previewError, setPreviewError] = useState('');
 
-  const videoSrc = useProxy ? getProxyVideoUrl(videoId) : getRawVideoUrl(videoId);
+  // Export
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState({ pct: 0, message: '' });
+  const [exportError, setExportError] = useState('');
+  const [exportDone, setExportDone] = useState(false);
 
   const isDirty = useMemo(
-    () =>
-      JSON.stringify(segments) !== JSON.stringify(originalSegments) ||
-      (originalStyle !== null && JSON.stringify(style) !== JSON.stringify(originalStyle)),
-    [segments, originalSegments, style, originalStyle],
+    () => JSON.stringify(segments) !== JSON.stringify(originalSegments),
+    [segments, originalSegments],
   );
 
-  // Load style — saved per-video style first, then apply OCR region positioning on top
+  // Auto-select first TTS file
   useEffect(() => {
-    let cancelled = false;
-
-    const loadStyle = async () => {
-      // Load saved per-video style as base
-      let hasCustomStyle = false;
-      try {
-        const { style: d, is_custom } = await getVideoStyle(videoId) as { style: Record<string, unknown>; is_custom: boolean };
-        if (!cancelled && d && is_custom) {
-          hasCustomStyle = true;
-          const loaded: SubtitleStyle = {
-            fontName: (d.font_name as string) || 'Arial',
-            fontSize: (d.font_size as number) || 24,
-            outlineWidth: (d.outline_width as number) ?? 2,
-            marginV: (d.margin_v as number) ?? 30,
-            marginH: (d.margin_h as number) ?? 0,
-            bold: d.bold !== undefined ? Boolean(d.bold) : true,
-            shadow: d.shadow_depth !== undefined ? Number(d.shadow_depth) > 0 : true,
-            backgroundColor: (d.background_color as string) || '',
-            backgroundOpacity: (d.background_opacity as number) ?? 0,
-          };
-          setStyle(loaded);
-          setOriginalStyle(loaded);
-        }
-      } catch { /* no saved style */ }
-
-      // Apply OCR region positioning (always — overrides fontSize/marginV)
-      try {
-        const region = await getSubtitleRegion(videoId);
-        if (!cancelled && region) {
-          const scaleY = region.video_height > 0 ? 1920 / region.video_height : 1;
-          const regionHeightAss = region.height * scaleY;
-          const regionCenterYAss = (region.y + region.height / 2) * scaleY;
-          const fontSize = Math.max(16, Math.min(72, Math.round(regionHeightAss * 0.48)));
-          const marginV = Math.max(0, Math.round(1920 - regionCenterYAss - fontSize / 2));
-          setStyle(prev => ({ ...prev, fontSize, marginV }));
-          setOriginalStyle(prev => ({ ...(prev || style), fontSize, marginV }));
-        }
-      } catch { /* no OCR data — keep defaults */ }
-    };
-
-    loadStyle();
-    return () => { cancelled = true; };
-  }, [videoId]);
+    if (ttsList.length > 0 && !selectedTtsFile) {
+      setSelectedTtsFile(ttsList[0].filename);
+    }
+  }, [ttsList, selectedTtsFile]);
 
   // Load SRT
   useEffect(() => {
@@ -158,35 +107,12 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang }: Subt
     }]);
   }, [segments]);
 
-  const handleTimelineResize = useCallback((index: number, edge: 'start' | 'end', time: number) => {
-    setSegments(prev => prev.map((s, i) => {
-      if (i !== index) return s;
-      return edge === 'start'
-        ? { ...s, startTime: secondsToSrtTimestamp(time) }
-        : { ...s, endTime: secondsToSrtTimestamp(time) };
-    }));
-  }, []);
-
-  const handleDragPosition = useCallback((marginH: number, marginV: number) => {
-    setStyle(prev => ({ ...prev, marginH, marginV }));
-  }, []);
-
   const handleSave = useCallback(async () => {
     setSaving(true);
     setSaveStatus('idle');
     try {
       await putSrt(videoId, { language: activeLang, segments });
-      // Save style too
-      await putVideoStyle(videoId, {
-        font_name: style.fontName, font_size: style.fontSize,
-        outline_width: style.outlineWidth, margin_v: style.marginV,
-        margin_h: style.marginH, bold: style.bold,
-        shadow_depth: style.shadow ? 1 : 0,
-        background_color: style.backgroundColor,
-        background_opacity: style.backgroundOpacity,
-      });
       setOriginalSegments(segments);
-      setOriginalStyle(style);
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
     } catch {
@@ -194,34 +120,138 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang }: Subt
     } finally {
       setSaving(false);
     }
-  }, [videoId, activeLang, segments, style]);
+  }, [videoId, activeLang, segments]);
+
+  const handleRenderPreview = useCallback(async () => {
+    setIsPreviewing(true);
+    setPreviewError('');
+    try {
+      // Save first if dirty
+      if (isDirty) {
+        await putSrt(videoId, { language: activeLang, segments });
+        setOriginalSegments(segments);
+        setSaveStatus('saved');
+      }
+      const blob = await postExportPreview(
+        videoId, activeLang, selectedTtsFile,
+        videoVol / 100, dubVol / 100,
+      );
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(URL.createObjectURL(blob));
+    } catch (e) {
+      setPreviewError(e instanceof Error ? e.message : 'Preview failed');
+    } finally {
+      setIsPreviewing(false);
+    }
+  }, [videoId, activeLang, selectedTtsFile, videoVol, dubVol, isDirty, segments, previewUrl]);
+
+  const handleExport = useCallback(async () => {
+    setIsExporting(true);
+    setExportError('');
+    setExportDone(false);
+    setExportProgress({ pct: 0, message: 'Starting...' });
+    try {
+      // Save first if dirty
+      if (isDirty) {
+        await putSrt(videoId, { language: activeLang, segments });
+        setOriginalSegments(segments);
+      }
+      const { task_id } = await postExport(
+        videoId, activeLang, selectedTtsFile,
+        videoVol / 100, dubVol / 100,
+      );
+      subscribeSSE(task_id, (eventType, data) => {
+        if (eventType === 'progress') {
+          setExportProgress({
+            pct: Math.round((data.progress as number) * 100),
+            message: data.message as string,
+          });
+        } else if (eventType === 'complete') {
+          setIsExporting(false);
+          setExportDone(true);
+          setExportProgress({ pct: 100, message: 'Export complete' });
+          onExportDone?.();
+        } else if (eventType === 'error') {
+          setIsExporting(false);
+          setExportError(data.message as string);
+        }
+      });
+    } catch (e) {
+      setIsExporting(false);
+      setExportError(e instanceof Error ? e.message : 'Export failed');
+    }
+  }, [videoId, activeLang, selectedTtsFile, videoVol, dubVol, isDirty, segments, onExportDone]);
+
+  // Cleanup blob on unmount
+  useEffect(() => {
+    return () => { if (previewUrl) URL.revokeObjectURL(previewUrl); };
+  }, [previewUrl]);
+
+  // No-op seek for SegmentList (no video player to sync)
+  const noopSeek = useCallback(() => {}, []);
 
   return (
-    <div className="space-y-3">
-      {/* Toolbar */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <select
-          value={activeLang}
-          onChange={e => setActiveLang(e.target.value)}
-          className="bg-surface-container-highest border-none text-xs text-on-surface py-1.5 px-2 rounded focus:ring-0"
-        >
-          {srtLanguages.map(l => (
-            <option key={l} value={l}>
-              {l === 'en' ? 'English' : l === 'vi' ? 'Vietnamese' : l === 'zh' ? 'Chinese' : l.toUpperCase()}
-            </option>
-          ))}
-        </select>
-        <select
-          value={useProxy ? '360p' : 'full'}
-          onChange={e => { setUseProxy(e.target.value === '360p'); setVideoLoading(true); }}
-          className="bg-surface-container-highest border-none text-[10px] text-on-surface py-1.5 px-2 rounded focus:ring-0 font-mono"
-        >
-          <option value="360p">360p</option>
-          <option value="full">Full Res</option>
-        </select>
+    <div className="space-y-4">
+      {/* Controls Row */}
+      <div className="flex items-center gap-3 flex-wrap">
+        {/* Language */}
+        <div className="space-y-0.5">
+          <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">Subtitle</label>
+          <select
+            value={activeLang}
+            onChange={e => setActiveLang(e.target.value)}
+            className="block bg-surface-container-highest border-none text-xs text-on-surface py-1.5 px-2 rounded focus:ring-0"
+          >
+            {srtLanguages.map(l => (
+              <option key={l} value={l}>
+                {l === 'en' ? 'English' : l === 'vi' ? 'Vietnamese' : l === 'zh' ? 'Chinese' : l.toUpperCase()}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* TTS File */}
+        <div className="space-y-0.5">
+          <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">Dub Audio</label>
+          <select
+            value={selectedTtsFile || ''}
+            onChange={e => setSelectedTtsFile(e.target.value || null)}
+            className="block bg-surface-container-highest border-none text-xs text-on-surface py-1.5 px-2 rounded focus:ring-0 max-w-[200px]"
+          >
+            <option value="">No dub</option>
+            {ttsList.map(entry => (
+              <option key={entry.filename} value={entry.filename}>
+                {entry.profile} ({entry.provider} · {entry.language})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Volume Sliders */}
+        <div className="space-y-0.5 min-w-[100px]">
+          <div className="flex justify-between">
+            <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">Video Vol</label>
+            <span className="text-[9px] font-mono text-primary">{videoVol}%</span>
+          </div>
+          <input type="range" min={0} max={200} value={videoVol}
+            onChange={e => setVideoVol(Number(e.target.value))}
+            className="w-full accent-primary h-1 bg-surface-container-highest rounded-lg appearance-none cursor-pointer" />
+        </div>
+
+        <div className="space-y-0.5 min-w-[100px]">
+          <div className="flex justify-between">
+            <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">Dub Vol</label>
+            <span className="text-[9px] font-mono text-primary">{dubVol}%</span>
+          </div>
+          <input type="range" min={0} max={200} value={dubVol}
+            onChange={e => setDubVol(Number(e.target.value))}
+            className="w-full accent-primary h-1 bg-surface-container-highest rounded-lg appearance-none cursor-pointer"
+            disabled={!selectedTtsFile} />
+        </div>
 
         <div className="flex-1" />
 
+        {/* Save status */}
         {isDirty && (
           <span className="font-mono text-[9px] text-amber-400 flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />Unsaved
@@ -233,7 +263,7 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang }: Subt
           onClick={handleSave}
           disabled={!isDirty || saving}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-all ${
-            isDirty ? 'bg-primary text-on-primary-fixed hover:shadow-lg' : 'bg-surface-container-highest text-on-surface-variant'
+            isDirty ? 'bg-primary text-on-primary-fixed' : 'bg-surface-container-highest text-on-surface-variant'
           } disabled:opacity-50`}
         >
           <span className="material-symbols-outlined text-sm">{saving ? 'progress_activity' : 'save'}</span>
@@ -241,65 +271,89 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang }: Subt
         </button>
       </div>
 
-      {/* Video + Overlay */}
-      <VideoPlayer
-        ref={videoRef}
-        src={videoSrc}
-        state={playerState}
-        controls={playerControls}
-        loading={videoLoading}
-        onLoadingChange={setVideoLoading}
-      >
-        <SubtitleOverlay
-          segments={segments}
-          currentTime={playerState.currentTime}
-          style={style}
-          onDragPosition={handleDragPosition}
-        />
-      </VideoPlayer>
+      {/* Action Buttons */}
+      <div className="flex gap-3">
+        <button
+          disabled={isPreviewing}
+          onClick={handleRenderPreview}
+          className="flex-1 py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 bg-surface-container-highest text-on-surface hover:bg-surface-container-high transition-colors disabled:opacity-50"
+        >
+          <span className="material-symbols-outlined text-sm">{isPreviewing ? 'progress_activity' : 'preview'}</span>
+          {isPreviewing ? 'Rendering...' : 'Render Preview (5s)'}
+        </button>
 
-      {/* Timeline */}
-      <Timeline
-        segments={segments}
-        currentTime={playerState.currentTime}
-        duration={playerState.duration}
-        onSeek={playerControls.seek}
-        onResizeSegment={handleTimelineResize}
-      />
+        <button
+          disabled={isExporting}
+          onClick={handleExport}
+          className="flex-1 py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 bg-gradient-to-r from-primary to-primary-container text-on-primary-fixed hover:shadow-[0_0_20px_rgba(160,120,255,0.3)] transition-all disabled:opacity-50"
+        >
+          <span className="material-symbols-outlined text-sm">{isExporting ? 'progress_activity' : 'movie_edit'}</span>
+          {isExporting ? 'Exporting...' : 'Export Full Video'}
+        </button>
+      </div>
 
-      {/* Tabs: Segments / Style */}
-      <div className="border-t border-outline-variant/10 pt-3">
-        <div className="flex items-center gap-1 mb-3">
-          {(['segments', 'style'] as const).map(tab => (
-            <button
-              key={tab}
-              onClick={() => setRightTab(tab)}
-              className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded ${
-                rightTab === tab ? 'bg-primary/20 text-primary' : 'text-zinc-500 hover:text-on-surface'
-              }`}
-            >
-              {tab}
-            </button>
-          ))}
-          <span className="ml-auto font-mono text-[9px] text-zinc-600">{segments.length} segments</span>
-        </div>
-
-        {rightTab === 'segments' ? (
-          <div className="max-h-[300px] overflow-y-auto">
-            <SegmentList
-              segments={segments}
-              currentTime={playerState.currentTime}
-              onSeek={playerControls.seek}
-              onUpdate={handleUpdateSegment}
-              onDelete={handleDeleteSegment}
-              onSplit={handleSplitSegment}
-              onMerge={handleMergeSegment}
-              onAdd={handleAddSegment}
-            />
+      {/* Export Progress */}
+      {isExporting && (
+        <div className="space-y-1">
+          <div className="flex justify-between text-[10px] font-mono">
+            <span className="text-on-surface-variant">{exportProgress.message}</span>
+            <span className="text-primary">{exportProgress.pct}%</span>
           </div>
-        ) : (
-          <StylePanel style={style} onChange={setStyle} />
-        )}
+          <div className="h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
+            <div className="h-full bg-primary transition-all duration-300" style={{ width: `${exportProgress.pct}%` }} />
+          </div>
+        </div>
+      )}
+
+      {/* Errors */}
+      {(previewError || exportError) && (
+        <div className="p-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
+          {previewError || exportError}
+        </div>
+      )}
+
+      {/* Preview / Export Video Player */}
+      {(previewUrl || exportDone) && (
+        <div className="space-y-1">
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold">
+              {exportDone ? 'Exported Video' : 'Preview'}
+            </label>
+            {exportDone && (
+              <a href={getExportedVideoUrl(videoId)} download
+                className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline font-bold">
+                <span className="material-symbols-outlined text-xs">download</span>
+                Download
+              </a>
+            )}
+          </div>
+          <video
+            controls
+            autoPlay
+            className="w-full max-h-[50vh] rounded-lg bg-black"
+            src={exportDone ? getExportedVideoUrl(videoId) : previewUrl!}
+          />
+        </div>
+      )}
+
+      {/* Segment List */}
+      <div className="border-t border-outline-variant/10 pt-3">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Segments</span>
+          <span className="font-mono text-[9px] text-zinc-600">{segments.length} segments</span>
+        </div>
+        <div className="max-h-[300px] overflow-y-auto">
+          <SegmentList
+            segments={segments}
+            currentTime={0}
+            onSeek={noopSeek}
+            onUpdate={handleUpdateSegment}
+            onDelete={handleDeleteSegment}
+            onSplit={handleSplitSegment}
+            onMerge={handleMergeSegment}
+            onAdd={handleAddSegment}
+          />
+        </div>
       </div>
     </div>
   );

@@ -27,7 +27,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `blur_settings` and `manual_region` fields on `ProcessRequest` for Phase 6 blur integration
 
 ### Changed
-- Video Studio redesign: "Video Editor" is now the main view — replaces the old video info card + SRT preview two-column layout with a single full-width editor panel
+- Video Studio WYSIWYG redesign: editor now uses ffmpeg-rendered preview (blur + burned ASS subs + TTS audio) instead of HTML overlay — preview matches export exactly
+- Editor panel merged with export: subtitle language, TTS file, volume sliders, "Render Preview" and "Export Full Video" buttons all in one panel
 
 ### Fixed
 - Editor style now applies OCR-detected positioning (fontSize, marginV) on top of any saved style — previously the saved default style overwrote OCR values
@@ -36,8 +37,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Video Studio panels (Translation, TTS Dubbing, Subtitle Replacement, Export) are now collapsible — click header to toggle open/closed
 
 ### Removed
-- Video info card (thumbnail, metadata grid) from Video Studio — replaced by compact header bar in editor panel
-- SRT Preview right column from Video Studio — replaced by editor's inline segment list
+- HTML SubtitleOverlay, StylePanel, Timeline, VideoPlayer from editor panel — replaced by ffmpeg-rendered preview
+- Separate Export panel from Video Studio — merged into editor panel
+- SubtitleReplacement panel from Video Studio — blur is auto-applied by backend
+- Video info card (thumbnail, metadata grid) from Video Studio — replaced by compact header bar
+- SRT Preview right column — replaced by editor's inline segment list
 - Two-column grid layout on Video Studio — now single full-width column
 
 ### Fixed
