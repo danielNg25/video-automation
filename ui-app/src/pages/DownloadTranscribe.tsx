@@ -254,7 +254,8 @@ function PipelinePage() {
     download: ['download'],
     transcribe: ['transcribe'],
     translate: ['translate'],
-    tts: ['tts', 'process', 'upload'],  // tts is running, process/upload mean tts is done
+    tts: ['tts'],
+    process: ['process', 'upload'],
   };
 
   const getStepState = (key: string): 'config' | 'running' | 'done' | 'pending' => {
@@ -272,8 +273,8 @@ function PipelinePage() {
 
     if (currentIdx > lastOwnedIdx) return 'done';
     if (currentIdx >= firstOwnedIdx && currentIdx <= lastOwnedIdx) {
-      // For TTS step: 'tts' stage means running, 'process'/'upload' means done
-      if (key === 'tts' && (pipelineStage === 'process' || pipelineStage === 'upload')) return 'done';
+      // For Process step: 'upload' means process is done
+      if (key === 'process' && pipelineStage === 'upload') return 'done';
       return 'running';
     }
     return 'pending';
@@ -290,6 +291,7 @@ function PipelinePage() {
         const prof = ttsProfiles[selectedTtsProfile];
         return `${prov?.name || selectedTtsProvider} · ${selectedTtsProfile}${prof ? ` (${prof.language === 'vi' ? 'Vietnamese' : prof.language === 'en' ? 'English' : prof.language})` : ''}`;
       })() },
+    { num: 5, key: 'process', icon: 'movie_edit', title: 'Process & Burn', summary: 'Blur original subs · burn translated subs · reformat per platform' },
   ];
 
   return (
@@ -544,6 +546,39 @@ function PipelinePage() {
                           <p className="text-[10px] text-on-surface-variant flex items-center gap-1.5">
                             <span className="material-symbols-outlined text-xs text-primary">info</span>
                             TTS generation runs in <strong className="text-primary">Video Studio</strong> after pipeline completes
+                          </p>
+                        </div>
+                      )}
+
+                      {step.key === 'process' && (
+                        <div className="space-y-3">
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2 p-3 bg-surface-container rounded-lg">
+                              <span className="material-symbols-outlined text-sm text-primary">blur_on</span>
+                              <div>
+                                <p className="text-xs text-on-surface font-medium">Original Subtitle Removal</p>
+                                <p className="text-[10px] text-on-surface-variant">Auto-detects OCR region and blurs original Chinese subtitles before burning translated subs</p>
+                              </div>
+                              <span className="text-[9px] font-mono uppercase text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded ml-auto">auto</span>
+                            </div>
+                            <div className="flex items-center gap-2 p-3 bg-surface-container rounded-lg">
+                              <span className="material-symbols-outlined text-sm text-primary">subtitles</span>
+                              <div>
+                                <p className="text-xs text-on-surface font-medium">Subtitle Burn-in</p>
+                                <p className="text-[10px] text-on-surface-variant">Burns translated subtitles with auto-matched position and font size</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 p-3 bg-surface-container rounded-lg">
+                              <span className="material-symbols-outlined text-sm text-primary">devices</span>
+                              <div>
+                                <p className="text-xs text-on-surface font-medium">Platform Reformat</p>
+                                <p className="text-[10px] text-on-surface-variant">Reformats video per platform specs (resolution, bitrate, duration limits)</p>
+                              </div>
+                            </div>
+                          </div>
+                          <p className="text-[10px] text-on-surface-variant flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-xs text-primary">info</span>
+                            Blur + burn + reformat run in a single ffmpeg pass to avoid double-encoding
                           </p>
                         </div>
                       )}
