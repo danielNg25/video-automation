@@ -35,7 +35,7 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
   const [useProxy, setUseProxy] = useState(true);
   const [videoLoading, setVideoLoading] = useState(true);
-  const [bottomTab, setBottomTab] = useState<'segments' | 'style' | 'export'>('segments');
+  const [bottomTab, setBottomTab] = useState<'segments' | 'style' | 'export'>('export');
 
   // Style
   const [style, setStyle] = useState<SubtitleStyle>({
@@ -236,9 +236,14 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
       </div>
 
       {/* Video Player + Subtitle Overlay */}
-      <VideoPlayer ref={videoRef} src={videoSrc} state={playerState} controls={playerControls} loading={videoLoading} onLoadingChange={setVideoLoading}>
-        <SubtitleOverlay segments={segments} currentTime={playerState.currentTime} style={style} onDragPosition={handleDragPosition} />
-      </VideoPlayer>
+      <div className="relative">
+        <VideoPlayer ref={videoRef} src={videoSrc} state={playerState} controls={playerControls} loading={videoLoading} onLoadingChange={setVideoLoading}>
+          <SubtitleOverlay segments={segments} currentTime={playerState.currentTime} style={style} onDragPosition={handleDragPosition} />
+        </VideoPlayer>
+        <div className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/60 text-[9px] text-zinc-400 font-mono pointer-events-none">
+          EDIT VIEW — use Export tab for final preview with blur
+        </div>
+      </div>
 
       {/* Timeline */}
       <Timeline segments={segments} currentTime={playerState.currentTime} duration={playerState.duration} onSeek={playerControls.seek} onResizeSegment={handleTimelineResize} />
