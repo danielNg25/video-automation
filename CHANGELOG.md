@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- Subtitle editor video player no longer crops/stretches video to fill frame — shows full video with correct aspect ratio
 - Video now appears on FE immediately after pipeline completes (was only visible after server restart)
 - Pipeline TTS now matches Video Studio quality: LLM sentence detection, text shortening, and progress tracking
 
