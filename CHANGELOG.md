@@ -27,7 +27,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `blur_settings` and `manual_region` fields on `ProcessRequest` for Phase 6 blur integration
 
 ### Changed
-- Video Studio redesign: subtitle editor is now the main view — replaces the old video info card + SRT preview two-column layout with a single full-width editor panel
+- Video Studio redesign: "Video Editor" is now the main view — replaces the old video info card + SRT preview two-column layout with a single full-width editor panel
+
+### Fixed
+- Editor style now applies OCR-detected positioning (fontSize, marginV) on top of any saved style — previously the saved default style overwrote OCR values
 - Subtitle editor auto-loads OCR region data to match subtitle position (marginV, fontSize) to where original Chinese subtitles were detected
 - Video Studio panels (Translation, TTS Dubbing, Subtitle Replacement, Export) are now collapsible — click header to toggle open/closed
 

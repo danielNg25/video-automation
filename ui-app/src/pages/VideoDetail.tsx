@@ -385,13 +385,13 @@ function VideoDetailPage() {
         )}
 
         <div className="space-y-6">
-          {/* Subtitle Editor — main view */}
+          {/* Video Editor — main view */}
           {videoMeta && videoMeta.has_srt && (
             <div className="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/10">
               <div className="p-4 border-b border-outline-variant/10 flex justify-between items-center">
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-primary text-lg">edit_note</span>
-                  <span className="text-xs font-bold uppercase tracking-widest">Subtitle Editor</span>
+                  <span className="text-xs font-bold uppercase tracking-widest">Video Editor</span>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-[10px] font-mono text-zinc-500">

@@ -54,30 +54,17 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang }: Subt
     [segments, originalSegments, style, originalStyle],
   );
 
-  // Load style — try OCR region first for auto-positioning, then saved style
+  // Load style — saved per-video style first, then apply OCR region positioning on top
   useEffect(() => {
     let cancelled = false;
 
     const loadStyle = async () => {
-      // Try OCR region for auto-matched style
+      // Load saved per-video style as base
+      let hasCustomStyle = false;
       try {
-        const region = await getSubtitleRegion(videoId);
-        if (!cancelled && region) {
-          // Scale from video coords to ASS PlayRes (1080x1920)
-          const scaleY = region.video_height > 0 ? 1920 / region.video_height : 1;
-          const regionHeightAss = region.height * scaleY;
-          const regionCenterYAss = (region.y + region.height / 2) * scaleY;
-          const fontSize = Math.max(16, Math.min(72, Math.round(regionHeightAss * 0.48)));
-          const marginV = Math.max(0, Math.round(1920 - regionCenterYAss - fontSize / 2));
-          setStyle(prev => ({ ...prev, fontSize, marginV }));
-          setOriginalStyle(prev => prev ? { ...prev, fontSize, marginV } : null);
-        }
-      } catch { /* no OCR data — use defaults */ }
-
-      // Then load saved per-video style (overrides OCR if exists)
-      try {
-        const { style: d } = await getVideoStyle(videoId);
-        if (!cancelled && d) {
+        const { style: d, is_custom } = await getVideoStyle(videoId) as { style: Record<string, unknown>; is_custom: boolean };
+        if (!cancelled && d && is_custom) {
+          hasCustomStyle = true;
           const loaded: SubtitleStyle = {
             fontName: (d.font_name as string) || 'Arial',
             fontSize: (d.font_size as number) || 24,
@@ -92,7 +79,21 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang }: Subt
           setStyle(loaded);
           setOriginalStyle(loaded);
         }
-      } catch { /* use OCR-derived or defaults */ }
+      } catch { /* no saved style */ }
+
+      // Apply OCR region positioning (always — overrides fontSize/marginV)
+      try {
+        const region = await getSubtitleRegion(videoId);
+        if (!cancelled && region) {
+          const scaleY = region.video_height > 0 ? 1920 / region.video_height : 1;
+          const regionHeightAss = region.height * scaleY;
+          const regionCenterYAss = (region.y + region.height / 2) * scaleY;
+          const fontSize = Math.max(16, Math.min(72, Math.round(regionHeightAss * 0.48)));
+          const marginV = Math.max(0, Math.round(1920 - regionCenterYAss - fontSize / 2));
+          setStyle(prev => ({ ...prev, fontSize, marginV }));
+          setOriginalStyle(prev => ({ ...(prev || style), fontSize, marginV }));
+        }
+      } catch { /* no OCR data — keep defaults */ }
     };
 
     loadStyle();
