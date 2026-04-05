@@ -162,15 +162,29 @@ class TestLoadSubtitleRegion:
 
 
 class TestSubtitleStyleMatcher:
-    def test_centered_bottom_region(self):
-        """Centered subtitle → alignment 2, correct margin_v and font_size."""
+    def test_centered_bottom_region_native_res(self):
+        """At 1080x1920 (native ASS res), values pass through 1:1."""
         region = SubtitleRegion(x=90, y=1550, width=900, height=80)
         matcher = SubtitleStyleMatcher()
         style = matcher.match_style(region, 1080, 1920)
 
         assert style["alignment"] == 2  # bottom-center
         assert style["margin_v"] == 1920 - 1630  # = 290
-        assert 16 <= style["font_size"] <= 48
+        assert 16 <= style["font_size"] <= 72
+
+    def test_scales_to_ass_playres(self):
+        """576x1024 video coords are scaled to 1080x1920 ASS PlayRes."""
+        # Real Douyin data: 576x1024, region at y=763, h=71, bottom=834
+        region = SubtitleRegion(x=56, y=763, width=463, height=71)
+        matcher = SubtitleStyleMatcher()
+        style = matcher.match_style(region, 576, 1024)
+
+        # bottom_ass = 834 * (1920/1024) ≈ 1563
+        # margin_v = 1920 - 1563 ≈ 357
+        assert style["margin_v"] > 300  # should be ~357, not 190
+        assert style["alignment"] == 2
+        # height_ass = 71 * 1.875 ≈ 133, font = 133 * 0.48 ≈ 63
+        assert style["font_size"] > 40
 
     def test_left_aligned_region(self):
         """Left-aligned subtitle → alignment 1."""

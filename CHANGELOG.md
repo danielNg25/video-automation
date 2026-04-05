@@ -27,6 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `blur_settings` and `manual_region` fields on `ProcessRequest` for Phase 6 blur integration
 
 ### Fixed
+- Style matcher now scales region coordinates to ASS PlayRes (1080x1920) — fixes subtitle position on non-1080p videos like 576x1024 Douyin clips
 - Export preview and full export now apply blur + style matching when OCR metadata exists — "Preview 5s" shows blurred original subs with translated subs burned in
 - Subtitle editor video player no longer crops/stretches video to fill frame — shows full video with correct aspect ratio
 - Video now appears on FE immediately after pipeline completes (was only visible after server restart)
