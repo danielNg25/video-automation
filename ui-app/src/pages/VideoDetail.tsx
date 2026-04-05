@@ -141,7 +141,7 @@ function VideoDetailPage() {
         setVideoMeta(video);
         if (video.srt_languages.length > 0) {
           loadSrt(videoId, video.srt_languages[0]);
-          setExportSubLang(video.srt_languages[0]);
+          setPreviewLanguage(video.srt_languages[0]);
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load video');
