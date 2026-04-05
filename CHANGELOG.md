@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- Pipeline TTS now matches Video Studio quality: LLM sentence detection, text shortening, and progress tracking
+
 ### Changed
 - TTS endpoint and Video Studio now pass LLM API key/backend for sentence boundary detection during TTS generation
 - TTS now merges subtitle segments into sentence groups before synthesis (LLM-detected boundaries, heuristic fallback), producing natural-sounding speech instead of choppy per-line audio

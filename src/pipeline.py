@@ -232,10 +232,36 @@ class Pipeline:
                 video_duration = file_meta.get("duration", 0.0)
 
                 provider = get_tts_provider(self.config, voice_profile.get("provider"))
-                assembler = TTSAssembler()
+
+                # Create LLM translator for sentence detection + shortening
+                translator = None
+                llm_caller = None
+                try:
+                    trans_cfg = self.config.get("translation", {})
+                    api_key = trans_cfg.get("api_key")
+                    if api_key:
+                        from src.translator.llm import LLMTranslator
+                        backend = trans_cfg.get("backend", "deepseek")
+                        model = trans_cfg.get("model", "deepseek-chat")
+                        base_url = trans_cfg.get("base_url")
+                        translator = LLMTranslator(
+                            backend=backend, model=model,
+                            api_key=api_key, base_url=base_url,
+                            temperature=0.3,
+                        )
+                        llm_caller = translator._call_llm
+                        logger.info(f"TTS LLM enabled ({backend}/{model}) for sentence detection + shortening")
+                except Exception as e:
+                    logger.warning(f"Could not init LLM for TTS: {e}")
+
+                assembler = TTSAssembler(translator=translator)
                 tts_dir = Path("data/tts")
                 tts_dir.mkdir(parents=True, exist_ok=True)
                 output_path = tts_dir / f"{video_id}_{tts_lang}.wav"
+
+                def tts_progress(current, total, message):
+                    pct = 0.60 + (current / max(total, 1)) * 0.10
+                    emit("tts", pct, message)
 
                 await assembler.generate_full_track(
                     provider=provider,
@@ -243,7 +269,9 @@ class Pipeline:
                     voice_profile=voice_profile,
                     video_duration=video_duration,
                     output_path=output_path,
+                    on_progress=tts_progress,
                     merge_sentences=True,
+                    llm_caller=llm_caller,
                 )
 
                 state.mark_stage_complete("tts", {
