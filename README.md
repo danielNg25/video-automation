@@ -437,8 +437,8 @@ douyin-automation/
 > Detailed plan: [`plans/phase6-subtitle-replacement.md`](plans/phase6-subtitle-replacement.md)
 
 - [x] **6.1** Subtitle region detector — `src/processor/region_detector.py`
-- [ ] **6.2** Blur filter in ffmpeg — `src/processor/ffmpeg.py`
-- [ ] **6.3** Subtitle style matcher — `src/processor/style_matcher.py`
+- [x] **6.2** Blur filter in ffmpeg — `src/processor/ffmpeg.py`
+- [x] **6.3** Subtitle style matcher — `src/processor/style_matcher.py`
 - [ ] **6.4** Combined blur + burn pipeline — `src/processor/ffmpeg.py`
 - [ ] **6.5** Update batch processor — `src/processor/__init__.py`
 - [x] **6.6** OCR metadata persistence — `src/transcriber/ocr.py` update

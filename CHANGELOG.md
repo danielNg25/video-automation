@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Blur filter in FFmpeg (`src/processor/ffmpeg.py`): `apply_region_blur()`, `apply_blur_to_frame()`, `extract_single_frame()` with three modes — boxblur, solid fill, pixelate
+- Subtitle style matcher (`src/processor/style_matcher.py`): derives font_size, margin_v, alignment from detected region dimensions
 - Subtitle region detector (`src/processor/region_detector.py`): `SubtitleRegion` dataclass and `SubtitleRegionDetector` that loads from OCR metadata or computes from raw bounding boxes
 - OCR metadata persistence: OCR transcriber now saves `{video_id}_ocr_meta.json` with subtitle region bounding box after transcription
 - Subtitle replacement API models: `SubtitleRegionResponse`, `BlurSettings`, `SubtitleReplacementRequest`, `PreviewBlurRequest`

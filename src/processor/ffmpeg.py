@@ -5,10 +5,14 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
 
 from src.utils.logger import setup_logger
+
+if TYPE_CHECKING:
+    from src.processor.region_detector import SubtitleRegion
 
 logger = setup_logger(__name__)
 
@@ -527,7 +531,137 @@ class FFmpegProcessor:
         self._run_ffmpeg(cmd)
         return output_path
 
-    def burn_reformat_and_dub(
+    @staticmethod
+    def _build_blur_filter(
+        region: SubtitleRegion,
+        blur_strength: int = 15,
+        blur_mode: str = "blur",
+        fill_color: str = "#000000",
+    ) -> str:
+        """Build the ffmpeg filter_complex string for region blur.
+
+        Returns a filter_complex fragment that outputs [blurred].
+        Modes:
+          - blur: crop region → boxblur → overlay back
+          - fill: draw solid color rectangle
+          - pixelate: crop → scale down → scale up (nearest neighbor) → overlay
+        """
+        x, y, w, h = region.x, region.y, region.width, region.height
+
+        if blur_mode == "fill":
+            # drawbox directly on the video
+            r = int(fill_color[1:3], 16) if len(fill_color) == 7 else 0
+            g = int(fill_color[3:5], 16) if len(fill_color) == 7 else 0
+            b = int(fill_color[5:7], 16) if len(fill_color) == 7 else 0
+            return (
+                f"[0:v]drawbox=x={x}:y={y}:w={w}:h={h}:"
+                f"color=0x{r:02x}{g:02x}{b:02x}@1:t=fill[blurred]"
+            )
+        elif blur_mode == "pixelate":
+            # Crop region → scale down to ~10px wide → scale back up with neighbor → overlay
+            scale_down_w = max(2, w // 10)
+            scale_down_h = max(2, h // 10)
+            return (
+                f"[0:v]crop={w}:{h}:{x}:{y},"
+                f"scale={scale_down_w}:{scale_down_h},"
+                f"scale={w}:{h}:flags=neighbor[blur];"
+                f"[0:v][blur]overlay={x}:{y}[blurred]"
+            )
+        else:
+            # Default: boxblur
+            strength = max(1, blur_strength)
+            return (
+                f"[0:v]crop={w}:{h}:{x}:{y},"
+                f"boxblur={strength}:{strength}[blur];"
+                f"[0:v][blur]overlay={x}:{y}[blurred]"
+            )
+
+    def apply_region_blur(
+        self,
+        video_path: Path,
+        region: SubtitleRegion,
+        output_path: Path,
+        blur_strength: int = 15,
+        blur_mode: str = "blur",
+        fill_color: str = "#000000",
+    ) -> Path:
+        """Apply blur/fill over a region to hide original subtitles."""
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        filter_complex = self._build_blur_filter(
+            region, blur_strength, blur_mode, fill_color
+        )
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(video_path),
+            "-filter_complex", filter_complex,
+            "-map", "[blurred]",
+            "-map", "0:a",
+            "-c:a", "copy",
+            "-c:v", "libx264",
+            "-preset", "medium",
+            "-crf", str(self.config.get("crf", 23)),
+            "-movflags", "+faststart",
+            str(output_path),
+        ]
+
+        logger.info(f"Applying {blur_mode} blur to region ({region.width}x{region.height})")
+        self._run_ffmpeg(cmd)
+        return output_path
+
+    def extract_single_frame(
+        self,
+        video_path: Path,
+        output_path: Path,
+        timestamp: float = 5.0,
+    ) -> Path:
+        """Extract a single frame as JPEG at the given timestamp."""
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        cmd = [
+            "ffmpeg", "-y",
+            "-ss", str(timestamp),
+            "-i", str(video_path),
+            "-frames:v", "1",
+            "-q:v", "2",
+            str(output_path),
+        ]
+        self._run_ffmpeg(cmd)
+        return output_path
+
+    def apply_blur_to_frame(
+        self,
+        video_path: Path,
+        output_path: Path,
+        region: SubtitleRegion,
+        timestamp: float = 5.0,
+        blur_strength: int = 15,
+        blur_mode: str = "blur",
+        fill_color: str = "#000000",
+    ) -> Path:
+        """Extract a single frame with blur applied — for preview."""
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        filter_complex = self._build_blur_filter(
+            region, blur_strength, blur_mode, fill_color
+        )
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-ss", str(timestamp),
+            "-i", str(video_path),
+            "-filter_complex", filter_complex,
+            "-map", "[blurred]",
+            "-frames:v", "1",
+            "-q:v", "2",
+            str(output_path),
+        ]
+
+        logger.info(f"Generating blur preview frame at t={timestamp}s")
+        self._run_ffmpeg(cmd)
+        return output_path
+
+
         self,
         video_path: Path,
         subtitle_path: Path,
