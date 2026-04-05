@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Pipeline auto-blur: full pipeline (`Pipeline.process_single`) automatically detects OCR subtitle region and applies blur during the process stage — no manual config needed
 - Phase 6 unit tests (`tests/test_subtitle_replacement.py`): 26 tests covering region detection, style matching, blur filter construction, single-pass blur+burn, OCR metadata persistence, and batch processor blur integration
 - Region selector component (`ui-app/src/components/editor/RegionSelector.tsx`): interactive drag-to-resize/reposition overlay on video frame with coordinate display and auto-detect button
 - Blur preview component (`ui-app/src/components/editor/BlurPreview.tsx`): before/after comparison with refresh button, toggle between original and blurred frame
