@@ -465,7 +465,7 @@ function VideoDetailPage() {
                 <span>Re-Extract Subtitles (OCR)</span>
               </button>
             </div>
-          )
+          )}
 
             {/* Translation Panel */}
             {videoMeta && videoMeta.has_srt && (
