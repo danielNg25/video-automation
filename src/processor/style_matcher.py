@@ -58,8 +58,12 @@ class SubtitleStyleMatcher:
         estimated_font_size = max(16, min(72, int(region_height_ass * 0.48)))
         style["font_size"] = estimated_font_size
 
-        # Margin from bottom in ASS coords: distance from PlayResY bottom to region bottom
-        margin_v = max(0, self.ASS_PLAY_RES_Y - region_bottom_ass)
+        # Margin from bottom in ASS coords: center the text vertically within the region.
+        # ASS Alignment 2: MarginV = distance from video bottom to text bottom edge.
+        # To center: text_center_y should equal region_center_y.
+        # text_bottom = text_center + font_size/2, so margin_v = PlayResY - (center + font_size/2)
+        region_center_y_ass_val = int(region.center_y * scale_y)
+        margin_v = max(0, self.ASS_PLAY_RES_Y - region_center_y_ass_val - estimated_font_size // 2)
         style["margin_v"] = margin_v
 
         # Alignment: detect if centered, left, or top

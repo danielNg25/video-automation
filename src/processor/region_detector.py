@@ -71,6 +71,19 @@ class SubtitleRegionDetector:
             return None
 
         region = SubtitleRegion.from_dict(region_data)
+
+        # Expand width to cover full video width (translated text is often longer
+        # than original Chinese). Keep small margins on each side.
+        video_width = meta.get("video_width", 0)
+        if video_width > 0:
+            margin = max(10, int(video_width * 0.03))
+            region = SubtitleRegion(
+                x=margin,
+                y=region.y,
+                width=video_width - 2 * margin,
+                height=region.height,
+            )
+
         logger.info(
             f"Loaded subtitle region: x={region.x}, y={region.y}, "
             f"w={region.width}, h={region.height}"

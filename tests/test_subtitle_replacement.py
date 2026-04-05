@@ -38,7 +38,7 @@ class TestSubtitleRegion:
 
 class TestSubtitleRegionDetector:
     def test_detect_from_ocr_meta_file(self, tmp_path):
-        """Loads region from OCR metadata JSON."""
+        """Loads region from OCR metadata JSON, width expanded to full video."""
         meta = {
             "video_id": "test123",
             "video_width": 1080,
@@ -53,10 +53,11 @@ class TestSubtitleRegionDetector:
         region = detector.detect_from_ocr_meta(meta_path)
 
         assert region is not None
-        assert region.x == 90
         assert region.y == 1550
-        assert region.width == 900
         assert region.height == 80
+        # Width expanded to cover full video width minus margins
+        assert region.width > 900
+        assert region.x < 90
 
     def test_detect_from_missing_file(self, tmp_path):
         """Returns None when OCR metadata file doesn't exist."""
@@ -144,6 +145,7 @@ class TestLoadSubtitleRegion:
         """load_subtitle_region reads from the standard path."""
         meta = {
             "video_id": "abc",
+            "video_width": 1080,
             "subtitle_region": {"x": 50, "y": 1500, "width": 980, "height": 70},
         }
         srt_dir = tmp_path
@@ -151,7 +153,8 @@ class TestLoadSubtitleRegion:
 
         region = load_subtitle_region(srt_dir, "abc")
         assert region is not None
-        assert region.width == 980
+        # Width expanded to cover full video width minus margins
+        assert region.width > 980
 
     def test_returns_none_when_missing(self, tmp_path):
         """Returns None for Whisper-transcribed videos without OCR metadata."""
@@ -163,13 +166,15 @@ class TestLoadSubtitleRegion:
 
 class TestSubtitleStyleMatcher:
     def test_centered_bottom_region_native_res(self):
-        """At 1080x1920 (native ASS res), values pass through 1:1."""
+        """At 1080x1920 (native ASS res), text is centered in region."""
         region = SubtitleRegion(x=90, y=1550, width=900, height=80)
         matcher = SubtitleStyleMatcher()
         style = matcher.match_style(region, 1080, 1920)
 
         assert style["alignment"] == 2  # bottom-center
-        assert style["margin_v"] == 1920 - 1630  # = 290
+        # margin_v should center text: PlayResY - center_y - font_size/2
+        # center_y = 1590, font ≈ 38, so margin_v ≈ 1920 - 1590 - 19 = 311
+        assert style["margin_v"] > 280
         assert 16 <= style["font_size"] <= 72
 
     def test_scales_to_ass_playres(self):
@@ -179,11 +184,10 @@ class TestSubtitleStyleMatcher:
         matcher = SubtitleStyleMatcher()
         style = matcher.match_style(region, 576, 1024)
 
-        # bottom_ass = 834 * (1920/1024) ≈ 1563
-        # margin_v = 1920 - 1563 ≈ 357
-        assert style["margin_v"] > 300  # should be ~357, not 190
+        # center_y = 798.5, center_y_ass = 798.5 * 1.875 ≈ 1497
+        # font_size ≈ 63, margin_v ≈ 1920 - 1497 - 31 ≈ 392
+        assert style["margin_v"] > 350
         assert style["alignment"] == 2
-        # height_ass = 71 * 1.875 ≈ 133, font = 133 * 0.48 ≈ 63
         assert style["font_size"] > 40
 
     def test_left_aligned_region(self):
