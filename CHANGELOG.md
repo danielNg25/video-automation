@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- TypeScript types for subtitle replacement: `SubtitleRegion`, `BlurSettings`, `PreviewBlurRequest`; `blur_settings` and `manual_region` on `ProcessRequest`
+- API client functions: `getSubtitleRegion()`, `setSubtitleRegion()`, `postPreviewBlur()`
 - Subtitle replacement router (`src/api/routers/replacement.py`): `GET/POST /api/videos/{id}/subtitle-region` (auto-detect and manual override), `POST /api/videos/{id}/preview-blur` (single-frame JPEG preview)
 - Process endpoint blur integration: `blur_settings` and `manual_region` on `ProcessRequest`, task manager loads region and passes to batch processor
 - Combined blur+burn+reformat pipeline: `blur_and_burn_subtitles()`, `blur_burn_and_reformat()`, `blur_burn_reformat_and_dub()` — single-pass ffmpeg for blur + subtitle burn + platform reformat + TTS mix
