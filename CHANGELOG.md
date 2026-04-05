@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Combined blur+burn+reformat pipeline: `blur_and_burn_subtitles()`, `blur_burn_and_reformat()`, `blur_burn_reformat_and_dub()` — single-pass ffmpeg for blur + subtitle burn + platform reformat + TTS mix
+- Batch processor blur support: `process_for_all_platforms()` accepts `subtitle_region` and `blur_settings`, auto-selects blur methods with style matching
 - Blur filter in FFmpeg (`src/processor/ffmpeg.py`): `apply_region_blur()`, `apply_blur_to_frame()`, `extract_single_frame()` with three modes — boxblur, solid fill, pixelate
 - Subtitle style matcher (`src/processor/style_matcher.py`): derives font_size, margin_v, alignment from detected region dimensions
 - Subtitle region detector (`src/processor/region_detector.py`): `SubtitleRegion` dataclass and `SubtitleRegionDetector` that loads from OCR metadata or computes from raw bounding boxes

@@ -661,7 +661,212 @@ class FFmpegProcessor:
         self._run_ffmpeg(cmd)
         return output_path
 
+    def blur_and_burn_subtitles(
+        self,
+        video_path: Path,
+        subtitle_path: Path,
+        region: SubtitleRegion,
+        output_path: Path,
+        blur_strength: int = 15,
+        blur_mode: str = "blur",
+        fill_color: str = "#000000",
+        style: dict | None = None,
+    ) -> Path:
+        """Single-pass: blur original subtitle region + burn new subtitle."""
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
+        blur_fc = self._build_blur_filter(region, blur_strength, blur_mode, fill_color)
+        escaped_sub = self._escape_filter_path(subtitle_path)
+
+        if style:
+            style_str = self._build_style_string(style)
+            escaped_style = self._escape_filter_chain_value(style_str)
+            sub_filter = f"subtitles='{escaped_sub}':force_style='{escaped_style}'"
+        else:
+            sub_filter = f"subtitles='{escaped_sub}'"
+
+        # Chain: blur → then burn subtitles on the blurred output
+        filter_complex = f"{blur_fc};[blurred]{sub_filter}[out]"
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(video_path),
+            "-filter_complex", filter_complex,
+            "-map", "[out]",
+            "-map", "0:a",
+            "-c:a", "aac", "-b:a", "128k",
+            "-c:v", "libx264",
+            "-preset", "medium",
+            "-crf", str(self.config.get("crf", 23)),
+            "-movflags", "+faststart",
+            str(output_path),
+        ]
+
+        logger.info(f"Blur+burn subtitles: {blur_mode} blur, {subtitle_path.name}")
+        self._run_ffmpeg(cmd)
+        return output_path
+
+    def blur_burn_and_reformat(
+        self,
+        video_path: Path,
+        subtitle_path: Path,
+        region: SubtitleRegion,
+        platform: str,
+        output_path: Path,
+        blur_strength: int = 15,
+        blur_mode: str = "blur",
+        fill_color: str = "#000000",
+        style: dict | None = None,
+        platform_specs: dict | None = None,
+    ) -> Path:
+        """Single-pass: blur + burn subtitles + reformat for platform."""
+        specs = platform_specs or self._load_platform_specs(platform)
+        resolution = specs.get("resolution", "1080x1920")
+        w, h = resolution.split("x")
+        crf = specs.get("crf", 23)
+        max_bitrate = specs.get("max_bitrate", "8M")
+        max_duration = specs.get("max_duration")
+
+        if max_duration:
+            info = self.get_video_info(video_path)
+            if info["duration"] > max_duration:
+                logger.warning(
+                    f"Platform {platform}: video is {info['duration']:.1f}s, "
+                    f"truncating to {max_duration}s"
+                )
+
+        blur_fc = self._build_blur_filter(region, blur_strength, blur_mode, fill_color)
+        escaped_sub = self._escape_filter_path(subtitle_path)
+
+        scale_pad = (
+            f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
+            f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2"
+        )
+
+        if style:
+            style_str = self._build_style_string(style)
+            escaped_style = self._escape_filter_chain_value(style_str)
+            sub_filter = f"subtitles='{escaped_sub}':force_style='{escaped_style}'"
+        else:
+            sub_filter = f"subtitles='{escaped_sub}'"
+
+        # Chain: blur → scale+pad → burn subtitles
+        filter_complex = f"{blur_fc};[blurred]{scale_pad},{sub_filter}[out]"
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(video_path),
+            "-filter_complex", filter_complex,
+            "-map", "[out]",
+            "-map", "0:a",
+            "-c:v", "libx264",
+            "-preset", "medium",
+            "-crf", str(crf),
+            "-maxrate", max_bitrate,
+            "-bufsize", f"{int(max_bitrate.rstrip('M')) * 2}M",
+            "-c:a", "aac", "-b:a", "128k",
+            "-movflags", "+faststart",
+        ]
+
+        if max_duration:
+            cmd.extend(["-t", str(max_duration)])
+        cmd.append(str(output_path))
+
+        logger.info(f"Blur+burn+reformat for {platform}: {blur_mode}, {subtitle_path.name}")
+        self._run_ffmpeg(cmd)
+        return output_path
+
+    def blur_burn_reformat_and_dub(
+        self,
+        video_path: Path,
+        subtitle_path: Path,
+        tts_audio_path: Path,
+        region: SubtitleRegion,
+        platform: str,
+        output_path: Path,
+        blur_strength: int = 15,
+        blur_mode: str = "blur",
+        fill_color: str = "#000000",
+        style: dict | None = None,
+        platform_specs: dict | None = None,
+        original_volume: float = 0.3,
+        tts_volume: float = 1.0,
+    ) -> Path:
+        """Single-pass: blur + burn subtitles + reformat + mix TTS audio."""
+        specs = platform_specs or self._load_platform_specs(platform)
+        resolution = specs.get("resolution", "1080x1920")
+        w, h = resolution.split("x")
+        crf = specs.get("crf", 23)
+        max_bitrate = specs.get("max_bitrate", "8M")
+        max_duration = specs.get("max_duration")
+
+        if max_duration:
+            info = self.get_video_info(video_path)
+            if info["duration"] > max_duration:
+                logger.warning(
+                    f"Platform {platform}: video is {info['duration']:.1f}s, "
+                    f"truncating to {max_duration}s"
+                )
+
+        blur_fc = self._build_blur_filter(region, blur_strength, blur_mode, fill_color)
+        escaped_sub = self._escape_filter_path(subtitle_path)
+
+        scale_pad = (
+            f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
+            f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2"
+        )
+
+        if style:
+            style_str = self._build_style_string(style)
+            escaped_style = self._escape_filter_chain_value(style_str)
+            sub_filter = f"subtitles='{escaped_sub}':force_style='{escaped_style}'"
+        else:
+            sub_filter = f"subtitles='{escaped_sub}'"
+
+        # Video: blur → scale+pad → burn subtitles
+        vf_complex = f"{blur_fc};[blurred]{scale_pad},{sub_filter}[vout]"
+
+        # Audio mixing
+        af = (
+            f"[0:a]volume={original_volume}[orig];"
+            f"[1:a]volume={tts_volume}[tts];"
+            "[orig][tts]amix=inputs=2:duration=first:dropout_transition=0[aout]"
+        )
+
+        filter_complex = f"{vf_complex};{af}"
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(video_path),
+            "-i", str(tts_audio_path),
+            "-filter_complex", filter_complex,
+            "-map", "[vout]",
+            "-map", "[aout]",
+            "-c:v", "libx264",
+            "-preset", "medium",
+            "-crf", str(crf),
+            "-maxrate", max_bitrate,
+            "-bufsize", f"{int(max_bitrate.rstrip('M')) * 2}M",
+            "-c:a", "aac", "-b:a", "128k",
+            "-movflags", "+faststart",
+        ]
+
+        if max_duration:
+            cmd.extend(["-t", str(max_duration)])
+        cmd.append(str(output_path))
+
+        logger.info(
+            f"Blur+burn+reformat+dub for {platform}: {blur_mode}, "
+            f"{subtitle_path.name}, orig_vol={original_volume}, tts_vol={tts_volume}"
+        )
+        self._run_ffmpeg(cmd)
+        return output_path
+
+    def burn_reformat_and_dub(
         self,
         video_path: Path,
         subtitle_path: Path,
