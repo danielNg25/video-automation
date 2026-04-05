@@ -45,6 +45,9 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
   });
   const [originalStyle, setOriginalStyle] = useState<SubtitleStyle | null>(null);
 
+  // OCR region for CSS blur approximation in live editor
+  const [ocrRegion, setOcrRegion] = useState<{ x: number; y: number; width: number; height: number; videoWidth: number; videoHeight: number } | null>(null);
+
   // Export controls
   const [selectedTtsFile, setSelectedTtsFile] = useState<string | null>(null);
   const [videoVol, setVideoVol] = useState(30);
@@ -98,6 +101,10 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
       try {
         const region = await getSubtitleRegion(videoId);
         if (!cancelled && region) {
+          setOcrRegion({
+            x: region.x, y: region.y, width: region.width, height: region.height,
+            videoWidth: region.video_width, videoHeight: region.video_height,
+          });
           const scaleY = region.video_height > 0 ? 1920 / region.video_height : 1;
           const regionHeightAss = region.height * scaleY;
           const regionCenterYAss = (region.y + region.height / 2) * scaleY;
@@ -235,15 +242,25 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
         </button>
       </div>
 
-      {/* Video Player + Subtitle Overlay */}
-      <div className="relative">
-        <VideoPlayer ref={videoRef} src={videoSrc} state={playerState} controls={playerControls} loading={videoLoading} onLoadingChange={setVideoLoading}>
-          <SubtitleOverlay segments={segments} currentTime={playerState.currentTime} style={style} onDragPosition={handleDragPosition} />
-        </VideoPlayer>
-        <div className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/60 text-[9px] text-zinc-400 font-mono pointer-events-none">
-          EDIT VIEW — use Export tab for final preview with blur
-        </div>
-      </div>
+      {/* Video Player + Blur Region + Subtitle Overlay */}
+      <VideoPlayer ref={videoRef} src={videoSrc} state={playerState} controls={playerControls} loading={videoLoading} onLoadingChange={setVideoLoading}>
+        {/* CSS blur approximation of OCR-detected subtitle region */}
+        {ocrRegion && ocrRegion.videoHeight > 0 && (
+          <div
+            className="absolute pointer-events-none"
+            style={{
+              left: `${(ocrRegion.x / ocrRegion.videoWidth) * 100}%`,
+              top: `${(ocrRegion.y / ocrRegion.videoHeight) * 100}%`,
+              width: `${(ocrRegion.width / ocrRegion.videoWidth) * 100}%`,
+              height: `${(ocrRegion.height / ocrRegion.videoHeight) * 100}%`,
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
+              backgroundColor: 'rgba(0,0,0,0.15)',
+            }}
+          />
+        )}
+        <SubtitleOverlay segments={segments} currentTime={playerState.currentTime} style={style} onDragPosition={handleDragPosition} />
+      </VideoPlayer>
 
       {/* Timeline */}
       <Timeline segments={segments} currentTime={playerState.currentTime} duration={playerState.duration} onSeek={playerControls.seek} onResizeSegment={handleTimelineResize} />

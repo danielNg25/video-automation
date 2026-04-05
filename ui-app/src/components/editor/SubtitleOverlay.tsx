@@ -90,8 +90,6 @@ export function SubtitleOverlay({ segments, currentTime, style, onDragPosition }
     [onDragPosition, style.marginH, style.marginV],
   );
 
-  if (!activeSegment) return null;
-
   // Scale ASS PlayRes values (1920px) to actual container pixels
   const ASS_PLAY_RES_Y = 1920;
   const scale = containerHeight > 0 ? containerHeight / ASS_PLAY_RES_Y : 0.25;
@@ -121,6 +119,8 @@ export function SubtitleOverlay({ segments, currentTime, style, onDragPosition }
     borderRadius: style.backgroundOpacity > 0 ? '3px' : undefined,
   };
 
+  // Always render the ref div so ResizeObserver can attach.
+  // Hide text when no active segment.
   return (
     <div
       ref={overlayRef}
@@ -130,13 +130,15 @@ export function SubtitleOverlay({ segments, currentTime, style, onDragPosition }
         transform: `translateX(${style.marginH * scale}px)`,
       }}
     >
-      <p
-        style={textStyle}
-        className="pointer-events-auto"
-        onMouseDown={handleMouseDown}
-      >
-        {activeSegment.text}
-      </p>
+      {activeSegment && (
+        <p
+          style={textStyle}
+          className="pointer-events-auto"
+          onMouseDown={handleMouseDown}
+        >
+          {activeSegment.text}
+        </p>
+      )}
     </div>
   );
 }
