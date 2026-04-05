@@ -442,7 +442,7 @@ douyin-automation/
 - [x] **6.4** Combined blur + burn pipeline — `src/processor/ffmpeg.py`
 - [x] **6.5** Update batch processor — `src/processor/__init__.py`
 - [x] **6.6** OCR metadata persistence — `src/transcriber/ocr.py` update
-- [ ] **6.7** Unit tests — `tests/test_subtitle_replacement.py`
+- [x] **6.7** Unit tests — `tests/test_subtitle_replacement.py`
 - [x] **6.8** Subtitle replacement models — `src/api/models.py`
 - [x] **6.9** Subtitle replacement router — `src/api/routers/replacement.py`
 - [x] **6.10** Register router + update process flow
