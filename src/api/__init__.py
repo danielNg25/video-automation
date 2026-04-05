@@ -11,6 +11,7 @@ from src.api.routers import (
     events,
     pipeline,
     process,
+    replacement,
     settings,
     transcribe,
     translate,
@@ -37,6 +38,7 @@ def create_app() -> FastAPI:
     app.include_router(settings.router)
     app.include_router(pipeline.router)
     app.include_router(tts.router)
+    app.include_router(replacement.router)
     app.include_router(events.router)
 
     @app.on_event("startup")

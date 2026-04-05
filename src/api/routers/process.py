@@ -32,6 +32,24 @@ async def start_process(request: ProcessRequest):
     if invalid:
         raise HTTPException(status_code=400, detail=f"Invalid platforms: {invalid}")
 
+    # Build blur settings dict if provided
+    blur_dict = None
+    manual_region_dict = None
+    if request.blur_settings:
+        blur_dict = {
+            "enabled": request.blur_settings.enabled,
+            "strength": request.blur_settings.strength,
+            "mode": request.blur_settings.mode,
+            "fill_color": request.blur_settings.fill_color,
+        }
+    if request.manual_region:
+        manual_region_dict = {
+            "x": request.manual_region.x,
+            "y": request.manual_region.y,
+            "width": request.manual_region.width,
+            "height": request.manual_region.height,
+        }
+
     task = tm.create_task("process")
     asyncio.create_task(
         tm.run_process(
@@ -43,6 +61,8 @@ async def start_process(request: ProcessRequest):
             config,
             enable_tts=request.enable_tts,
             tts_mix_settings=request.tts_mix_settings,
+            blur_settings=blur_dict,
+            manual_region=manual_region_dict,
         )
     )
     return TaskResponse(task_id=task.task_id, status=task.status)

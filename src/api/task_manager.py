@@ -677,6 +677,8 @@ class TaskManager:
         config: dict,
         enable_tts: bool = False,
         tts_mix_settings: dict[str, dict] | None = None,
+        blur_settings: dict | None = None,
+        manual_region: dict | None = None,
     ):
         """Execute a video processing task in the background."""
         from src.processor import process_for_all_platforms
@@ -742,6 +744,29 @@ class TaskManager:
                                 "tts_volume": plat_cfg.get("tts_volume", 1.0),
                             }
 
+            # Load subtitle region for blur if blur is enabled
+            subtitle_region = None
+            blur_kwargs: dict | None = None
+            if blur_settings and blur_settings.get("enabled", True):
+                from src.processor.region_detector import SubtitleRegion, load_subtitle_region
+
+                if manual_region:
+                    subtitle_region = SubtitleRegion(
+                        x=manual_region["x"], y=manual_region["y"],
+                        width=manual_region["width"], height=manual_region["height"],
+                    )
+                else:
+                    subtitle_region = load_subtitle_region(srt_dir, video_id)
+
+                if subtitle_region:
+                    blur_kwargs = {
+                        "blur_strength": blur_settings.get("strength", 15),
+                        "blur_mode": blur_settings.get("mode", "blur"),
+                        "fill_color": blur_settings.get("fill_color", "#000000"),
+                        "enabled": True,
+                        "auto_match_style": blur_settings.get("auto_match_style", True),
+                    }
+
             # Run CPU-bound processing in a thread
             results = await asyncio.to_thread(
                 process_for_all_platforms,
@@ -756,6 +781,8 @@ class TaskManager:
                 subtitle_language_overrides,
                 tts_audio_paths,
                 tts_mix_settings,
+                subtitle_region,
+                blur_kwargs,
             )
 
             # Build result data from PlatformResult objects

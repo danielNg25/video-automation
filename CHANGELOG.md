@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Subtitle replacement router (`src/api/routers/replacement.py`): `GET/POST /api/videos/{id}/subtitle-region` (auto-detect and manual override), `POST /api/videos/{id}/preview-blur` (single-frame JPEG preview)
+- Process endpoint blur integration: `blur_settings` and `manual_region` on `ProcessRequest`, task manager loads region and passes to batch processor
 - Combined blur+burn+reformat pipeline: `blur_and_burn_subtitles()`, `blur_burn_and_reformat()`, `blur_burn_reformat_and_dub()` — single-pass ffmpeg for blur + subtitle burn + platform reformat + TTS mix
 - Batch processor blur support: `process_for_all_platforms()` accepts `subtitle_region` and `blur_settings`, auto-selects blur methods with style matching
 - Blur filter in FFmpeg (`src/processor/ffmpeg.py`): `apply_region_blur()`, `apply_blur_to_frame()`, `extract_single_frame()` with three modes — boxblur, solid fill, pixelate
