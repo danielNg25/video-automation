@@ -94,8 +94,8 @@ function VideoDetailPage() {
     setActiveBlurRegion(region);
   }, []);
 
-  // Panel collapse state — all collapsed by default
-  const [openPanels, setOpenPanels] = useState<Set<string>>(new Set());
+  // Panel collapse state — editor open by default
+  const [openPanels, setOpenPanels] = useState<Set<string>>(new Set(['editor']));
   const togglePanel = useCallback((key: string) => {
     setOpenPanels(prev => {
       const next = new Set(prev);
