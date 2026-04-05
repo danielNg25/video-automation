@@ -384,161 +384,88 @@ function VideoDetailPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left Column */}
-          <div className="lg:col-span-8 space-y-6">
-
-            {/* Video Card */}
-            {videoMeta && (
-              <div className="bg-surface-container-low rounded-xl overflow-hidden flex flex-col md:flex-row border border-primary/20">
-                <div className="w-full md:w-64 aspect-video bg-surface-container-highest relative group overflow-hidden">
-                  {videoMeta.thumbnail ? (
-                    <img src={videoMeta.thumbnail} alt={videoMeta.title} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <span className="material-symbols-outlined text-4xl text-zinc-600">movie</span>
-                    </div>
-                  )}
-                  <div className="absolute bottom-2 right-2 bg-black/80 text-white text-[10px] px-1.5 py-0.5 rounded font-mono">
-                    {formatDuration(videoMeta.duration)}
-                  </div>
+        <div className="space-y-6">
+          {/* Subtitle Editor — main view */}
+          {videoMeta && videoMeta.has_srt && (
+            <div className="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/10">
+              <div className="p-4 border-b border-outline-variant/10 flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary text-lg">edit_note</span>
+                  <span className="text-xs font-bold uppercase tracking-widest">Subtitle Editor</span>
                 </div>
-                <div className="flex-1 p-5 flex flex-col justify-between">
-                  <div>
-                    <div className="flex justify-between items-start mb-2">
-                      {editingTitle ? (
-                        <input
-                          autoFocus
-                          className="text-sm font-bold bg-surface-container-highest border border-primary/30 rounded px-2 py-1 text-on-surface focus:ring-1 focus:ring-primary flex-1 mr-2"
-                          value={titleDraft}
-                          onChange={(e) => setTitleDraft(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleSaveTitle();
-                            if (e.key === 'Escape') setEditingTitle(false);
-                          }}
-                          onBlur={handleSaveTitle}
-                        />
-                      ) : (
-                        <h3
-                          className="text-sm font-bold leading-tight cursor-pointer group/title flex items-center gap-1.5"
-                          onClick={() => {
-                            setEditingTitle(true);
-                            setTitleDraft(videoMeta.title || videoMeta.video_id);
-                          }}
-                        >
-                          {videoMeta.title || videoMeta.video_id}
-                          <span className="material-symbols-outlined text-xs text-zinc-600 opacity-0 group-hover/title:opacity-100 transition-opacity">
-                            edit
-                          </span>
-                        </h3>
-                      )}
-                      <span
-                        className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                          videoMeta.has_srt
-                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                            : 'bg-primary/10 text-primary border border-primary/20'
-                        }`}
-                      >
-                        {videoMeta.has_srt ? 'TRANSCRIBED' : 'DOWNLOADED'}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-y-2 gap-x-4">
-                      <div className="flex flex-col">
-                        <span className="text-[10px] text-zinc-500 uppercase tracking-tighter">Author</span>
-                        <span className="text-xs font-medium">@{videoMeta.author || 'unknown'}</span>
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-[10px] text-zinc-500 uppercase tracking-tighter">Resolution</span>
-                        <span className="text-xs font-medium font-mono">{videoMeta.resolution || 'N/A'}</span>
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-[10px] text-zinc-500 uppercase tracking-tighter">Size</span>
-                        <span className="text-xs font-medium font-mono">{videoMeta.size}</span>
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-[10px] text-zinc-500 uppercase tracking-tighter">Codec</span>
-                        <span className="text-xs font-medium font-mono">{videoMeta.codec || 'N/A'}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="mt-4 space-y-3">
-                    <div className="flex items-center gap-3">
-                      <span className="text-[10px] text-zinc-500 font-mono uppercase whitespace-nowrap">
-                        OCR — Auto-detect (CN)
-                      </span>
-                      <button
-                        onClick={handleTranscribe}
-                        disabled={isTranscribing}
-                        className="bg-primary text-on-primary-fixed px-4 py-2 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap active:scale-95 transition-all disabled:opacity-50"
-                      >
-                        <span>{isTranscribing ? 'Extracting...' : videoMeta.has_srt ? 'Re-Extract' : 'Extract Subtitles'}</span>
-                        <span className="material-symbols-outlined text-sm">document_scanner</span>
-                      </button>
-                      {videoMeta.has_srt && (
-                        <button
-                          onClick={() => togglePanel('editor')}
-                          className={`px-4 py-2 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap active:scale-95 transition-all ${
-                            openPanels.has('editor') ? 'bg-primary/20 text-primary' : 'bg-surface-container-highest text-on-surface hover:bg-surface-container-high'
-                          }`}
-                        >
-                          <span>Edit Subtitles</span>
-                          <span className="material-symbols-outlined text-sm">edit_note</span>
-                        </button>
-                      )}
-                      <a
-                        href={getRawVideoUrl(videoMeta.video_id)}
-                        download
-                        className="bg-surface-container-highest text-on-surface px-3 py-2 rounded-md font-bold text-xs flex items-center gap-1.5 whitespace-nowrap active:scale-95 transition-all hover:bg-surface-container-high"
-                        title="Download MP4"
-                      >
-                        <span className="material-symbols-outlined text-sm">save_alt</span>
-                      </a>
-                    </div>
-                  </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-mono text-zinc-500">
+                    {videoMeta.resolution} · {videoMeta.size} · {videoMeta.codec}
+                  </span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20`}>
+                    TRANSCRIBED
+                  </span>
+                  <a
+                    href={getRawVideoUrl(videoMeta.video_id)}
+                    download
+                    className="p-1.5 hover:bg-surface-container-highest rounded transition-colors text-zinc-400"
+                    title="Download MP4"
+                  >
+                    <span className="material-symbols-outlined text-sm">save_alt</span>
+                  </a>
                 </div>
               </div>
-            )}
-
-            {/* Transcription Progress */}
-            {isTranscribing && (
-              <div className="bg-surface-container-low rounded-xl p-5 border border-outline-variant/10">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-full border-2 border-primary border-t-transparent animate-spin"></div>
-                  <div className="flex-1">
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="text-xs font-bold uppercase tracking-widest text-primary">Extracting Subtitles (OCR)...</span>
-                      <span className="text-[10px] font-mono text-zinc-500">PADDLEOCR</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-on-surface-variant font-mono">Current Stage:</span>
-                      <span className="text-[11px] font-medium text-emerald-400">{transcribeMessage}</span>
-                    </div>
-                  </div>
-                </div>
+              <div className="p-5">
+                <SubtitleEditorPanel
+                  videoId={videoMeta.video_id}
+                  srtLanguages={videoMeta.srt_languages}
+                  defaultLang={previewLanguage || videoMeta.srt_languages[0]}
+                />
               </div>
-            )}
+            </div>
+          )}
 
-            {/* Subtitle Editor Panel */}
-            {videoMeta && videoMeta.has_srt && openPanels.has('editor') && (
-              <div className="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/10">
-                <div className="p-4 border-b border-outline-variant/10 flex justify-between items-center">
+          {/* Not transcribed yet — show extract button */}
+          {videoMeta && !videoMeta.has_srt && !isTranscribing && (
+            <div className="bg-surface-container-low rounded-xl p-8 border border-outline-variant/10 flex flex-col items-center gap-4 text-center">
+              <span className="material-symbols-outlined text-4xl text-zinc-600">subtitles_off</span>
+              <p className="text-sm text-zinc-400">No subtitles extracted yet</p>
+              <button
+                onClick={handleTranscribe}
+                className="bg-primary text-on-primary-fixed px-6 py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 active:scale-95 transition-all"
+              >
+                <span>Extract Subtitles</span>
+                <span className="material-symbols-outlined text-sm">document_scanner</span>
+              </button>
+            </div>
+          )}
+
+          {/* Transcription Progress */}
+          {isTranscribing && (
+            <div className="bg-surface-container-low rounded-xl p-5 border border-outline-variant/10">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-full border-2 border-primary border-t-transparent animate-spin"></div>
+                <div className="flex-1">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs font-bold uppercase tracking-widest text-primary">Extracting Subtitles (OCR)...</span>
+                    <span className="text-[10px] font-mono text-zinc-500">PADDLEOCR</span>
+                  </div>
                   <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-primary text-lg">edit_note</span>
-                    <span className="text-xs font-bold uppercase tracking-widest">Subtitle Editor</span>
+                    <span className="text-[11px] text-on-surface-variant font-mono">Current Stage:</span>
+                    <span className="text-[11px] font-medium text-emerald-400">{transcribeMessage}</span>
                   </div>
-                  <button onClick={() => togglePanel('editor')} className="text-zinc-500 hover:text-on-surface">
-                    <span className="material-symbols-outlined text-sm">close</span>
-                  </button>
-                </div>
-                <div className="p-5">
-                  <SubtitleEditorPanel
-                    videoId={videoMeta.video_id}
-                    srtLanguages={videoMeta.srt_languages}
-                    defaultLang={previewLanguage || videoMeta.srt_languages[0]}
-                  />
                 </div>
               </div>
-            )}
+            </div>
+          )}
+
+          {/* Re-Extract button (below editor when already transcribed) */}
+          {videoMeta && videoMeta.has_srt && !isTranscribing && (
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleTranscribe}
+                className="bg-surface-container-highest text-on-surface px-4 py-2 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap active:scale-95 transition-all hover:bg-surface-container-high"
+              >
+                <span className="material-symbols-outlined text-sm">document_scanner</span>
+                <span>Re-Extract Subtitles (OCR)</span>
+              </button>
+            </div>
+          )
 
             {/* Translation Panel */}
             {videoMeta && videoMeta.has_srt && (
@@ -1121,84 +1048,6 @@ function VideoDetailPage() {
                 </div>}
               </div>
             )}
-          </div>
-
-          {/* Right Column: SRT Preview */}
-          <div className="lg:col-span-4 flex flex-col max-h-[600px]">
-            <div className="bg-surface-container-low rounded-xl flex-1 flex flex-col border border-outline-variant/10 overflow-hidden">
-              <div className="p-4 border-b border-outline-variant/10 flex justify-between items-center bg-surface-container-high/30">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-zinc-400">subtitles</span>
-                  <span className="text-xs font-bold uppercase tracking-widest">SRT Preview</span>
-                  {srtSegments.length > 0 && (
-                    <span className="text-[10px] font-mono text-zinc-500">({srtSegments.length} segments)</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  {videoMeta && videoMeta.srt_languages.length > 1 && (
-                    <select
-                      value={previewLanguage}
-                      onChange={(e) => {
-                        if (videoMeta) loadSrt(videoMeta.video_id, e.target.value);
-                      }}
-                      className="bg-surface-container-highest border-none text-[10px] text-on-surface py-1 px-2 rounded focus:ring-0 font-mono uppercase"
-                    >
-                      {videoMeta.srt_languages.map((lang) => (
-                        <option key={lang} value={lang}>
-                          {lang}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                  {videoMeta && videoMeta.srt_languages.length === 1 && (
-                    <span className="text-[10px] font-mono text-zinc-500 uppercase">{previewLanguage}</span>
-                  )}
-                  {videoMeta && previewLanguage && (
-                    <a
-                      href={getSrtDownloadUrl(videoMeta.video_id, previewLanguage)}
-                      download
-                      className="p-1.5 hover:bg-surface-container-highest rounded transition-colors text-zinc-400"
-                      title="Export SRT"
-                    >
-                      <span className="material-symbols-outlined text-sm">download</span>
-                    </a>
-                  )}
-                  <button className="p-1.5 hover:bg-surface-container-highest rounded transition-colors text-zinc-400" title="Copy Text">
-                    <span className="material-symbols-outlined text-sm">content_copy</span>
-                  </button>
-                </div>
-              </div>
-              <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                {srtSegments.length > 0 ? (
-                  srtSegments.map((seg) => (
-                    <div
-                      key={seg.id}
-                      className="group p-3 rounded hover:bg-surface-container-high transition-colors cursor-pointer border-l-2 border-transparent hover:border-primary"
-                    >
-                      <div className="flex justify-between mb-1">
-                        <span className="text-[10px] font-mono text-primary font-bold">
-                          {seg.startTime} → {seg.endTime}
-                        </span>
-                        <span className="text-[10px] text-zinc-600 font-mono">#{seg.id}</span>
-                      </div>
-                      <p className="text-xs leading-relaxed text-on-surface-variant group-hover:text-on-surface">
-                        {seg.text}
-                      </p>
-                    </div>
-                  ))
-                ) : (
-                  <div className="flex flex-col items-center justify-center h-full text-center p-8">
-                    <span className="material-symbols-outlined text-3xl text-zinc-700 mb-3">subtitles_off</span>
-                    <p className="text-xs text-zinc-500">
-                      {isTranscribing
-                        ? 'Transcription in progress...'
-                        : 'Extract subtitles to see them here'}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
         </div>
       </section>
     </div>
