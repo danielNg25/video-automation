@@ -436,14 +436,14 @@ douyin-automation/
 
 > Detailed plan: [`plans/phase6-subtitle-replacement.md`](plans/phase6-subtitle-replacement.md)
 
-- [ ] **6.1** Subtitle region detector — `src/processor/region_detector.py`
+- [x] **6.1** Subtitle region detector — `src/processor/region_detector.py`
 - [ ] **6.2** Blur filter in ffmpeg — `src/processor/ffmpeg.py`
 - [ ] **6.3** Subtitle style matcher — `src/processor/style_matcher.py`
 - [ ] **6.4** Combined blur + burn pipeline — `src/processor/ffmpeg.py`
 - [ ] **6.5** Update batch processor — `src/processor/__init__.py`
-- [ ] **6.6** OCR metadata persistence — `src/transcriber/ocr.py` update
+- [x] **6.6** OCR metadata persistence — `src/transcriber/ocr.py` update
 - [ ] **6.7** Unit tests — `tests/test_subtitle_replacement.py`
-- [ ] **6.8** Subtitle replacement models — `src/api/models.py`
+- [x] **6.8** Subtitle replacement models — `src/api/models.py`
 - [ ] **6.9** Subtitle replacement router — `src/api/routers/replacement.py`
 - [ ] **6.10** Register router + update process flow
 - [ ] **6.11** TypeScript types

@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Subtitle region detector (`src/processor/region_detector.py`): `SubtitleRegion` dataclass and `SubtitleRegionDetector` that loads from OCR metadata or computes from raw bounding boxes
+- OCR metadata persistence: OCR transcriber now saves `{video_id}_ocr_meta.json` with subtitle region bounding box after transcription
+- Subtitle replacement API models: `SubtitleRegionResponse`, `BlurSettings`, `SubtitleReplacementRequest`, `PreviewBlurRequest`
+- `blur_settings` and `manual_region` fields on `ProcessRequest` for Phase 6 blur integration
+
 ### Fixed
 - Subtitle editor video player no longer crops/stretches video to fill frame — shows full video with correct aspect ratio
 - Video now appears on FE immediately after pipeline completes (was only visible after server restart)
