@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
 import { TTSPreview } from '../components/TTSPreview';
 import { SubtitleReplacement } from '../components/SubtitleReplacement';
+import { SubtitleEditorPanel } from '../components/SubtitleEditorPanel';
 import {
   getVideo, getSrt, postTranscribe, postTranslate, postTTS,
   subscribeSSE, getProfiles, getTTSProfiles, getTTSProviders, getTTSVoices,
@@ -475,8 +476,10 @@ function VideoDetailPage() {
                       </button>
                       {videoMeta.has_srt && (
                         <button
-                          onClick={() => navigate(`/editor/${videoMeta.video_id}?lang=${previewLanguage || videoMeta.srt_languages[0] || 'zh'}`)}
-                          className="bg-surface-container-highest text-on-surface px-4 py-2 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap active:scale-95 transition-all hover:bg-surface-container-high"
+                          onClick={() => togglePanel('editor')}
+                          className={`px-4 py-2 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap active:scale-95 transition-all ${
+                            openPanels.has('editor') ? 'bg-primary/20 text-primary' : 'bg-surface-container-highest text-on-surface hover:bg-surface-container-high'
+                          }`}
                         >
                           <span>Edit Subtitles</span>
                           <span className="material-symbols-outlined text-sm">edit_note</span>
@@ -511,6 +514,28 @@ function VideoDetailPage() {
                       <span className="text-[11px] font-medium text-emerald-400">{transcribeMessage}</span>
                     </div>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* Subtitle Editor Panel */}
+            {videoMeta && videoMeta.has_srt && openPanels.has('editor') && (
+              <div className="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/10">
+                <div className="p-4 border-b border-outline-variant/10 flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary text-lg">edit_note</span>
+                    <span className="text-xs font-bold uppercase tracking-widest">Subtitle Editor</span>
+                  </div>
+                  <button onClick={() => togglePanel('editor')} className="text-zinc-500 hover:text-on-surface">
+                    <span className="material-symbols-outlined text-sm">close</span>
+                  </button>
+                </div>
+                <div className="p-5">
+                  <SubtitleEditorPanel
+                    videoId={videoMeta.video_id}
+                    srtLanguages={videoMeta.srt_languages}
+                    defaultLang={previewLanguage || videoMeta.srt_languages[0]}
+                  />
                 </div>
               </div>
             )}
