@@ -448,9 +448,9 @@ douyin-automation/
 - [x] **6.10** Register router + update process flow
 - [x] **6.11** TypeScript types
 - [x] **6.12** API client functions
-- [ ] **6.13** Region selector component — `ui-app/src/components/editor/RegionSelector.tsx`
-- [ ] **6.14** Blur preview component — `ui-app/src/components/editor/BlurPreview.tsx`
-- [ ] **6.15** Subtitle replacement section on Process page
+- [x] **6.13** Region selector component — `ui-app/src/components/editor/RegionSelector.tsx`
+- [x] **6.14** Blur preview component — `ui-app/src/components/editor/BlurPreview.tsx`
+- [x] **6.15** Subtitle replacement section on Video Studio page
 
 **Verification:**
 - [ ] V6.1 — Region auto-detection returns correct bounding box from OCR metadata

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
 import { TTSPreview } from '../components/TTSPreview';
+import { SubtitleReplacement } from '../components/SubtitleReplacement';
 import {
   getVideo, getSrt, postTranscribe, postTranslate, postTTS,
   subscribeSSE, getProfiles, getTTSProfiles, getTTSProviders, getTTSVoices,
@@ -13,6 +14,7 @@ import type { TTSAudioEntry } from '../api/client';
 import type {
   VideoMetadata, SubtitleSegment, TranslationProfileSummary,
   VoiceProfileConfig, TTSProviderInfo, VoiceInfo, PlatformSpec,
+  BlurSettings, SubtitleRegion,
 } from '../api/types';
 import { loadApiKeys, loadLLMPrefs, saveLLMPrefs } from '../utils/storage';
 
@@ -82,6 +84,14 @@ function VideoDetailPage() {
   const [exportDone, setExportDone] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
+
+  // Blur state (Phase 6)
+  const [activeBlurSettings, setActiveBlurSettings] = useState<BlurSettings | null>(null);
+  const [activeBlurRegion, setActiveBlurRegion] = useState<SubtitleRegion | null>(null);
+  const handleBlurChange = useCallback((settings: BlurSettings | null, region: SubtitleRegion | null) => {
+    setActiveBlurSettings(settings);
+    setActiveBlurRegion(region);
+  }, []);
 
   const MODEL_OPTIONS: Record<string, { label: string; value: string }[]> = {
     deepseek: [
@@ -883,6 +893,14 @@ function VideoDetailPage() {
                   )}
                 </div>
               </div>
+            )}
+
+            {/* Subtitle Replacement Panel (Phase 6) */}
+            {videoMeta && (
+              <SubtitleReplacement
+                videoId={videoMeta.video_id}
+                onBlurSettingsChange={handleBlurChange}
+              />
             )}
 
             {/* Export Panel */}

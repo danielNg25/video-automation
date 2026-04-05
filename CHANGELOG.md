@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Region selector component (`ui-app/src/components/editor/RegionSelector.tsx`): interactive drag-to-resize/reposition overlay on video frame with coordinate display and auto-detect button
+- Blur preview component (`ui-app/src/components/editor/BlurPreview.tsx`): before/after comparison with refresh button, toggle between original and blurred frame
+- Subtitle replacement section on Video Studio: collapsible "Original Subtitle Removal" panel with enable toggle, region selector, blur mode/strength controls, and live blur preview
 - TypeScript types for subtitle replacement: `SubtitleRegion`, `BlurSettings`, `PreviewBlurRequest`; `blur_settings` and `manual_region` on `ProcessRequest`
 - API client functions: `getSubtitleRegion()`, `setSubtitleRegion()`, `postPreviewBlur()`
 - Subtitle replacement router (`src/api/routers/replacement.py`): `GET/POST /api/videos/{id}/subtitle-region` (auto-detect and manual override), `POST /api/videos/{id}/preview-blur` (single-frame JPEG preview)
