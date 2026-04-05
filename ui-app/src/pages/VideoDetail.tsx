@@ -93,6 +93,16 @@ function VideoDetailPage() {
     setActiveBlurRegion(region);
   }, []);
 
+  // Panel collapse state — all collapsed by default
+  const [openPanels, setOpenPanels] = useState<Set<string>>(new Set());
+  const togglePanel = useCallback((key: string) => {
+    setOpenPanels(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }, []);
+
   const MODEL_OPTIONS: Record<string, { label: string; value: string }[]> = {
     deepseek: [
       { label: 'DeepSeek V3', value: 'deepseek-chat' },
@@ -508,20 +518,26 @@ function VideoDetailPage() {
             {/* Translation Panel */}
             {videoMeta && videoMeta.has_srt && (
               <div className="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/10">
-                <div className="p-4 border-b border-outline-variant/10 flex justify-between items-center">
+                <button
+                  onClick={() => togglePanel('translate')}
+                  className="w-full p-4 border-b border-outline-variant/10 flex justify-between items-center hover:bg-surface-container/50 transition-colors"
+                >
                   <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-primary text-lg">translate</span>
                     <span className="text-xs font-bold uppercase tracking-widest">LLM Translation</span>
                   </div>
-                  <button
-                    onClick={() => navigate('/profiles')}
-                    className="text-[10px] font-bold text-primary uppercase tracking-wider hover:underline flex items-center gap-1"
-                  >
-                    <span className="material-symbols-outlined text-xs">settings</span>
-                    Manage Profiles
-                  </button>
-                </div>
-                <div className="p-5 space-y-4">
+                  <div className="flex items-center gap-2">
+                    <span
+                      onClick={(e) => { e.stopPropagation(); navigate('/profiles'); }}
+                      className="text-[10px] font-bold text-primary uppercase tracking-wider hover:underline flex items-center gap-1"
+                    >
+                      <span className="material-symbols-outlined text-xs">settings</span>
+                      Profiles
+                    </span>
+                    <span className={`material-symbols-outlined text-sm text-zinc-500 transition-transform ${openPanels.has('translate') ? 'rotate-180' : ''}`}>expand_more</span>
+                  </div>
+                </button>
+                {openPanels.has('translate') && <div className="p-5 space-y-4">
                   {/* Profile Selector */}
                   <div className="flex items-center gap-3">
                     <div className="flex-1">
@@ -638,23 +654,29 @@ function VideoDetailPage() {
                       </button>
                     </div>
                   )}
-                </div>
+                </div>}
               </div>
             )}
 
             {/* TTS Dubbing Panel */}
             {videoMeta && videoMeta.has_srt && videoMeta.srt_languages.some(l => l !== 'zh') && (
               <div className="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/10">
-                <div className="p-4 border-b border-outline-variant/10 flex justify-between items-center">
+                <button
+                  onClick={() => togglePanel('tts')}
+                  className="w-full p-4 border-b border-outline-variant/10 flex justify-between items-center hover:bg-surface-container/50 transition-colors"
+                >
                   <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-primary text-lg">record_voice_over</span>
                     <span className="text-xs font-bold uppercase tracking-widest">TTS Dubbing</span>
                   </div>
-                  <span className="font-mono text-[10px] text-primary bg-primary/10 px-2 py-0.5 rounded uppercase">
-                    {selectedTtsProvider}
-                  </span>
-                </div>
-                <div className="p-5 space-y-4">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[10px] text-primary bg-primary/10 px-2 py-0.5 rounded uppercase">
+                      {selectedTtsProvider}
+                    </span>
+                    <span className={`material-symbols-outlined text-sm text-zinc-500 transition-transform ${openPanels.has('tts') ? 'rotate-180' : ''}`}>expand_more</span>
+                  </div>
+                </button>
+                {openPanels.has('tts') && <div className="p-5 space-y-4">
                   {/* Provider + Language */}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -891,7 +913,7 @@ function VideoDetailPage() {
                       {ttsError}
                     </div>
                   )}
-                </div>
+                </div>}
               </div>
             )}
 
@@ -906,13 +928,17 @@ function VideoDetailPage() {
             {/* Export Panel */}
             {videoMeta && (
               <div className="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/10">
-                <div className="p-4 border-b border-outline-variant/10 flex justify-between items-center">
+                <button
+                  onClick={() => togglePanel('export')}
+                  className="w-full p-4 border-b border-outline-variant/10 flex justify-between items-center hover:bg-surface-container/50 transition-colors"
+                >
                   <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-primary text-lg">movie_edit</span>
                     <span className="text-xs font-bold uppercase tracking-widest">Export Video</span>
                   </div>
-                </div>
-                <div className="p-5 space-y-4">
+                  <span className={`material-symbols-outlined text-sm text-zinc-500 transition-transform ${openPanels.has('export') ? 'rotate-180' : ''}`}>expand_more</span>
+                </button>
+                {openPanels.has('export') && <div className="p-5 space-y-4">
                   {/* Subtitle Language */}
                   <div className="space-y-1.5">
                     <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold">Subtitles</label>
@@ -1067,7 +1093,7 @@ function VideoDetailPage() {
                       </a>
                     </div>
                   )}
-                </div>
+                </div>}
               </div>
             )}
           </div>

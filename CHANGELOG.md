@@ -26,6 +26,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Subtitle replacement API models: `SubtitleRegionResponse`, `BlurSettings`, `SubtitleReplacementRequest`, `PreviewBlurRequest`
 - `blur_settings` and `manual_region` fields on `ProcessRequest` for Phase 6 blur integration
 
+### Changed
+- Video Studio panels (Translation, TTS Dubbing, Subtitle Replacement, Export) are now collapsible — click header to toggle open/closed, all collapsed by default
+
 ### Fixed
 - Blur region now expands to full video width (minus 3% margin) so translated text is fully covered even when longer than original Chinese
 - Style matcher centers subtitle text vertically within the blur region (was aligned to bottom edge, causing text to appear below blur)
