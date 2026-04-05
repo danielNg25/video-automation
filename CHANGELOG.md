@@ -6,7 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- Video now appears on FE immediately after pipeline completes (was only visible after server restart)
+- Pipeline TTS now matches Video Studio quality: LLM sentence detection, text shortening, and progress tracking
+
+### Changed
+- TTS endpoint and Video Studio now pass LLM API key/backend for sentence boundary detection during TTS generation
+- TTS now merges subtitle segments into sentence groups before synthesis (LLM-detected boundaries, heuristic fallback), producing natural-sounding speech instead of choppy per-line audio
+- Translation now sends all segments in a single LLM call for full narrative context (was batching 8 at a time)
+- For videos >100 segments, uses smart chunking with full transcript as context per chunk
+- Added robust numbered-response parser with positional fallback
+- max_tokens scales dynamically with segment count
+
 ### Added
+- Phase 6 plan: Subtitle replacement — blur original Chinese subs, auto-detect region from OCR, reposition translated subs to match original location/size
+- Renamed Phase 6 (uploads) → Phase 7 to accommodate new phase
+- TTS gap redistribution (`src/tts/assembler.py`): 3-phase timing pipeline — borrows unused gap time from adjacent segments, LLM-shortens text if ratio > 1.25x, hard-caps speedup at 1.5x with fade-out truncation
+- `LLMTranslator.shorten_text()` method for condensing subtitle text while preserving meaning
 - Retry utility (`src/utils/retry.py`): `retry` and `async_retry` decorators with exponential backoff, jitter, and configurable retryable exceptions
 - State persistence (`src/utils/state.py`): `PipelineState` class with per-video JSON state files, stage tracking, crash recovery via `get_resume_stage()`
 - Duplicate detection (`src/utils/state.py`): `is_duplicate()` and `register_processed()` with URL normalization, file-locked `processed_videos.json` registry

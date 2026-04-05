@@ -26,6 +26,8 @@ class LLMTranslator:
         api_key: str | None = None,
         base_url: str | None = None,
         max_segments_per_batch: int = 8,
+        full_document_threshold: int = 100,
+        chunk_size: int = 50,
         temperature: float = 0.7,
     ):
         self.backend = backend
@@ -33,6 +35,8 @@ class LLMTranslator:
         self.api_key = api_key
         self.base_url = base_url
         self.max_segments_per_batch = max_segments_per_batch
+        self.full_document_threshold = full_document_threshold
+        self.chunk_size = chunk_size
         self.temperature = temperature
         self._client = None
 
@@ -84,7 +88,181 @@ class LLMTranslator:
 
         return "\n".join(parts)
 
-    async def _call_anthropic(self, system: str, user: str) -> str:
+    def _build_full_document_prompt(
+        self,
+        segments: list[dict],
+        profile: TranslationProfile,
+    ) -> str:
+        """Build a prompt that sends ALL segments at once for full-context translation."""
+        parts = [
+            f"Translate this complete video subtitle transcript from "
+            f"{profile.source_language} to {profile.target_language}.",
+            "",
+            "RULES:",
+            f"- Return exactly {len(segments)} numbered lines matching the input numbering.",
+            "- Each translated line corresponds to the same-numbered input line.",
+            "- Translate naturally for subtitle display — keep lines concise.",
+            "- Maintain narrative coherence across the entire transcript.",
+            "- Preserve the emotional tone and pacing of the original.",
+            "- If two consecutive short segments form one thought, you may adjust phrasing "
+            "but MUST still return them as separate numbered lines.",
+            "",
+        ]
+
+        for i, seg in enumerate(segments, 1):
+            text = seg["text"].replace("\n", " ")
+            parts.append(f"{i}. {text}")
+
+        return "\n".join(parts)
+
+    def _build_chunked_document_prompt(
+        self,
+        all_segments: list[dict],
+        chunk_local_indices: list[int],
+        profile: TranslationProfile,
+        previous_translations: dict[int, str] | None = None,
+    ) -> str:
+        """Build a prompt with full transcript as context, requesting translation of a chunk only.
+
+        Args:
+            all_segments: All non-empty segments (0-indexed).
+            chunk_local_indices: Indices within all_segments for this chunk.
+            profile: Translation profile.
+            previous_translations: Dict of original_segment_index -> translated text
+                from previous chunks (for consistency).
+        """
+        parts = [
+            f"Here is the complete subtitle transcript for context "
+            f"(DO NOT translate these, they are reference only):",
+        ]
+        for i, seg in enumerate(all_segments, 1):
+            text = seg["text"].replace("\n", " ")
+            parts.append(f"{i}. {text}")
+        parts.append("")
+
+        if previous_translations:
+            parts.append("Previously translated segments (for consistency reference):")
+            for idx in sorted(previous_translations.keys()):
+                parts.append(f"{idx + 1}. {previous_translations[idx]}")
+            parts.append("")
+
+        # Use 1-based numbering matching the full transcript
+        chunk_start_display = chunk_local_indices[0] + 1
+        chunk_end_display = chunk_local_indices[-1] + 1
+        parts.append(
+            f"Now translate ONLY segments {chunk_start_display} through {chunk_end_display} from "
+            f"{profile.source_language} to {profile.target_language}."
+        )
+        parts.append(
+            f"Return exactly {len(chunk_local_indices)} numbered lines, "
+            f"starting from {chunk_start_display}."
+        )
+        parts.append("")
+        for idx in chunk_local_indices:
+            text = all_segments[idx]["text"].replace("\n", " ")
+            parts.append(f"{idx + 1}. {text}")
+
+        return "\n".join(parts)
+
+    def _parse_numbered_response(
+        self,
+        response: str,
+        prompt_number_to_index: dict[int, int],
+    ) -> dict[int, str]:
+        """Parse LLM response with robust number-based matching.
+
+        Args:
+            response: Raw LLM response text.
+            prompt_number_to_index: Maps 1-based prompt numbers to 0-based
+                original segment indices. E.g., {1: 0, 2: 3, 3: 5} means
+                prompt line "1." maps to original segment 0, "2." to 3, etc.
+
+        Returns:
+            Dict mapping 0-based original segment index to translated text.
+        """
+        result: dict[int, str] = {}
+        numbered_lines: list[tuple[int, str]] = []
+
+        for line in response.strip().split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            # Match numbered lines: "1. text", "1) text", "1: text", "1- text"
+            m = re.match(r"^(\d+)\s*[\.\):\-]\s*(.+)$", line)
+            if m:
+                num = int(m.group(1))
+                text = m.group(2).strip()
+                numbered_lines.append((num, text))
+
+        if numbered_lines:
+            for num, text in numbered_lines:
+                if num in prompt_number_to_index:
+                    result[prompt_number_to_index[num]] = text
+        else:
+            # Fallback: positional matching (no numbers found)
+            lines = [
+                ln.strip()
+                for ln in response.strip().split("\n")
+                if ln.strip()
+            ]
+            expected_indices = list(prompt_number_to_index.values())
+            for i, idx in enumerate(expected_indices):
+                if i < len(lines):
+                    result[idx] = re.sub(r"^\d+[\.\)]\s*", "", lines[i])
+
+        expected_count = len(prompt_number_to_index)
+        if len(result) != expected_count:
+            missing = set(prompt_number_to_index.values()) - set(result.keys())
+            logger.warning(
+                f"Expected {expected_count} translations, got {len(result)}. "
+                f"Missing original indices: {missing}"
+            )
+
+        return result
+
+    def _find_natural_chunk_boundaries(
+        self, segments: list[dict], chunk_size: int
+    ) -> list[list[int]]:
+        """Split segment indices into chunks, preferring natural pause points (time gaps > 2s)."""
+        n = len(segments)
+        if n <= chunk_size:
+            return [list(range(n))]
+
+        chunks = []
+        start = 0
+        while start < n:
+            if start + chunk_size >= n:
+                chunks.append(list(range(start, n)))
+                break
+
+            # Look for the largest time gap in a window around the target boundary
+            target = start + chunk_size
+            window_start = max(start + 1, target - 5)
+            window_end = min(n - 1, target + 5)
+
+            best_gap = -1.0
+            best_boundary = target
+            for i in range(window_start, window_end):
+                gap = segments[i]["start"] - segments[i - 1]["end"]
+                if gap > best_gap:
+                    best_gap = gap
+                    best_boundary = i
+
+            chunks.append(list(range(start, best_boundary)))
+            start = best_boundary
+
+        return chunks
+
+    def _estimate_max_tokens(self, segment_count: int) -> int:
+        """Estimate max output tokens based on segment count."""
+        # ~80 tokens per translated segment as upper bound
+        estimated = max(4096, segment_count * 80)
+        # Cap for local models
+        if self.backend == "local":
+            return min(estimated, 4096)
+        return min(estimated, 16384)
+
+    async def _call_anthropic(self, system: str, user: str, max_tokens: int = 4096) -> str:
         import anthropic
 
         if self._client is None:
@@ -95,14 +273,14 @@ class LLMTranslator:
 
         response = await self._client.messages.create(
             model=self.model,
-            max_tokens=4096,
+            max_tokens=max_tokens,
             temperature=self.temperature,
             system=system,
             messages=[{"role": "user", "content": user}],
         )
         return response.content[0].text
 
-    async def _call_openai(self, system: str, user: str) -> str:
+    async def _call_openai(self, system: str, user: str, max_tokens: int = 4096) -> str:
         import openai
 
         if self._client is None:
@@ -123,16 +301,16 @@ class LLMTranslator:
         )
         return response.choices[0].message.content
 
-    async def _call_local(self, system: str, user: str) -> str:
+    async def _call_local(self, system: str, user: str, max_tokens: int = 4096) -> str:
         """Run inference on a local model via mlx-lm (macOS) or llama-cpp-python (Linux)."""
         import sys
 
         if sys.platform == "darwin":
-            return await self._call_mlx(system, user)
+            return await self._call_mlx(system, user, max_tokens)
         else:
-            return await self._call_llama_cpp(system, user)
+            return await self._call_llama_cpp(system, user, max_tokens)
 
-    async def _call_mlx(self, system: str, user: str) -> str:
+    async def _call_mlx(self, system: str, user: str, max_tokens: int = 4096) -> str:
         from mlx_lm import generate, load
         from mlx_lm.sample_utils import make_sampler
 
@@ -160,13 +338,13 @@ class LLMTranslator:
             model,
             tokenizer,
             prompt=prompt,
-            max_tokens=4096,
+            max_tokens=max_tokens,
             sampler=sampler,
             verbose=False,
         )
         return response
 
-    async def _call_llama_cpp(self, system: str, user: str) -> str:
+    async def _call_llama_cpp(self, system: str, user: str, max_tokens: int = 4096) -> str:
         from llama_cpp import Llama
 
         # Lazy-load model on first call
@@ -201,22 +379,22 @@ class LLMTranslator:
         response = await asyncio.to_thread(
             self._client.create_chat_completion,
             messages=messages,
-            max_tokens=4096,
+            max_tokens=max_tokens,
             temperature=self.temperature,
         )
         return response["choices"][0]["message"]["content"]
 
-    async def _call_llm(self, system: str, user: str) -> str:
+    async def _call_llm(self, system: str, user: str, max_tokens: int = 4096) -> str:
         if self.backend == "anthropic":
-            return await self._call_anthropic(system, user)
+            return await self._call_anthropic(system, user, max_tokens)
         elif self.backend == "openai":
-            return await self._call_openai(system, user)
+            return await self._call_openai(system, user, max_tokens)
         elif self.backend == "deepseek":
             if not self.base_url:
-                self.base_url = "https://api.deepseek.com"
-            return await self._call_openai(system, user)
+                self.base_url = "https://api.deepseek.com/v1"
+            return await self._call_openai(system, user, max_tokens)
         elif self.backend == "local":
-            return await self._call_local(system, user)
+            return await self._call_local(system, user, max_tokens)
         else:
             raise ValueError(f"Unsupported backend: {self.backend}")
 
@@ -241,6 +419,10 @@ class LLMTranslator:
     ) -> Path:
         """Translate an SRT file using the LLM with the given profile.
 
+        Sends all segments in a single LLM call for full narrative context.
+        For very long videos (>full_document_threshold), uses smart chunking
+        where each chunk sees the full transcript as context.
+
         Args:
             srt_path: Path to source SRT file.
             profile: Translation profile controlling style/tone.
@@ -259,69 +441,89 @@ class LLMTranslator:
         # Filter out empty segments, keep indices for reassembly
         non_empty = [(i, seg) for i, seg in enumerate(segments) if seg["text"].strip()]
         empty_indices = {i for i in range(len(segments)) if not segments[i]["text"].strip()}
+        non_empty_segments = [seg for _, seg in non_empty]
+        non_empty_indices = [idx for idx, _ in non_empty]
 
-        # Batch non-empty segments
-        batches = []
-        for i in range(0, len(non_empty), self.max_segments_per_batch):
-            batches.append(non_empty[i : i + self.max_segments_per_batch])
-
-        total_batches = len(batches)
         system_prompt = self._build_system_prompt(profile)
-        translations: dict[int, str] = {}  # original_index -> translated_text
+        translations: dict[int, str] = {}
+        max_tokens = self._estimate_max_tokens(len(non_empty))
 
-        logger.info(
-            f"Translating {len(non_empty)} segments in {total_batches} batches "
-            f"({profile.name}, {self.backend}/{self.model})"
-        )
-
-        for batch_num, batch in enumerate(batches, 1):
-            batch_segments = [seg for _, seg in batch]
-            batch_indices = [idx for idx, _ in batch]
-
-            # Include previous 2 segments as context
-            context = None
-            if batch_num > 1:
-                prev_batch = batches[batch_num - 2]
-                context = [seg for _, seg in prev_batch[-2:]]
-
-            user_prompt = self._build_batch_prompt(batch_segments, profile, context)
-            msg = f"Translating batch {batch_num}/{total_batches}..."
+        if len(non_empty) <= self.full_document_threshold:
+            # FULL DOCUMENT MODE — single LLM call with all segments
+            logger.info(
+                f"Translating {len(non_empty)} segments in single call "
+                f"({profile.name}, {self.backend}/{self.model})"
+            )
 
             if progress_callback:
-                progress_callback(batch_num, total_batches, msg)
-            logger.info(msg)
+                progress_callback(1, 1, f"Translating all {len(non_empty)} segments...")
 
-            response = await self._call_llm(system_prompt, user_prompt)
-            parsed = self._parse_response(response, len(batch_segments))
+            user_prompt = self._build_full_document_prompt(non_empty_segments, profile)
+            response = await self._call_llm(system_prompt, user_prompt, max_tokens)
 
-            if len(parsed) != len(batch_segments):
+            # Build mapping: 1-based prompt number → original segment index
+            # Prompt shows "1. text", "2. text", etc. for non-empty segments
+            number_to_index = {
+                i + 1: orig_idx for i, orig_idx in enumerate(non_empty_indices)
+            }
+            translations = self._parse_numbered_response(response, number_to_index)
+
+            # Retry once if too many missing (>20%)
+            missing_count = len(non_empty_indices) - len(translations)
+            if missing_count > len(non_empty_indices) * 0.2:
                 logger.warning(
-                    f"Batch {batch_num}: expected {len(batch_segments)} translations, "
-                    f"got {len(parsed)}. Retrying..."
+                    f"Missing {missing_count}/{len(non_empty_indices)} translations. "
+                    "Retrying with stricter instructions..."
                 )
-                # Retry with stricter instruction
                 retry_prompt = (
                     user_prompt
-                    + f"\n\nIMPORTANT: You MUST return exactly {len(batch_segments)} lines, "
-                    "no more, no less. One translation per line."
+                    + f"\n\nIMPORTANT: You MUST return exactly {len(non_empty)} numbered lines, "
+                    "no more, no less. One translation per numbered line."
                 )
-                response = await self._call_llm(system_prompt, retry_prompt)
-                parsed = self._parse_response(response, len(batch_segments))
+                response = await self._call_llm(system_prompt, retry_prompt, max_tokens)
+                translations = self._parse_numbered_response(response, number_to_index)
+        else:
+            # CHUNKED MODE — full context, partial translation per chunk
+            chunks = self._find_natural_chunk_boundaries(non_empty_segments, self.chunk_size)
+            total_chunks = len(chunks)
 
-            # Map translations to original indices
-            for j, orig_idx in enumerate(batch_indices):
-                if j < len(parsed):
-                    translations[orig_idx] = parsed[j]
-                else:
-                    # Fallback: use original text
-                    translations[orig_idx] = batch_segments[j]["text"]
-                    logger.warning(
-                        f"Missing translation for segment {orig_idx + 1}, using original"
-                    )
+            logger.info(
+                f"Translating {len(non_empty)} segments in {total_chunks} chunks "
+                f"({profile.name}, {self.backend}/{self.model})"
+            )
 
-            # Rate limiting between batches (skip for local models)
-            if batch_num < total_batches and self.backend != "local":
-                await asyncio.sleep(1)
+            for chunk_num, chunk_local_indices in enumerate(chunks, 1):
+                msg = f"Translating chunk {chunk_num}/{total_chunks}..."
+                if progress_callback:
+                    progress_callback(chunk_num, total_chunks, msg)
+                logger.info(msg)
+
+                user_prompt = self._build_chunked_document_prompt(
+                    non_empty_segments, chunk_local_indices, profile,
+                    previous_translations=translations,
+                )
+                response = await self._call_llm(system_prompt, user_prompt, max_tokens)
+
+                # Build mapping: 1-based prompt number → original segment index
+                # Prompt shows e.g., "51. text" for non_empty_segments[50]
+                chunk_number_to_index = {
+                    local_idx + 1: non_empty_indices[local_idx]
+                    for local_idx in chunk_local_indices
+                }
+                chunk_translations = self._parse_numbered_response(
+                    response, chunk_number_to_index
+                )
+                translations.update(chunk_translations)
+
+                # Rate limiting between chunks (skip for local models)
+                if chunk_num < total_chunks and self.backend != "local":
+                    await asyncio.sleep(1)
+
+        # Fill in any missing translations with original text
+        for idx in non_empty_indices:
+            if idx not in translations:
+                translations[idx] = segments[idx]["text"]
+                logger.warning(f"Missing translation for segment {idx + 1}, using original")
 
         # Reassemble all segments with translations
         translated_segments = []
@@ -342,3 +544,135 @@ class LLMTranslator:
         )
 
         return output_path
+
+    async def shorten_text(
+        self,
+        text: str,
+        target_ratio: float,
+        language: str | None = None,
+        current_duration: float | None = None,
+        target_duration: float | None = None,
+        speed_ratio: float | None = None,
+    ) -> str:
+        """Shorten text for TTS timing, preserving core meaning.
+
+        Args:
+            text: Original subtitle text.
+            target_ratio: Target length as fraction of original (e.g., 0.6 = 60%).
+            language: Optional language hint.
+            current_duration: How long the TTS audio currently is (seconds).
+            target_duration: How long the audio needs to fit into (seconds).
+            speed_ratio: Current speedup ratio (e.g., 2.5 means 2.5x too long).
+
+        Returns:
+            Shortened text, or original if shortening fails.
+        """
+        target_pct = max(30, int(target_ratio * 100))
+        lang_hint = f" The text is in {language}." if language else ""
+
+        timing_context = ""
+        if current_duration and target_duration and speed_ratio:
+            timing_context = (
+                f"\n\nTiming context: The TTS audio for this text is {current_duration:.1f}s "
+                f"but must fit in {target_duration:.1f}s ({speed_ratio:.1f}x too long). "
+                f"The shortened version needs to be spoken in under {target_duration:.1f}s. "
+                f"Be aggressive — remove filler words, simplify phrases, keep only the essential meaning."
+            )
+
+        system = (
+            "You are a subtitle editor optimizing text for TTS dubbing. "
+            "Shorten subtitle text so it can be spoken faster while preserving core meaning. "
+            "Output must be natural speech suitable for text-to-speech."
+        )
+        user = (
+            f"Shorten this text to approximately {target_pct}% of its current spoken length. "
+            f"Keep the core meaning but make it much more concise. "
+            f"Return ONLY the shortened text, nothing else.{lang_hint}{timing_context}\n\n"
+            f"Original: {text}"
+        )
+
+        try:
+            logger.info(
+                f"Shortening text: '{text[:60]}' | "
+                f"duration={current_duration:.1f}s → target={target_duration:.1f}s "
+                f"({speed_ratio:.1f}x) | target_pct={target_pct}%"
+                if current_duration and target_duration and speed_ratio
+                else f"Shortening text: '{text[:60]}' | target_pct={target_pct}%"
+            )
+            result = await self._call_llm(system, user)
+            shortened = result.strip().split("\n")[0].strip()
+            if not shortened or len(shortened) >= len(text):
+                logger.info(f"Shortening produced no improvement, keeping original")
+                return text
+            logger.info(f"Shortened: '{text[:40]}' → '{shortened[:40]}' ({len(text)}→{len(shortened)} chars)")
+            return shortened
+        except Exception as e:
+            logger.warning(f"Text shortening failed: {e}")
+            return text
+
+    async def shorten_texts_batch(
+        self,
+        items: list[dict],
+    ) -> list[str]:
+        """Shorten multiple texts in a single LLM call.
+
+        Args:
+            items: List of dicts with keys: text, target_pct, current_duration, target_duration, speed_ratio
+
+        Returns:
+            List of shortened texts (same order as input). Falls back to original on failure.
+        """
+        if not items:
+            return []
+
+        lines = []
+        for i, item in enumerate(items):
+            lines.append(
+                f"{i + 1}. [{item['current_duration']:.1f}s→{item['target_duration']:.1f}s, {item['speed_ratio']:.1f}x] {item['text']}"
+            )
+
+        system = (
+            "You are a subtitle editor optimizing text for TTS dubbing. "
+            "Shorten each subtitle line so it can be spoken in the target duration. "
+            "Be aggressive — remove filler words, simplify phrases, keep only essential meaning. "
+            "Output must be natural speech suitable for text-to-speech."
+        )
+        user = (
+            f"Shorten each of the following {len(items)} subtitle lines. "
+            f"Each line shows [current_duration→target_duration, speedup_ratio] followed by the text. "
+            f"Return EXACTLY {len(items)} lines, one shortened version per line, in the same order. "
+            f"Return ONLY the shortened text for each line, numbered like '1. shortened text'.\n\n"
+            + "\n".join(lines)
+        )
+
+        logger.info(f"Batch shortening {len(items)} segments in single LLM call")
+
+        try:
+            result = await self._call_llm(system, user)
+            parsed = self._parse_shortening_response(result, len(items))
+
+            shortened = []
+            for i, item in enumerate(items):
+                if i < len(parsed) and parsed[i] and len(parsed[i]) < len(item["text"]):
+                    logger.info(f"  Segment: '{item['text'][:30]}' → '{parsed[i][:30]}' ({item['speed_ratio']:.1f}x)")
+                    shortened.append(parsed[i])
+                else:
+                    shortened.append(item["text"])
+            return shortened
+        except Exception as e:
+            logger.warning(f"Batch shortening failed: {e}")
+            return [item["text"] for item in items]
+
+    def _parse_shortening_response(self, response: str, expected: int) -> list[str]:
+        """Parse numbered lines from LLM response."""
+        import re
+        lines = []
+        for line in response.strip().split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            # Remove numbering like "1. " or "1) "
+            cleaned = re.sub(r"^\d+[\.\)]\s*", "", line).strip()
+            if cleaned:
+                lines.append(cleaned)
+        return lines

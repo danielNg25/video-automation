@@ -213,6 +213,7 @@ export function postPipeline(
   translateProfile?: string,
   sourceLanguage: string = 'zh',
   translationOverride?: { backend: string; model: string; api_key?: string; base_url?: string },
+  ttsProfile?: string,
 ): Promise<TaskResponse> {
   return request('/pipeline/full', {
     method: 'POST',
@@ -223,6 +224,7 @@ export function postPipeline(
       translate_profile: translateProfile ?? null,
       translation_override: translationOverride ?? null,
       source_language: sourceLanguage,
+      tts_profile: ttsProfile ?? null,
     }),
   });
 }
@@ -250,6 +252,8 @@ export function postTTS(
   provider?: string,
   voice?: string,
   apiKey?: string,
+  llmApiKey?: string,
+  llmBackend?: string,
 ): Promise<TaskResponse> {
   return request('/tts', {
     method: 'POST',
@@ -261,6 +265,8 @@ export function postTTS(
       provider: provider ?? null,
       voice: voice ?? null,
       api_key: apiKey ?? null,
+      llm_api_key: llmApiKey ?? null,
+      llm_backend: llmBackend ?? null,
     }),
   });
 }

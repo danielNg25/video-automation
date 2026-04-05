@@ -382,7 +382,7 @@ douyin-automation/
 - [ ] V4.5 — Audio mixing: dubbed video has correct volume levels
 - [ ] V4.6 — Per-platform voice: TikTok/FB get Vietnamese, YouTube/X get English
 - [ ] V4.7 — UI: enable TTS → select voice → preview → generate → process
-- [ ] V4.8 — Segment duration fitting: long TTS clips speed up to fit time window
+- [x] V4.8 — Segment duration fitting: long TTS clips speed up to fit time window
 - [x] V4.9 — Unit tests pass
 
 ---
@@ -432,38 +432,72 @@ douyin-automation/
 
 ---
 
-### Phase 6 — Platform Upload Integrations (Week 6-7)
+### Phase 6 — Subtitle Replacement: Blur + Reposition (Week 6-7)
 
-> Detailed plan: [`plans/phase6-platform-uploads.md`](plans/phase6-platform-uploads.md)
+> Detailed plan: [`plans/phase6-subtitle-replacement.md`](plans/phase6-subtitle-replacement.md)
 
-- [ ] **6.1** Base uploader interface — `src/uploader/base.py`
-- [ ] **6.2** OAuth setup script — `scripts/setup_oauth.py`
-- [ ] **6.3** YouTube uploader — `src/uploader/youtube.py`
-- [ ] **6.4** TikTok uploader — `src/uploader/tiktok.py`
-- [ ] **6.5** Facebook uploader — `src/uploader/facebook.py`
-- [ ] **6.6** X/Twitter uploader *(stretch goal)* — `src/uploader/x.py`
-- [ ] **6.7** Uploader factory — `src/uploader/__init__.py`
-- [ ] **6.8** Phase 6 tests — `tests/test_uploader.py`
-- [ ] **6.9** Auth router — `server/routers/auth.py`
-- [ ] **6.10** Upload router + service — `server/routers/upload.py`
-- [ ] **6.11** Upload page — `web/src/pages/UploadPage.tsx`
+- [ ] **6.1** Subtitle region detector — `src/processor/region_detector.py`
+- [ ] **6.2** Blur filter in ffmpeg — `src/processor/ffmpeg.py`
+- [ ] **6.3** Subtitle style matcher — `src/processor/style_matcher.py`
+- [ ] **6.4** Combined blur + burn pipeline — `src/processor/ffmpeg.py`
+- [ ] **6.5** Update batch processor — `src/processor/__init__.py`
+- [ ] **6.6** OCR metadata persistence — `src/transcriber/ocr.py` update
+- [ ] **6.7** Unit tests — `tests/test_subtitle_replacement.py`
+- [ ] **6.8** Subtitle replacement models — `src/api/models.py`
+- [ ] **6.9** Subtitle replacement router — `src/api/routers/replacement.py`
+- [ ] **6.10** Register router + update process flow
+- [ ] **6.11** TypeScript types
+- [ ] **6.12** API client functions
+- [ ] **6.13** Region selector component — `ui-app/src/components/editor/RegionSelector.tsx`
+- [ ] **6.14** Blur preview component — `ui-app/src/components/editor/BlurPreview.tsx`
+- [ ] **6.15** Subtitle replacement section on Process page
+
+**Verification:**
+- [ ] V6.1 — Region auto-detection returns correct bounding box from OCR metadata
+- [ ] V6.2 — Blur preview: JPEG shows original subtitle area blurred out
+- [ ] V6.3 — Three blur modes work (blur, fill, pixelate)
+- [ ] V6.4 — Style matching: new subtitle appears at same position/size as original
+- [ ] V6.5 — Single-pass processing (blur + burn in one ffmpeg call)
+- [ ] V6.6 — Blur + TTS combined: blurred subs + new subs + dubbed audio
+- [ ] V6.7 — Graceful fallback: no OCR data → skip blur, process normally
+- [ ] V6.8 — Manual region override via UI
+- [ ] V6.9 — UI flow: detect region → preview blur → process → clean output
+- [ ] V6.10 — Unit tests pass
+
+---
+
+### Phase 7 — Platform Upload Integrations (Week 7-8)
+
+> Detailed plan: [`plans/phase7-platform-uploads.md`](plans/phase7-platform-uploads.md)
+
+- [ ] **7.1** Base uploader interface — `src/uploader/base.py`
+- [ ] **7.2** OAuth setup script — `scripts/setup_oauth.py`
+- [ ] **7.3** YouTube uploader — `src/uploader/youtube.py`
+- [ ] **7.4** TikTok uploader — `src/uploader/tiktok.py`
+- [ ] **7.5** Facebook uploader — `src/uploader/facebook.py`
+- [ ] **7.6** X/Twitter uploader *(stretch goal)* — `src/uploader/x.py`
+- [ ] **7.7** Uploader factory — `src/uploader/__init__.py`
+- [ ] **7.8** Phase 7 tests — `tests/test_uploader.py`
+- [ ] **7.9** Auth router — `server/routers/auth.py`
+- [ ] **7.10** Upload router + service — `server/routers/upload.py`
+- [ ] **7.11** Upload page — `web/src/pages/UploadPage.tsx`
 
 **Verification (Backend):**
-- [ ] V6.1 — YouTube OAuth setup saves token with refresh_token
-- [ ] V6.2 — YouTube upload (private) succeeds, video visible in Studio
-- [ ] V6.3 — TikTok upload (draft) succeeds, video in inbox
-- [ ] V6.4 — Facebook upload succeeds, video on Page
-- [ ] V6.5 — X upload succeeds *(if enabled)*
-- [ ] V6.6 — Uploader factory returns correct types, only enabled platforms
-- [ ] V6.7 — Error handling returns `UploadResult(success=False)`, no crash
-- [ ] V6.8 — Unit tests pass
+- [ ] V7.1 — YouTube OAuth setup saves token with refresh_token
+- [ ] V7.2 — YouTube upload (private) succeeds, video visible in Studio
+- [ ] V7.3 — TikTok upload (draft) succeeds, video in inbox
+- [ ] V7.4 — Facebook upload succeeds, video on Page
+- [ ] V7.5 — X upload succeeds *(if enabled)*
+- [ ] V7.6 — Uploader factory returns correct types, only enabled platforms
+- [ ] V7.7 — Error handling returns `UploadResult(success=False)`, no crash
+- [ ] V7.8 — Unit tests pass
 
 **Verification (Web UI):**
-- [ ] V6.9 — Auth status API returns per-platform connection status
-- [ ] V6.10 — OAuth flow via API (start → authorize → callback → connected)
-- [ ] V6.11 — Upload via API with per-platform progress
-- [ ] V6.12 — Upload page: connect accounts → select video → upload → see result URLs
-- [ ] V6.13 — Retry failed upload without re-uploading successful platforms
+- [ ] V7.9 — Auth status API returns per-platform connection status
+- [ ] V7.10 — OAuth flow via API (start → authorize → callback → connected)
+- [ ] V7.11 — Upload via API with per-platform progress
+- [ ] V7.12 — Upload page: connect accounts → select video → upload → see result URLs
+- [ ] V7.13 — Retry failed upload without re-uploading successful platforms
 
 ---
 

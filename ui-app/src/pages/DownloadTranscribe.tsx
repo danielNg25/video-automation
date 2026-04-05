@@ -229,7 +229,7 @@ function PipelinePage() {
     setError(''); setIsPipeline(true); setPipelineStage('download'); setPipelineProgress(0); setPipelineMessage('Starting download...');
     try {
       const translationOverride = selectedProfile ? { backend: llmBackend, model: llmModel, api_key: llmApiKey || undefined } : undefined;
-      const { task_id } = await postPipeline(url, selectedProfile || undefined, 'zh', translationOverride);
+      const { task_id } = await postPipeline(url, selectedProfile || undefined, 'zh', translationOverride, selectedTtsProfile || undefined);
       saveActiveTask(task_id, 'single');
       startPolling(task_id, 'single');
     } catch (e) { setIsPipeline(false); setError(e instanceof Error ? e.message : 'Pipeline failed'); }

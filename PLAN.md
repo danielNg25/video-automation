@@ -22,12 +22,13 @@ Automated pipeline to download videos from Douyin, generate AI subtitles (Chines
 5. [Phase 3 — OCR Subtitle Extraction](#5-phase-3--ocr-subtitle-extraction-week-3)
 6. [Phase 4 — TTS Dubbing](#6-phase-4--tts-dubbing-week-4)
 7. [Phase 5 — Orchestration + Batch Processing](#7-phase-5--orchestration--batch-processing-week-5-6)
-8. [Phase 6 — Platform Upload Integrations](#8-phase-6--platform-upload-integrations-week-6-7)
-9. [Platform API Reference](#9-platform-api-reference)
-9. [Configuration](#9-configuration)
-10. [Dependencies](#10-dependencies)
-10. [Web UI + API Layer](#10-web-ui--api-layer)
-11. [Risks & Mitigations](#11-risks--mitigations)
+8. [Phase 6 — Subtitle Replacement](#8-phase-6--subtitle-replacement-blur--reposition-week-6-7)
+9. [Phase 7 — Platform Upload Integrations](#9-phase-7--platform-upload-integrations-week-7-8)
+10. [Platform API Reference](#10-platform-api-reference)
+11. [Configuration](#11-configuration)
+12. [Dependencies](#12-dependencies)
+13. [Web UI + API Layer](#13-web-ui--api-layer)
+14. [Risks & Mitigations](#14-risks--mitigations)
 
 ---
 
@@ -700,9 +701,23 @@ def map_metadata(douyin_meta: dict, platform: str, overrides: dict = None) -> Vi
 
 ---
 
-## 8. Phase 6 — Platform Upload Integrations (Week 6-7)
+## 8. Phase 6 — Subtitle Replacement: Blur + Reposition (Week 6-7)
 
-See `plans/phase6-platform-uploads.md` for full details. YouTube (easiest) → Facebook → TikTok → X (stretch goal).
+Douyin videos have burned-in Chinese subtitles. When adding translated subtitles, the original Chinese text is visible underneath. This phase detects the original subtitle region (from Phase 3 OCR data), blurs/covers it, and repositions the new translated subtitle to match the original location and size.
+
+**Key tasks** (15 total — see `plans/phase6-subtitle-replacement.md`):
+- Subtitle region detector using OCR bounding boxes (auto-detect)
+- ffmpeg blur filter over detected region (blur / fill / pixelate modes)
+- Style matcher: derives font_size, margin_v, margin_h from original subtitle region
+- Combined single-pass ffmpeg pipeline: blur + burn + reformat (+ optional TTS mix)
+- Region selector UI (view/adjust detected region on video frame)
+- Blur preview UI (before/after comparison)
+
+---
+
+## 9. Phase 7 — Platform Upload Integrations (Week 7-8)
+
+See `plans/phase7-platform-uploads.md` for full details. YouTube (easiest) → Facebook → TikTok → X (stretch goal).
 
 **Key tasks** (11 total):
 - Base uploader ABC + per-platform implementations (YouTube, TikTok, Facebook, X)

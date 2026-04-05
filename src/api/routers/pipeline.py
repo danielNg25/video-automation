@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from datetime import date, datetime, timezone
 
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException, Query
 
 from src.api.deps import get_config, get_task_manager
@@ -72,6 +74,7 @@ async def start_full_pipeline(request: FullPipelineRequest):
             source_language=request.source_language,
             force=request.force,
             config=config,
+            tts_profile=request.tts_profile,
         )
     )
     return TaskResponse(task_id=task.task_id, status=task.status)
@@ -87,6 +90,7 @@ async def _run_full_pipeline(
     force: bool,
     config: dict,
     translation_override: dict | None = None,
+    tts_profile: str | None = None,
 ):
     """Execute the full pipeline as a background task with SSE events."""
     from src.pipeline import Pipeline
@@ -117,6 +121,7 @@ async def _run_full_pipeline(
             "force": force,
             "subtitle_lang": source_language,
             "translate_profile": translate_profile,
+            "tts_profile": tts_profile,
         }
 
         result = await pipeline.process_single(url, platforms, options, emit)
@@ -126,6 +131,44 @@ async def _run_full_pipeline(
             task.progress = 1.0
             task.video_id = result.get("video_id")
             task.result = result
+
+            # Register video in task manager index so FE can see it immediately
+            vid = result.get("video_id", "")
+            if vid and vid not in tm.video_index:
+                from src.api.models import VideoResponse
+                from src.utils.metadata import extract_metadata_from_file
+                raw_path = Path(f"data/raw/{vid}.mp4")
+                srt_dir = Path("data/srt")
+                meta_path = Path(f"data/raw/{vid}.json")
+                saved_meta = {}
+                if meta_path.exists():
+                    import json as _json
+                    saved_meta = _json.loads(meta_path.read_text())
+                file_meta = extract_metadata_from_file(raw_path) if raw_path.exists() else {}
+                srt_langs = sorted({
+                    p.stem.split("_", 1)[-1]
+                    for p in srt_dir.glob(f"{vid}_*.srt")
+                })
+                thumb_path = Path(f"data/raw/{vid}_thumb.jpg")
+                size_bytes = raw_path.stat().st_size if raw_path.exists() else 0
+                tm.video_index[vid] = VideoResponse(
+                    video_id=vid,
+                    title=saved_meta.get("title", vid),
+                    author=saved_meta.get("author", ""),
+                    duration=saved_meta.get("duration", file_meta.get("duration", 0.0)),
+                    resolution=file_meta.get("resolution", ""),
+                    size=f"{size_bytes / (1024*1024):.1f} MB",
+                    codec=file_meta.get("codec", ""),
+                    description=saved_meta.get("description", ""),
+                    hashtags=saved_meta.get("hashtags", []),
+                    source_url=saved_meta.get("source_url", ""),
+                    file_path=str(raw_path),
+                    thumbnail=f"/files/raw/{vid}_thumb.jpg" if thumb_path.exists() else "",
+                    has_srt=bool(srt_langs),
+                    srt_languages=srt_langs,
+                    status="transcribed" if srt_langs else "downloaded",
+                )
+
             tm._emit(task_id, "complete", result)
             update_pipeline_run(task_id, {
                 "status": "done",

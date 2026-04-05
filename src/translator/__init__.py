@@ -21,6 +21,8 @@ def get_translator(config: dict) -> LLMTranslator:
         api_key=trans_cfg.get("api_key"),
         base_url=trans_cfg.get("base_url"),
         max_segments_per_batch=trans_cfg.get("max_segments_per_batch", 8),
+        full_document_threshold=trans_cfg.get("full_document_threshold", 100),
+        chunk_size=trans_cfg.get("chunk_size", 50),
         temperature=trans_cfg.get("temperature", 0.7),
     )
 

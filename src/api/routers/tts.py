@@ -41,6 +41,8 @@ async def start_tts(request: TTSRequest):
             config,
             voice_override=request.voice,
             api_key_override=request.api_key,
+            llm_api_key=request.llm_api_key,
+            llm_backend=request.llm_backend,
         )
     )
     return TaskResponse(task_id=task.task_id, status=task.status)
