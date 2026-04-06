@@ -145,8 +145,8 @@ def srt_to_ass(srt_path: Path, style_config: dict, output_path: Path) -> Path:
     margin_h = style_config.get("margin_h", 0)
     bold = -1 if style_config.get("bold", True) else 0
 
-    # Background: BorderStyle=3 (opaque box) when background is configured
-    # ASS BackColour format: &HAABBGGRR (alpha, blue, green, red)
+    # Background box: BorderStyle=3 with OutlineColour=BackColour creates a solid box.
+    # ASS color format: &HAABBGGRR (alpha, blue, green, red)
     back_colour_hex = style_config.get("background_color", "")
     bg_opacity = style_config.get("background_opacity", 0)
     if bg_opacity > 0:
@@ -158,10 +158,13 @@ def srt_to_ass(srt_path: Path, style_config: dict, output_path: Path) -> Path:
             r = int(back_colour_hex[1:3], 16)
             g = int(back_colour_hex[3:5], 16)
             b = int(back_colour_hex[5:7], 16)
-            back_colour_val = f"&H{alpha_hex}{b:02X}{g:02X}{r:02X}"
+            box_colour = f"&H{alpha_hex}{b:02X}{g:02X}{r:02X}"
         else:
-            back_colour_val = f"&H{alpha_hex}000000"
-        border_style = 3  # opaque box behind text
+            box_colour = f"&H{alpha_hex}000000"
+        back_colour_val = box_colour
+        outline_color = box_colour  # OutlineColour = BackColour for solid box
+        border_style = 3
+        shadow_depth = max(shadow_depth, 4)  # padding around text
     else:
         back_colour_val = "&H00000000"
         border_style = 1  # normal outline + shadow

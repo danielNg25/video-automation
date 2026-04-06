@@ -130,18 +130,28 @@ export function SubtitleOverlay({ segments, currentTime, style, onDragPosition, 
     borderRadius: style.backgroundOpacity > 0 ? '3px' : undefined,
   };
 
-  // Always render the ref div so ResizeObserver can attach.
-  // Position relative to the actual video element within the container.
-  const bottomOffset = videoRect
-    ? videoRect.offsetY + scaledMarginV
-    : scaledMarginV;
+  // Position the subtitle relative to the actual video element.
+  // Use `top` instead of `bottom` to avoid black-bar offset issues.
+  // In ASS, marginV with alignment 2 = distance from bottom of video to text bottom.
+  // So text top = videoBottom - marginV - fontSize.
+  const overlayStyle: React.CSSProperties = videoRect
+    ? {
+        top: `${videoRect.offsetY + videoRect.height - scaledMarginV - scaledFontSize * 1.4}px`,
+        left: `${videoRect.offsetX}px`,
+        width: `${videoRect.width}px`,
+      }
+    : {
+        bottom: `${scaledMarginV}px`,
+        left: 0,
+        right: 0,
+      };
 
   return (
     <div
       ref={overlayRef}
-      className="absolute left-0 right-0 flex justify-center px-3 text-center pointer-events-none"
+      className="absolute flex justify-center px-3 text-center pointer-events-none"
       style={{
-        bottom: `${bottomOffset}px`,
+        ...overlayStyle,
         transform: `translateX(${style.marginH * scale}px)`,
       }}
     >
