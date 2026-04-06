@@ -352,13 +352,6 @@ function VideoDetailPage() {
 
       <section className="flex-1 overflow-y-auto p-6 space-y-6">
         {/* Back button + title */}
-        <div className="flex items-center gap-3 mb-6">
-          <button onClick={() => navigate('/download')} className="flex items-center gap-1 text-xs text-on-surface-variant hover:text-on-surface">
-            <span className="material-symbols-outlined text-sm">arrow_back</span>
-            Back to Pipeline
-          </button>
-          <h1 className="text-lg font-semibold text-on-surface truncate">{videoMeta?.title || videoId}</h1>
-        </div>
 
         {/* Error Banner */}
         {error && (
