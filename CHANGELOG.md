@@ -36,6 +36,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Live editor now shows CSS blur approximation over the OCR-detected subtitle region (backdrop-filter: blur) so the original Chinese subs are visually hidden during editing
 - Dub audio playback in live editor: select a TTS file from the toolbar dropdown and hear it synced to video playback (play/pause/seek all stay in sync)
 - TTS text shortening now writes back to original SRT — burned-in subtitles match the spoken dub instead of showing the original longer text
+- LLM-powered subtitle segmentation: shortened sentences are split into ≤35-char segments at natural phrase boundaries (commas, clauses) instead of dumb word splitting — timings distributed proportionally
 - Pipeline LLM init now checks env vars (`DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) as fallback, matching Video Studio behavior — text shortening no longer silently fails in pipeline mode
 - Fixed subtitle overlay not appearing during video playback — overlay div now always renders so ResizeObserver can attach (previously returned null when no active segment, preventing height measurement)
 - Subtitle editor auto-loads OCR region data to match subtitle position (marginV, fontSize) to where original Chinese subtitles were detected
