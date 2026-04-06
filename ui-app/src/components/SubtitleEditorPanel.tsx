@@ -346,20 +346,23 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
         <div className="w-[65%] shrink-0 space-y-3">
           <VideoPlayer ref={videoRef} src={videoSrc} state={playerState} controls={playerControls} loading={videoLoading} onLoadingChange={setVideoLoading}>
             {blurConfig.enabled && ocrRegion && ocrRegion.videoHeight > 0 && videoRect && videoRect.width > 0 && (() => {
-              const pos = {
+              const pos: React.CSSProperties = {
+                position: 'absolute',
                 left: `${videoRect.offsetX + (ocrRegion.x / ocrRegion.videoWidth) * videoRect.width}px`,
                 top: `${videoRect.offsetY + (ocrRegion.y / ocrRegion.videoHeight) * videoRect.height}px`,
                 width: `${(ocrRegion.width / ocrRegion.videoWidth) * videoRect.width}px`,
                 height: `${(ocrRegion.height / ocrRegion.videoHeight) * videoRect.height}px`,
+                pointerEvents: 'none',
               };
               const blurPx = blurConfig.strength * 0.5;
-              const modeStyle: React.CSSProperties =
-                blurConfig.mode === 'fill'
-                  ? { backgroundColor: 'rgba(0,0,0,0.95)' }
-                  : blurConfig.mode === 'pixelate'
-                    ? { backdropFilter: `blur(${blurPx * 2}px) contrast(1.5)`, WebkitBackdropFilter: `blur(${blurPx * 2}px) contrast(1.5)`, backgroundColor: 'rgba(0,0,0,0.1)' }
-                    : { backdropFilter: `blur(${blurPx}px)`, WebkitBackdropFilter: `blur(${blurPx}px)`, backgroundColor: 'rgba(0,0,0,0.15)' };
-              return <div className="absolute pointer-events-none" style={{ ...pos, ...modeStyle }} />;
+              if (blurConfig.mode === 'fill') {
+                return <div style={{ ...pos, backgroundColor: 'rgba(0,0,0,0.95)' }} />;
+              }
+              if (blurConfig.mode === 'pixelate') {
+                // CSS can't do true mosaic — approximate with heavy blur + saturate
+                return <div style={{ ...pos, backdropFilter: `blur(${blurPx * 3}px) saturate(0.5)`, WebkitBackdropFilter: `blur(${blurPx * 3}px) saturate(0.5)`, backgroundColor: 'rgba(0,0,0,0.1)' }} />;
+              }
+              return <div style={{ ...pos, backdropFilter: `blur(${blurPx}px)`, WebkitBackdropFilter: `blur(${blurPx}px)`, backgroundColor: 'rgba(0,0,0,0.15)' }} />;
             })()}
             <SubtitleOverlay segments={segments} currentTime={playerState.currentTime} style={style} onDragPosition={handleDragPosition} />
           </VideoPlayer>
