@@ -1,13 +1,22 @@
 import type { SubtitleStyle } from './SubtitleOverlay';
 
+export interface BlurConfig {
+  enabled: boolean;
+  mode: 'blur' | 'fill' | 'pixelate';
+  strength: number;
+}
+
 interface StylePanelProps {
   style: SubtitleStyle;
   onChange: (style: SubtitleStyle) => void;
+  blur?: BlurConfig;
+  onBlurChange?: (blur: BlurConfig) => void;
+  hasOcrRegion?: boolean;
 }
 
 const FONTS = ['Arial', 'Helvetica', 'Roboto', 'Impact', 'Georgia', 'Courier New'];
 
-export function StylePanel({ style, onChange }: StylePanelProps) {
+export function StylePanel({ style, onChange, blur, onBlurChange, hasOcrRegion }: StylePanelProps) {
   const update = <K extends keyof SubtitleStyle>(key: K, value: SubtitleStyle[K]) =>
     onChange({ ...style, [key]: value });
 
@@ -33,7 +42,7 @@ export function StylePanel({ style, onChange }: StylePanelProps) {
             <span className="font-mono text-[9px] text-primary">{style.fontSize}px</span>
           </div>
           <input
-            type="range" min={12} max={42} value={style.fontSize}
+            type="range" min={12} max={72} value={style.fontSize}
             onChange={(e) => update('fontSize', Number(e.target.value))}
             className="w-full h-1 accent-primary bg-zinc-700 rounded-full appearance-none cursor-pointer"
           />
@@ -92,7 +101,7 @@ export function StylePanel({ style, onChange }: StylePanelProps) {
             <span className="font-mono text-[9px] text-primary">{style.marginV}px</span>
           </div>
           <input
-            type="range" min={0} max={150} value={style.marginV}
+            type="range" min={0} max={1920} value={style.marginV}
             onChange={(e) => update('marginV', Number(e.target.value))}
             className="w-full h-1 accent-primary bg-zinc-700 rounded-full appearance-none cursor-pointer"
           />
@@ -119,6 +128,44 @@ export function StylePanel({ style, onChange }: StylePanelProps) {
           Y: <span className="text-on-surface">+{style.marginV}px</span>
         </span>
       </div>
+
+      {/* Blur Config */}
+      {blur && onBlurChange && (
+        <div className="space-y-2 pt-3 border-t border-outline-variant/10">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onBlurChange({ ...blur, enabled: !blur.enabled })}
+              className={`w-7 h-3.5 rounded-full relative cursor-pointer ${blur.enabled ? 'bg-primary' : 'bg-surface-container-highest'}`}
+            >
+              <div className={`absolute top-0.5 w-2.5 h-2.5 bg-white rounded-full transition-all ${blur.enabled ? 'right-0.5' : 'left-0.5'}`} />
+            </button>
+            <span className="font-mono text-[9px] uppercase text-on-surface">Blur Original Subs</span>
+            {!hasOcrRegion && <span className="text-[8px] text-zinc-600 font-mono">(no OCR data)</span>}
+          </div>
+          {blur.enabled && hasOcrRegion && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="font-mono text-[9px] uppercase text-on-surface-variant">Mode</label>
+                <select value={blur.mode} onChange={e => onBlurChange({ ...blur, mode: e.target.value as BlurConfig['mode'] })}
+                  className="w-full bg-surface-container-lowest border border-outline-variant/15 text-xs rounded h-8 px-2 focus:ring-1 focus:ring-primary text-on-surface">
+                  <option value="blur">Gaussian</option>
+                  <option value="pixelate">Pixelate</option>
+                  <option value="fill">Solid Fill</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <div className="flex justify-between">
+                  <label className="font-mono text-[9px] uppercase text-on-surface-variant">Strength</label>
+                  <span className="font-mono text-[9px] text-primary">{blur.strength}</span>
+                </div>
+                <input type="range" min={5} max={30} value={blur.strength}
+                  onChange={e => onBlurChange({ ...blur, strength: Number(e.target.value) })}
+                  className="w-full h-1 accent-primary bg-zinc-700 rounded-full appearance-none cursor-pointer" />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

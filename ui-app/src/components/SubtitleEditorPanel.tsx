@@ -5,6 +5,7 @@ import type { SubtitleStyle } from './editor/SubtitleOverlay';
 import { SegmentList } from './editor/SegmentList';
 import { Timeline } from './editor/Timeline';
 import { StylePanel } from './editor/StylePanel';
+import type { BlurConfig } from './editor/StylePanel';
 import { useVideoPlayer } from '../hooks/useVideoPlayer';
 import { srtTimestampToSeconds, secondsToSrtTimestamp } from '../utils/srtTime';
 import {
@@ -42,9 +43,12 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
   const [style, setStyle] = useState<SubtitleStyle>({
     fontName: 'Arial', fontSize: 24, outlineWidth: 2,
     marginV: 30, marginH: 0, bold: true, shadow: true,
-    backgroundColor: '', backgroundOpacity: 0,
+    backgroundColor: '', backgroundOpacity: 75,
   });
   const [originalStyle, setOriginalStyle] = useState<SubtitleStyle | null>(null);
+
+  // Blur config
+  const [blurConfig, setBlurConfig] = useState<BlurConfig>({ enabled: true, mode: 'blur', strength: 15 });
 
   // OCR region for CSS blur approximation in live editor
   const [ocrRegion, setOcrRegion] = useState<{ x: number; y: number; width: number; height: number; videoWidth: number; videoHeight: number } | null>(null);
@@ -341,13 +345,15 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
         {/* Left: Video + Timeline */}
         <div className="w-[65%] shrink-0 space-y-3">
           <VideoPlayer ref={videoRef} src={videoSrc} state={playerState} controls={playerControls} loading={videoLoading} onLoadingChange={setVideoLoading}>
-            {ocrRegion && ocrRegion.videoHeight > 0 && videoRect && videoRect.width > 0 && (
+            {blurConfig.enabled && ocrRegion && ocrRegion.videoHeight > 0 && videoRect && videoRect.width > 0 && (
               <div className="absolute pointer-events-none" style={{
                 left: `${videoRect.offsetX + (ocrRegion.x / ocrRegion.videoWidth) * videoRect.width}px`,
                 top: `${videoRect.offsetY + (ocrRegion.y / ocrRegion.videoHeight) * videoRect.height}px`,
                 width: `${(ocrRegion.width / ocrRegion.videoWidth) * videoRect.width}px`,
                 height: `${(ocrRegion.height / ocrRegion.videoHeight) * videoRect.height}px`,
-                backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', backgroundColor: 'rgba(0,0,0,0.15)',
+                backdropFilter: `blur(${blurConfig.strength * 0.5}px)`,
+                WebkitBackdropFilter: `blur(${blurConfig.strength * 0.5}px)`,
+                backgroundColor: 'rgba(0,0,0,0.15)',
               }} />
             )}
             <SubtitleOverlay segments={segments} currentTime={playerState.currentTime} style={style} onDragPosition={handleDragPosition} />
@@ -377,7 +383,10 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
             )}
 
             {/* Style Tab */}
-            {bottomTab === 'style' && <StylePanel style={style} onChange={setStyle} />}
+            {bottomTab === 'style' && (
+              <StylePanel style={style} onChange={setStyle}
+                blur={blurConfig} onBlurChange={setBlurConfig} hasOcrRegion={!!ocrRegion} />
+            )}
 
             {/* Export Tab */}
             {bottomTab === 'export' && (
