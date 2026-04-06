@@ -145,17 +145,23 @@ def srt_to_ass(srt_path: Path, style_config: dict, output_path: Path) -> Path:
     margin_h = style_config.get("margin_h", 0)
     bold = -1 if style_config.get("bold", True) else 0
 
-    # Background: BorderStyle=3 (opaque box) when background_color is set
-    back_colour = style_config.get("background_color", "")
+    # Background: BorderStyle=3 (opaque box) when background is configured
+    # ASS BackColour format: &HAABBGGRR (alpha, blue, green, red)
+    back_colour_hex = style_config.get("background_color", "")
     bg_opacity = style_config.get("background_opacity", 0)
-    if back_colour:
-        back_colour_val = back_colour
+    if bg_opacity > 0:
+        # Convert opacity (0-100) to ASS alpha (FF=transparent, 00=opaque)
+        alpha = 255 - int(bg_opacity * 255 / 100)
+        alpha_hex = f"{alpha:02X}"
+        # Parse hex color or default to black
+        if back_colour_hex and back_colour_hex.startswith("#") and len(back_colour_hex) == 7:
+            r = int(back_colour_hex[1:3], 16)
+            g = int(back_colour_hex[3:5], 16)
+            b = int(back_colour_hex[5:7], 16)
+            back_colour_val = f"&H{alpha_hex}{b:02X}{g:02X}{r:02X}"
+        else:
+            back_colour_val = f"&H{alpha_hex}000000"
         border_style = 3  # opaque box behind text
-    elif bg_opacity > 0:
-        # Semi-transparent black background from opacity alone
-        alpha_hex = f"{bg_opacity:02X}"
-        back_colour_val = f"&H{alpha_hex}000000"
-        border_style = 3
     else:
         back_colour_val = "&H00000000"
         border_style = 1  # normal outline + shadow
