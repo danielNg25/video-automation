@@ -145,29 +145,24 @@ def srt_to_ass(srt_path: Path, style_config: dict, output_path: Path) -> Path:
     margin_h = style_config.get("margin_h", 0)
     bold = -1 if style_config.get("bold", True) else 0
 
-    # Background box: BorderStyle=3 with OutlineColour=BackColour creates a solid box.
+    # Background box: use two-layer approach — a background layer with BorderStyle=3
+    # renders the colored box, then the main text layer renders on top with normal outline.
     # ASS color format: &HAABBGGRR (alpha, blue, green, red)
     back_colour_hex = style_config.get("background_color", "")
     bg_opacity = style_config.get("background_opacity", 0)
+    bg_box_colour = ""
     if bg_opacity > 0:
-        # Convert opacity (0-100) to ASS alpha (FF=transparent, 00=opaque)
         alpha = 255 - int(bg_opacity * 255 / 100)
         alpha_hex = f"{alpha:02X}"
-        # Parse hex color or default to black
         if back_colour_hex and back_colour_hex.startswith("#") and len(back_colour_hex) == 7:
             r = int(back_colour_hex[1:3], 16)
             g = int(back_colour_hex[3:5], 16)
             b = int(back_colour_hex[5:7], 16)
-            box_colour = f"&H{alpha_hex}{b:02X}{g:02X}{r:02X}"
+            bg_box_colour = f"&H{alpha_hex}{b:02X}{g:02X}{r:02X}"
         else:
-            box_colour = f"&H{alpha_hex}000000"
-        back_colour_val = box_colour
-        outline_color = box_colour  # OutlineColour = BackColour for solid box
-        border_style = 3
-        shadow_depth = max(shadow_depth, 4)  # padding around text
-    else:
-        back_colour_val = "&H00000000"
-        border_style = 1  # normal outline + shadow
+            bg_box_colour = f"&H{alpha_hex}000000"
+    back_colour_val = "&H00000000"
+    border_style = 1  # main style always uses normal outline
 
     margin_l = max(0, 10 + margin_h)
     margin_r = max(0, 10 - margin_h)
@@ -196,7 +191,18 @@ def srt_to_ass(srt_path: Path, style_config: dict, output_path: Path) -> Path:
         start = _seconds_to_ass_timestamp(seg["start"])
         end = _seconds_to_ass_timestamp(seg["end"])
         text = seg["text"].replace("\n", "\\N")
-        lines.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{text}\n")
+        if bg_box_colour:
+            # Layer 0: background box (transparent text, colored outline+shadow as box)
+            box_tag = (
+                f"{{\\bord12\\shad0\\3c{bg_box_colour}\\3a&H00&"
+                f"\\4c{bg_box_colour}\\4a&H00&"
+                f"\\1a&HFF&\\2a&HFF&}}"
+            )
+            lines.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{box_tag}{text}\n")
+            # Layer 1: visible text with normal outline on top
+            lines.append(f"Dialogue: 1,{start},{end},Default,,0,0,0,,{text}\n")
+        else:
+            lines.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{text}\n")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text("".join(lines), encoding="utf-8")
