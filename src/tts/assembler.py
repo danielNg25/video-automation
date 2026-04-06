@@ -464,7 +464,7 @@ class TTSAssembler:
 
         # Save the sentences SRT (with any shortening applied) alongside the WAV
         if merge_sentences and synth_items:
-            from src.processor.subtitle import break_long_lines, write_srt
+            from src.processor.subtitle import write_srt
             sentences_srt = output_path.with_suffix(".sentences.srt")
             sentence_segments = [
                 {"start": item[1], "end": item[2], "text": item[0]}
@@ -512,10 +512,35 @@ class TTSAssembler:
                             word_pos += word_count
 
                 if shortened_map:
+                    # Rebalance: if any segment exceeds max_chars, push
+                    # overflow words to the next segment
+                    MAX_LINE_CHARS = 35
+                    sorted_indices = sorted(shortened_map.keys())
+                    for i, idx in enumerate(sorted_indices):
+                        text = shortened_map[idx]
+                        if len(text) <= MAX_LINE_CHARS:
+                            continue
+                        # Find next segment in the same sentence group
+                        if i + 1 < len(sorted_indices):
+                            next_idx = sorted_indices[i + 1]
+                            words = text.split()
+                            keep: list[str] = []
+                            overflow: list[str] = []
+                            length = 0
+                            for w in words:
+                                if length + len(w) + (1 if keep else 0) <= MAX_LINE_CHARS:
+                                    keep.append(w)
+                                    length += len(w) + (1 if len(keep) > 1 else 0)
+                                else:
+                                    overflow.append(w)
+                            if keep and overflow:
+                                shortened_map[idx] = " ".join(keep)
+                                existing_next = shortened_map.get(next_idx, "")
+                                shortened_map[next_idx] = " ".join(overflow) + (" " + existing_next if existing_next else "")
+
                     updated_segments = []
                     for i, seg in enumerate(segments):
                         text = shortened_map.get(i, seg.get("text", ""))
-                        text = break_long_lines(text, max_chars=40)
                         updated_segments.append({
                             "start": seg["start"],
                             "end": seg["end"],
