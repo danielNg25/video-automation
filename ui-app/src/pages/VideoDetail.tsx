@@ -6,7 +6,7 @@ import { SubtitleEditorPanel } from '../components/SubtitleEditorPanel';
 import {
   getVideo, getSrt, postTranscribe, postTranslate, postTTS,
   subscribeSSE, getProfiles, getTTSProfiles, getTTSProviders, getTTSVoices,
-  getTTSAudioUrl, getTTSList, getRawVideoUrl,
+  getTTSAudioUrl, getTTSList, deleteTTSAudio, getRawVideoUrl,
   patchVideoTitle, postTTSPreview,
 } from '../api/client';
 import type { TTSAudioEntry } from '../api/client';
@@ -816,6 +816,20 @@ function VideoDetailPage() {
                                 <span className="text-[9px] text-zinc-500 ml-2">{entry.provider} · {entry.language} · {sizeMb}MB</span>
                               </div>
                               <span className="text-[9px] font-mono text-zinc-600">{ago}</span>
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  if (!confirm(`Delete dub "${entry.profile}"?`)) return;
+                                  try {
+                                    await deleteTTSAudio(videoMeta.video_id, entry.filename);
+                                    setTtsList(prev => prev.filter(e => e.filename !== entry.filename));
+                                  } catch { /* ignore */ }
+                                }}
+                                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 text-zinc-600 hover:text-red-400 transition-all"
+                                title="Delete dub"
+                              >
+                                <span className="material-symbols-outlined text-sm">delete</span>
+                              </button>
                               {isPlaying && (
                                 <audio
                                   className="tts-player"

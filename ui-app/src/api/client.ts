@@ -317,6 +317,10 @@ export interface TTSAudioEntry {
   created_at: number;
 }
 
+export async function deleteTTSAudio(videoId: string, filename: string): Promise<void> {
+  await request(`/videos/${videoId}/tts/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+}
+
 export async function getTTSList(videoId: string): Promise<TTSAudioEntry[]> {
   return request(`/videos/${videoId}/tts`);
 }

@@ -168,6 +168,25 @@ async def list_tts_audio(video_id: str):
     return results
 
 
+@router.delete("/api/videos/{video_id}/tts/{filename}")
+async def delete_tts_audio(video_id: str, filename: str):
+    """Delete a specific TTS audio file."""
+    data_dir = get_data_dir()
+    # Prevent path traversal
+    safe_name = Path(filename).name
+    if not safe_name.startswith(video_id):
+        raise HTTPException(status_code=400, detail="Filename does not match video_id")
+    audio_path = data_dir / "tts" / safe_name
+    if not audio_path.exists():
+        raise HTTPException(status_code=404, detail=f"TTS file not found: {safe_name}")
+    audio_path.unlink()
+    # Also remove .sentences.srt if it exists
+    sentences_srt = audio_path.with_suffix(".sentences.srt")
+    if sentences_srt.exists():
+        sentences_srt.unlink()
+    return {"status": "deleted", "filename": safe_name}
+
+
 @router.get("/api/videos/{video_id}/tts/{language}")
 async def get_tts_audio(video_id: str, language: str, file: str | None = None):
     """Stream generated TTS audio file. Optionally specify exact filename."""
