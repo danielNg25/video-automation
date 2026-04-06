@@ -312,8 +312,6 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
           <option value="360p">360p</option>
           <option value="full">Full Res</option>
         </select>
-
-        {/* Dub audio selector */}
         {ttsList.length > 0 && (
           <>
             <div className="w-px h-5 bg-zinc-700 mx-1" />
@@ -324,7 +322,6 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
             </select>
           </>
         )}
-
         <div className="flex-1" />
         {isDirty && <span className="font-mono text-[9px] text-amber-400 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-400" />Unsaved</span>}
         {saveStatus === 'saved' && <span className="font-mono text-[9px] text-emerald-400">Saved</span>}
@@ -339,72 +336,89 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
         </button>
       </div>
 
-      {/* Video Player + Blur Region + Subtitle Overlay */}
-      <VideoPlayer ref={videoRef} src={videoSrc} state={playerState} controls={playerControls} loading={videoLoading} onLoadingChange={setVideoLoading}>
-        {/* CSS blur approximation of OCR-detected subtitle region */}
-        {ocrRegion && ocrRegion.videoHeight > 0 && videoRect && videoRect.width > 0 && (
-          <div
-            className="absolute pointer-events-none"
-            style={{
-              left: `${videoRect.offsetX + (ocrRegion.x / ocrRegion.videoWidth) * videoRect.width}px`,
-              top: `${videoRect.offsetY + (ocrRegion.y / ocrRegion.videoHeight) * videoRect.height}px`,
-              width: `${(ocrRegion.width / ocrRegion.videoWidth) * videoRect.width}px`,
-              height: `${(ocrRegion.height / ocrRegion.videoHeight) * videoRect.height}px`,
-              backdropFilter: 'blur(8px)',
-              WebkitBackdropFilter: 'blur(8px)',
-              backgroundColor: 'rgba(0,0,0,0.15)',
-            }}
-          />
-        )}
-        <SubtitleOverlay segments={segments} currentTime={playerState.currentTime} style={style} onDragPosition={handleDragPosition} />
-      </VideoPlayer>
-
-      {/* Hidden TTS audio element — synced to video playback */}
-      {ttsAudioSrc && <audio ref={ttsAudioRef} src={ttsAudioSrc} preload="auto" style={{ display: 'none' }} />}
-
-      {/* Timeline */}
-      <Timeline segments={segments} currentTime={playerState.currentTime} duration={playerState.duration} onSeek={playerControls.seek} onResizeSegment={handleTimelineResize} />
-
-      {/* Bottom Tabs: Segments / Style / Export */}
-      <div className="border-t border-outline-variant/10 pt-3">
-        <div className="flex items-center gap-1 mb-3">
-          {(['segments', 'style', 'export'] as const).map(tab => (
-            <button key={tab} onClick={() => setBottomTab(tab)}
-              className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded ${bottomTab === tab ? 'bg-primary/20 text-primary' : 'text-zinc-500 hover:text-on-surface'}`}>
-              {tab}
-            </button>
-          ))}
-          <span className="ml-auto font-mono text-[9px] text-zinc-600">{segments.length} segments</span>
+      {/* Main: Video (left) + Tabs (right) */}
+      <div className="flex gap-4">
+        {/* Left: Video + Timeline */}
+        <div className="w-[65%] shrink-0 space-y-3">
+          <VideoPlayer ref={videoRef} src={videoSrc} state={playerState} controls={playerControls} loading={videoLoading} onLoadingChange={setVideoLoading}>
+            {ocrRegion && ocrRegion.videoHeight > 0 && videoRect && videoRect.width > 0 && (
+              <div className="absolute pointer-events-none" style={{
+                left: `${videoRect.offsetX + (ocrRegion.x / ocrRegion.videoWidth) * videoRect.width}px`,
+                top: `${videoRect.offsetY + (ocrRegion.y / ocrRegion.videoHeight) * videoRect.height}px`,
+                width: `${(ocrRegion.width / ocrRegion.videoWidth) * videoRect.width}px`,
+                height: `${(ocrRegion.height / ocrRegion.videoHeight) * videoRect.height}px`,
+                backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', backgroundColor: 'rgba(0,0,0,0.15)',
+              }} />
+            )}
+            <SubtitleOverlay segments={segments} currentTime={playerState.currentTime} style={style} onDragPosition={handleDragPosition} />
+          </VideoPlayer>
+          {ttsAudioSrc && <audio ref={ttsAudioRef} src={ttsAudioSrc} preload="auto" style={{ display: 'none' }} />}
+          <Timeline segments={segments} currentTime={playerState.currentTime} duration={playerState.duration} onSeek={playerControls.seek} onResizeSegment={handleTimelineResize} />
         </div>
 
-        {/* Segments Tab */}
-        {bottomTab === 'segments' && (
-          <div className="max-h-[300px] overflow-y-auto">
-            <SegmentList segments={segments} currentTime={playerState.currentTime} onSeek={playerControls.seek}
-              onUpdate={handleUpdateSegment} onDelete={handleDeleteSegment} onSplit={handleSplitSegment}
-              onMerge={handleMergeSegment} onAdd={handleAddSegment} />
+        {/* Right: Tabs */}
+        <div className="flex-1 min-w-0 flex flex-col">
+          <div className="flex items-center gap-1 mb-2">
+            {(['segments', 'style', 'export'] as const).map(tab => (
+              <button key={tab} onClick={() => setBottomTab(tab)}
+                className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded ${bottomTab === tab ? 'bg-primary/20 text-primary' : 'text-zinc-500 hover:text-on-surface'}`}>
+                {tab}
+              </button>
+            ))}
+            <span className="ml-auto font-mono text-[9px] text-zinc-600">{segments.length} seg</span>
           </div>
-        )}
 
-        {/* Style Tab */}
-        {bottomTab === 'style' && <StylePanel style={style} onChange={setStyle} />}
+          <div className="flex-1 overflow-y-auto">
+            {/* Segments Tab */}
+            {bottomTab === 'segments' && (
+              <SegmentList segments={segments} currentTime={playerState.currentTime} onSeek={playerControls.seek}
+                onUpdate={handleUpdateSegment} onDelete={handleDeleteSegment} onSplit={handleSplitSegment}
+                onMerge={handleMergeSegment} onAdd={handleAddSegment} />
+            )}
 
-        {/* Export Tab */}
-        {bottomTab === 'export' && (
-          <div className="space-y-4">
-            <div className="flex gap-4">
-              {/* Left: Buttons + Preview */}
-              <div className="flex-1 space-y-3">
-                <div className="flex gap-3">
+            {/* Style Tab */}
+            {bottomTab === 'style' && <StylePanel style={style} onChange={setStyle} />}
+
+            {/* Export Tab */}
+            {bottomTab === 'export' && (
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">Dub Audio</label>
+                    <select value={selectedTtsFile || ''} onChange={e => setSelectedTtsFile(e.target.value || null)}
+                      className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-1.5 px-2 rounded focus:ring-0">
+                      <option value="">No dub</option>
+                      {ttsList.map(entry => <option key={entry.filename} value={entry.filename}>{entry.profile} ({entry.provider} · {entry.language})</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex justify-between">
+                      <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">Video Volume</label>
+                      <span className="text-[9px] font-mono text-primary">{videoVol}%</span>
+                    </div>
+                    <input type="range" min={0} max={200} value={videoVol} onChange={e => setVideoVol(Number(e.target.value))}
+                      className="w-full accent-primary h-1 bg-surface-container-highest rounded-lg appearance-none cursor-pointer" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex justify-between">
+                      <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">Dub Volume</label>
+                      <span className="text-[9px] font-mono text-primary">{dubVol}%</span>
+                    </div>
+                    <input type="range" min={0} max={200} value={dubVol} onChange={e => setDubVol(Number(e.target.value))}
+                      className="w-full accent-primary h-1 bg-surface-container-highest rounded-lg appearance-none cursor-pointer" disabled={!selectedTtsFile} />
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
                   <button disabled={isPreviewing} onClick={handleRenderPreview}
-                    className="flex-1 py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 bg-surface-container-highest text-on-surface hover:bg-surface-container-high transition-colors disabled:opacity-50">
+                    className="flex-1 py-2 rounded-md font-bold text-[10px] uppercase tracking-wider flex items-center justify-center gap-1.5 bg-surface-container-highest text-on-surface hover:bg-surface-container-high transition-colors disabled:opacity-50">
                     <span className="material-symbols-outlined text-sm">{isPreviewing ? 'progress_activity' : 'preview'}</span>
-                    {isPreviewing ? 'Rendering...' : 'Render Preview (5s)'}
+                    {isPreviewing ? 'Rendering...' : 'Preview 5s'}
                   </button>
                   <button disabled={isExporting} onClick={handleExport}
-                    className="flex-1 py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 bg-gradient-to-r from-primary to-primary-container text-on-primary-fixed hover:shadow-[0_0_20px_rgba(160,120,255,0.3)] transition-all disabled:opacity-50">
+                    className="flex-1 py-2 rounded-md font-bold text-[10px] uppercase tracking-wider flex items-center justify-center gap-1.5 bg-gradient-to-r from-primary to-primary-container text-on-primary-fixed hover:shadow-[0_0_20px_rgba(160,120,255,0.3)] transition-all disabled:opacity-50">
                     <span className="material-symbols-outlined text-sm">{isExporting ? 'progress_activity' : 'movie_edit'}</span>
-                    {isExporting ? 'Exporting...' : 'Export Full Video'}
+                    {isExporting ? 'Exporting...' : 'Export'}
                   </button>
                 </div>
 
@@ -427,49 +441,21 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
                 {(previewUrl || exportDone) && (
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
-                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold">{exportDone ? 'Exported Video' : 'Preview'}</label>
+                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold">{exportDone ? 'Exported' : 'Preview'}</label>
                       {exportDone && (
                         <a href={getExportedVideoUrl(videoId)} download className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline font-bold">
-                          <span className="material-symbols-outlined text-xs">download</span> Download
+                          <span className="material-symbols-outlined text-xs">download</span>
                         </a>
                       )}
                     </div>
-                    <video controls autoPlay className="w-full max-h-[50vh] rounded-lg bg-black"
+                    <video controls autoPlay className="w-full rounded-lg bg-black"
                       src={exportDone ? getExportedVideoUrl(videoId) : previewUrl!} />
                   </div>
                 )}
               </div>
-
-              {/* Right: Config */}
-              <div className="w-[240px] shrink-0 space-y-3">
-                <div className="space-y-1">
-                  <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">Dub Audio</label>
-                  <select value={selectedTtsFile || ''} onChange={e => setSelectedTtsFile(e.target.value || null)}
-                    className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-1.5 px-2 rounded focus:ring-0">
-                    <option value="">No dub</option>
-                    {ttsList.map(entry => <option key={entry.filename} value={entry.filename}>{entry.profile} ({entry.provider} · {entry.language})</option>)}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <div className="flex justify-between">
-                    <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">Video Volume</label>
-                    <span className="text-[9px] font-mono text-primary">{videoVol}%</span>
-                  </div>
-                  <input type="range" min={0} max={200} value={videoVol} onChange={e => setVideoVol(Number(e.target.value))}
-                    className="w-full accent-primary h-1 bg-surface-container-highest rounded-lg appearance-none cursor-pointer" />
-                </div>
-                <div className="space-y-1">
-                  <div className="flex justify-between">
-                    <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">Dub Volume</label>
-                    <span className="text-[9px] font-mono text-primary">{dubVol}%</span>
-                  </div>
-                  <input type="range" min={0} max={200} value={dubVol} onChange={e => setDubVol(Number(e.target.value))}
-                    className="w-full accent-primary h-1 bg-surface-container-highest rounded-lg appearance-none cursor-pointer" disabled={!selectedTtsFile} />
-                </div>
-              </div>
-            </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
