@@ -11,7 +11,7 @@ import {
   getSrt, putSrt, getProxyVideoUrl, getRawVideoUrl,
   getSubtitleRegion, getVideoStyle, putVideoStyle,
   postExportPreview, postExport, getExportedVideoUrl,
-  subscribeSSE,
+  subscribeSSE, getTTSAudioUrl,
 } from '../api/client';
 import type { TTSAudioEntry } from '../api/client';
 import type { SubtitleSegment } from '../api/types';
@@ -84,7 +84,54 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
   const [exportError, setExportError] = useState('');
   const [exportDone, setExportDone] = useState(false);
 
+  const ttsAudioRef = useRef<HTMLAudioElement>(null);
+
   const videoSrc = useProxy ? getProxyVideoUrl(videoId) : getRawVideoUrl(videoId);
+
+  // Derive TTS audio URL from selected file
+  const ttsAudioSrc = useMemo(() => {
+    if (!selectedTtsFile) return null;
+    const entry = ttsList.find(e => e.filename === selectedTtsFile);
+    if (!entry) return null;
+    return getTTSAudioUrl(videoId, entry.language, entry.filename);
+  }, [videoId, selectedTtsFile, ttsList]);
+
+  // Sync TTS audio playback with video player
+  useEffect(() => {
+    const audio = ttsAudioRef.current;
+    const video = videoRef.current;
+    if (!audio || !video || !ttsAudioSrc) return;
+
+    audio.volume = dubVol / 100;
+
+    const syncPlay = () => { audio.currentTime = video.currentTime; audio.play().catch(() => {}); };
+    const syncPause = () => audio.pause();
+    const syncSeek = () => { audio.currentTime = video.currentTime; };
+
+    video.addEventListener('play', syncPlay);
+    video.addEventListener('pause', syncPause);
+    video.addEventListener('seeked', syncSeek);
+
+    // If video is already playing, start audio
+    if (!video.paused) syncPlay();
+
+    return () => {
+      video.removeEventListener('play', syncPlay);
+      video.removeEventListener('pause', syncPause);
+      video.removeEventListener('seeked', syncSeek);
+      audio.pause();
+    };
+  }, [ttsAudioSrc, dubVol]);
+
+  // Update audio volume in real-time
+  useEffect(() => {
+    if (ttsAudioRef.current) ttsAudioRef.current.volume = Math.min(1, dubVol / 100);
+  }, [dubVol]);
+
+  // Update video volume
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.volume = Math.min(1, videoVol / 100);
+  }, [videoVol]);
 
   const isDirty = useMemo(
     () =>
@@ -256,6 +303,19 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
           <option value="360p">360p</option>
           <option value="full">Full Res</option>
         </select>
+
+        {/* Dub audio selector */}
+        {ttsList.length > 0 && (
+          <>
+            <div className="w-px h-5 bg-zinc-700 mx-1" />
+            <select value={selectedTtsFile || ''} onChange={e => setSelectedTtsFile(e.target.value || null)}
+              className="bg-surface-container-highest border-none text-[10px] text-on-surface py-1.5 px-2 rounded focus:ring-0 max-w-[180px]">
+              <option value="">No dub</option>
+              {ttsList.map(entry => <option key={entry.filename} value={entry.filename}>{entry.profile} ({entry.language})</option>)}
+            </select>
+          </>
+        )}
+
         <div className="flex-1" />
         {isDirty && <span className="font-mono text-[9px] text-amber-400 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-400" />Unsaved</span>}
         {saveStatus === 'saved' && <span className="font-mono text-[9px] text-emerald-400">Saved</span>}
@@ -285,6 +345,9 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
         )}
         <SubtitleOverlay segments={segments} currentTime={playerState.currentTime} style={style} onDragPosition={handleDragPosition} />
       </VideoPlayer>
+
+      {/* Hidden TTS audio element — synced to video playback */}
+      {ttsAudioSrc && <audio ref={ttsAudioRef} src={ttsAudioSrc} preload="auto" style={{ display: 'none' }} />}
 
       {/* Timeline */}
       <Timeline segments={segments} currentTime={playerState.currentTime} duration={playerState.duration} onSeek={playerControls.seek} onResizeSegment={handleTimelineResize} />
