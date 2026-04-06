@@ -538,6 +538,7 @@ class TTSAssembler:
                                 existing_next = shortened_map.get(next_idx, "")
                                 shortened_map[next_idx] = " ".join(overflow) + (" " + existing_next if existing_next else "")
 
+                    # Rebuild segments with adjusted timings proportional to text length
                     updated_segments = []
                     for i, seg in enumerate(segments):
                         text = shortened_map.get(i, seg.get("text", ""))
@@ -546,6 +547,30 @@ class TTSAssembler:
                             "end": seg["end"],
                             "text": text,
                         })
+
+                    # Adjust timing boundaries within each sentence group:
+                    # redistribute the group's total time proportionally by text length
+                    for _text, _start, _end, seg_indices in synth_items:
+                        if not seg_indices or len(seg_indices) < 2:
+                            continue
+                        valid = [j for j in seg_indices if j < len(updated_segments)]
+                        if len(valid) < 2:
+                            continue
+                        group_start = updated_segments[valid[0]]["start"]
+                        group_end = updated_segments[valid[-1]]["end"]
+                        total_time = group_end - group_start
+                        total_chars = sum(len(updated_segments[j]["text"]) for j in valid) or 1
+                        cursor = group_start
+                        for k, j in enumerate(valid):
+                            seg_chars = len(updated_segments[j]["text"]) or 1
+                            seg_time = total_time * (seg_chars / total_chars)
+                            updated_segments[j]["start"] = round(cursor, 3)
+                            if k < len(valid) - 1:
+                                updated_segments[j]["end"] = round(cursor + seg_time, 3)
+                            else:
+                                updated_segments[j]["end"] = group_end
+                            cursor = updated_segments[j]["end"]
+
                     write_srt(updated_segments, srt_path)
                     logger.info(
                         f"Updated {len(shortened_map)} segments in original SRT: {srt_path}"
