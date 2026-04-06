@@ -473,21 +473,58 @@ class TTSAssembler:
             write_srt(sentence_segments, sentences_srt)
             logger.info(f"Saved sentences SRT: {sentences_srt}")
 
-            # Write shortened text back to the original SRT so burned-in
-            # subtitles match the spoken dub audio.
-            # Break long merged sentences into lines (~40 chars) so they
-            # don't overflow the video width.
-            if srt_path and any(
-                synth_items[i][0] != segments[min(i, len(segments) - 1)].get("text", "")
-                for i in range(len(synth_items))
-                if synth_items[i][0]
-            ):
-                wrapped_segments = [
-                    {**seg, "text": break_long_lines(seg["text"], max_chars=40)}
-                    for seg in sentence_segments
-                ]
-                write_srt(wrapped_segments, srt_path)
-                logger.info(f"Updated original SRT with shortened text: {srt_path}")
+            # Write shortened text back to the original SRT segments so
+            # burned-in subtitles match the spoken dub audio.
+            # Keeps original segment count and timings — only updates text
+            # for segments whose sentence was shortened.
+            if srt_path:
+                # Build a map: original segment index → shortened text
+                shortened_map: dict[int, str] = {}
+                for text, _start, _end, seg_indices in synth_items:
+                    if not text or not seg_indices:
+                        continue
+                    # Check if this sentence was actually shortened
+                    original_concat = " ".join(
+                        segments[j].get("text", "") for j in seg_indices if j < len(segments)
+                    )
+                    if text == original_concat:
+                        continue
+                    # Distribute the shortened text across original segments
+                    # proportionally by original text length
+                    words = text.split()
+                    total_orig_len = sum(
+                        len(segments[j].get("text", "")) for j in seg_indices if j < len(segments)
+                    )
+                    if total_orig_len == 0:
+                        continue
+                    word_pos = 0
+                    for k, idx in enumerate(seg_indices):
+                        if idx >= len(segments):
+                            continue
+                        orig_len = len(segments[idx].get("text", ""))
+                        ratio = orig_len / total_orig_len
+                        word_count = max(1, round(len(words) * ratio))
+                        if k == len(seg_indices) - 1:
+                            # Last segment gets remaining words
+                            shortened_map[idx] = " ".join(words[word_pos:])
+                        else:
+                            shortened_map[idx] = " ".join(words[word_pos:word_pos + word_count])
+                            word_pos += word_count
+
+                if shortened_map:
+                    updated_segments = []
+                    for i, seg in enumerate(segments):
+                        text = shortened_map.get(i, seg.get("text", ""))
+                        text = break_long_lines(text, max_chars=40)
+                        updated_segments.append({
+                            "start": seg["start"],
+                            "end": seg["end"],
+                            "text": text,
+                        })
+                    write_srt(updated_segments, srt_path)
+                    logger.info(
+                        f"Updated {len(shortened_map)} segments in original SRT: {srt_path}"
+                    )
 
         logger.info(f"Generated TTS track: {output_path}")
         return output_path
