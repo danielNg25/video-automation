@@ -364,7 +364,7 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
               }
               return <div style={{ ...pos, backdropFilter: `blur(${blurPx}px)`, WebkitBackdropFilter: `blur(${blurPx}px)`, backgroundColor: 'rgba(0,0,0,0.15)' }} />;
             })()}
-            <SubtitleOverlay segments={segments} currentTime={playerState.currentTime} style={style} onDragPosition={handleDragPosition} />
+            <SubtitleOverlay segments={segments} currentTime={playerState.currentTime} style={style} onDragPosition={handleDragPosition} videoRect={videoRect || undefined} />
           </VideoPlayer>
           {ttsAudioSrc && <audio ref={ttsAudioRef} src={ttsAudioSrc} preload="auto" style={{ display: 'none' }} />}
           <Timeline segments={segments} currentTime={playerState.currentTime} duration={playerState.duration} onSeek={playerControls.seek} onResizeSegment={handleTimelineResize} />

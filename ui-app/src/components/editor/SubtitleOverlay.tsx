@@ -19,9 +19,11 @@ interface SubtitleOverlayProps {
   currentTime: number;
   style: SubtitleStyle;
   onDragPosition?: (marginH: number, marginV: number) => void;
+  /** Actual video element rect within parent — for accurate positioning */
+  videoRect?: { offsetX: number; offsetY: number; width: number; height: number };
 }
 
-export function SubtitleOverlay({ segments, currentTime, style, onDragPosition }: SubtitleOverlayProps) {
+export function SubtitleOverlay({ segments, currentTime, style, onDragPosition, videoRect }: SubtitleOverlayProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [containerHeight, setContainerHeight] = useState(0);
@@ -90,9 +92,10 @@ export function SubtitleOverlay({ segments, currentTime, style, onDragPosition }
     [onDragPosition, style.marginH, style.marginV],
   );
 
-  // Scale ASS PlayRes values (1920px) to actual container pixels
+  // Scale ASS PlayRes values (1920px) to actual video element pixels
   const ASS_PLAY_RES_Y = 1920;
-  const scale = containerHeight > 0 ? containerHeight / ASS_PLAY_RES_Y : 0.25;
+  const videoH = videoRect?.height || containerHeight;
+  const scale = videoH > 0 ? videoH / ASS_PLAY_RES_Y : 0.25;
   const scaledFontSize = Math.max(8, style.fontSize * scale);
   const scaledMarginV = Math.max(2, style.marginV * scale);
   const scaledOutline = Math.max(0.5, style.outlineWidth * scale);
@@ -128,13 +131,17 @@ export function SubtitleOverlay({ segments, currentTime, style, onDragPosition }
   };
 
   // Always render the ref div so ResizeObserver can attach.
-  // Hide text when no active segment.
+  // Position relative to the actual video element within the container.
+  const bottomOffset = videoRect
+    ? videoRect.offsetY + scaledMarginV
+    : scaledMarginV;
+
   return (
     <div
       ref={overlayRef}
       className="absolute left-0 right-0 flex justify-center px-3 text-center pointer-events-none"
       style={{
-        bottom: `${scaledMarginV}px`,
+        bottom: `${bottomOffset}px`,
         transform: `translateX(${style.marginH * scale}px)`,
       }}
     >
