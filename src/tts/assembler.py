@@ -464,7 +464,7 @@ class TTSAssembler:
 
         # Save the sentences SRT (with any shortening applied) alongside the WAV
         if merge_sentences and synth_items:
-            from src.processor.subtitle import write_srt
+            from src.processor.subtitle import break_long_lines, write_srt
             sentences_srt = output_path.with_suffix(".sentences.srt")
             sentence_segments = [
                 {"start": item[1], "end": item[2], "text": item[0]}
@@ -474,13 +474,19 @@ class TTSAssembler:
             logger.info(f"Saved sentences SRT: {sentences_srt}")
 
             # Write shortened text back to the original SRT so burned-in
-            # subtitles match the spoken dub audio
+            # subtitles match the spoken dub audio.
+            # Break long merged sentences into lines (~40 chars) so they
+            # don't overflow the video width.
             if srt_path and any(
                 synth_items[i][0] != segments[min(i, len(segments) - 1)].get("text", "")
                 for i in range(len(synth_items))
                 if synth_items[i][0]
             ):
-                write_srt(sentence_segments, srt_path)
+                wrapped_segments = [
+                    {**seg, "text": break_long_lines(seg["text"], max_chars=40)}
+                    for seg in sentence_segments
+                ]
+                write_srt(wrapped_segments, srt_path)
                 logger.info(f"Updated original SRT with shortened text: {srt_path}")
 
         logger.info(f"Generated TTS track: {output_path}")
