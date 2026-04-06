@@ -237,8 +237,14 @@ class Pipeline:
                 translator = None
                 llm_caller = None
                 try:
+                    import os
                     trans_cfg = self.config.get("translation", {})
-                    api_key = trans_cfg.get("api_key")
+                    api_key = (
+                        trans_cfg.get("api_key")
+                        or os.environ.get("DEEPSEEK_API_KEY")
+                        or os.environ.get("ANTHROPIC_API_KEY")
+                        or os.environ.get("OPENAI_API_KEY")
+                    )
                     if api_key:
                         from src.translator.llm import LLMTranslator
                         backend = trans_cfg.get("backend", "deepseek")
@@ -272,6 +278,7 @@ class Pipeline:
                     on_progress=tts_progress,
                     merge_sentences=True,
                     llm_caller=llm_caller,
+                    srt_path=srt_path,
                 )
 
                 state.mark_stage_complete("tts", {

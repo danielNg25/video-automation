@@ -630,6 +630,7 @@ class TaskManager:
                 on_progress=on_progress,
                 merge_sentences=True,
                 llm_caller=llm_caller,
+                srt_path=srt_path,
             )
 
             # Get output duration

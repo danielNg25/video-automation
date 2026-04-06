@@ -261,6 +261,7 @@ class TTSAssembler:
         on_progress: callable | None = None,
         merge_sentences: bool = True,
         llm_caller: Callable | None = None,
+        srt_path: Path | None = None,
     ) -> Path:
         """Generate a full-length TTS audio track from subtitle segments.
 
@@ -471,6 +472,16 @@ class TTSAssembler:
             ]
             write_srt(sentence_segments, sentences_srt)
             logger.info(f"Saved sentences SRT: {sentences_srt}")
+
+            # Write shortened text back to the original SRT so burned-in
+            # subtitles match the spoken dub audio
+            if srt_path and any(
+                synth_items[i][0] != segments[min(i, len(segments) - 1)].get("text", "")
+                for i in range(len(synth_items))
+                if synth_items[i][0]
+            ):
+                write_srt(sentence_segments, srt_path)
+                logger.info(f"Updated original SRT with shortened text: {srt_path}")
 
         logger.info(f"Generated TTS track: {output_path}")
         return output_path
