@@ -22,9 +22,10 @@ interface SubtitleEditorPanelProps {
   defaultLang?: string;
   ttsList: TTSAudioEntry[];
   onExportDone?: () => void;
+  onReload?: () => void;
 }
 
-export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsList, onExportDone }: SubtitleEditorPanelProps) {
+export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsList, onExportDone, onReload }: SubtitleEditorPanelProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playerState, playerControls] = useVideoPlayer(videoRef);
 
@@ -244,6 +245,14 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
     setStyle(prev => ({ ...prev, marginH, marginV }));
   }, []);
 
+  // Reload data from server
+  const handleReload = useCallback(async () => {
+    getSrt(videoId, activeLang)
+      .then(res => { setSegments(res.segments); setOriginalSegments(res.segments); setSaveStatus('idle'); })
+      .catch(() => {});
+    onReload?.();
+  }, [videoId, activeLang, onReload]);
+
   // Save SRT + style
   const handleSave = useCallback(async () => {
     setSaving(true); setSaveStatus('idle');
@@ -319,6 +328,10 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
         <div className="flex-1" />
         {isDirty && <span className="font-mono text-[9px] text-amber-400 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-400" />Unsaved</span>}
         {saveStatus === 'saved' && <span className="font-mono text-[9px] text-emerald-400">Saved</span>}
+        <button onClick={handleReload} title="Reload data"
+          className="flex items-center gap-1 px-2 py-1.5 rounded text-xs text-zinc-400 hover:text-on-surface hover:bg-surface-container-highest transition-colors">
+          <span className="material-symbols-outlined text-sm">refresh</span>
+        </button>
         <button onClick={handleSave} disabled={!isDirty || saving}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-all ${isDirty ? 'bg-primary text-on-primary-fixed' : 'bg-surface-container-highest text-on-surface-variant'} disabled:opacity-50`}>
           <span className="material-symbols-outlined text-sm">{saving ? 'progress_activity' : 'save'}</span>

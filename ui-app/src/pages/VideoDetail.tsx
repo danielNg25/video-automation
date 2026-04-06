@@ -119,6 +119,21 @@ function VideoDetailPage() {
     }
   }, []);
 
+  const handleEditorReload = useCallback(async () => {
+    if (!videoId) return;
+    try {
+      const video = await getVideo(videoId);
+      setVideoMeta(video);
+      if (video.srt_languages.length > 0 && !previewLanguage) {
+        setPreviewLanguage(video.srt_languages[0]);
+      }
+    } catch { /* ignore */ }
+    try {
+      const list = await getTTSList(videoId);
+      setTtsList(list);
+    } catch { /* ignore */ }
+  }, [videoId, previewLanguage]);
+
   const loadVoicesForProvider = useCallback(async (provider: string, apiKey?: string) => {
     try {
       const voices = await getTTSVoices(undefined, provider, apiKey);
@@ -388,6 +403,7 @@ function VideoDetailPage() {
                   srtLanguages={videoMeta.srt_languages}
                   defaultLang={previewLanguage || videoMeta.srt_languages.find(l => l !== 'zh') || videoMeta.srt_languages[0]}
                   ttsList={ttsList}
+                  onReload={handleEditorReload}
                 />
               </div>
             </div>
