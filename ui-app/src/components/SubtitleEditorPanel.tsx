@@ -43,7 +43,7 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
   const [style, setStyle] = useState<SubtitleStyle>({
     fontName: 'Arial', fontSize: 24, outlineWidth: 2,
     marginV: 30, marginH: 0, bold: true, shadow: true,
-    backgroundColor: '', backgroundOpacity: 75,
+    backgroundColor: '', backgroundOpacity: 90,
   });
   const [originalStyle, setOriginalStyle] = useState<SubtitleStyle | null>(null);
 
@@ -345,17 +345,22 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
         {/* Left: Video + Timeline */}
         <div className="w-[65%] shrink-0 space-y-3">
           <VideoPlayer ref={videoRef} src={videoSrc} state={playerState} controls={playerControls} loading={videoLoading} onLoadingChange={setVideoLoading}>
-            {blurConfig.enabled && ocrRegion && ocrRegion.videoHeight > 0 && videoRect && videoRect.width > 0 && (
-              <div className="absolute pointer-events-none" style={{
+            {blurConfig.enabled && ocrRegion && ocrRegion.videoHeight > 0 && videoRect && videoRect.width > 0 && (() => {
+              const pos = {
                 left: `${videoRect.offsetX + (ocrRegion.x / ocrRegion.videoWidth) * videoRect.width}px`,
                 top: `${videoRect.offsetY + (ocrRegion.y / ocrRegion.videoHeight) * videoRect.height}px`,
                 width: `${(ocrRegion.width / ocrRegion.videoWidth) * videoRect.width}px`,
                 height: `${(ocrRegion.height / ocrRegion.videoHeight) * videoRect.height}px`,
-                backdropFilter: `blur(${blurConfig.strength * 0.5}px)`,
-                WebkitBackdropFilter: `blur(${blurConfig.strength * 0.5}px)`,
-                backgroundColor: 'rgba(0,0,0,0.15)',
-              }} />
-            )}
+              };
+              const blurPx = blurConfig.strength * 0.5;
+              const modeStyle: React.CSSProperties =
+                blurConfig.mode === 'fill'
+                  ? { backgroundColor: 'rgba(0,0,0,0.95)' }
+                  : blurConfig.mode === 'pixelate'
+                    ? { backdropFilter: `blur(${blurPx * 2}px) contrast(1.5)`, WebkitBackdropFilter: `blur(${blurPx * 2}px) contrast(1.5)`, backgroundColor: 'rgba(0,0,0,0.1)' }
+                    : { backdropFilter: `blur(${blurPx}px)`, WebkitBackdropFilter: `blur(${blurPx}px)`, backgroundColor: 'rgba(0,0,0,0.15)' };
+              return <div className="absolute pointer-events-none" style={{ ...pos, ...modeStyle }} />;
+            })()}
             <SubtitleOverlay segments={segments} currentTime={playerState.currentTime} style={style} onDragPosition={handleDragPosition} />
           </VideoPlayer>
           {ttsAudioSrc && <audio ref={ttsAudioRef} src={ttsAudioSrc} preload="auto" style={{ display: 'none' }} />}

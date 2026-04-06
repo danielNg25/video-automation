@@ -81,16 +81,34 @@ export function StylePanel({ style, onChange, blur, onBlurChange, hasOcrRegion }
       </div>
 
       {/* Background */}
-      <div className="space-y-1">
-        <div className="flex justify-between">
-          <label className="font-mono text-[9px] uppercase text-on-surface-variant">Background Opacity</label>
-          <span className="font-mono text-[9px] text-primary">{style.backgroundOpacity}%</span>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <div className="flex justify-between">
+            <label className="font-mono text-[9px] uppercase text-on-surface-variant">BG Opacity</label>
+            <span className="font-mono text-[9px] text-primary">{style.backgroundOpacity}%</span>
+          </div>
+          <input
+            type="range" min={0} max={100} value={style.backgroundOpacity}
+            onChange={(e) => update('backgroundOpacity', Number(e.target.value))}
+            className="w-full h-1 accent-primary bg-zinc-700 rounded-full appearance-none cursor-pointer"
+          />
         </div>
-        <input
-          type="range" min={0} max={100} value={style.backgroundOpacity}
-          onChange={(e) => update('backgroundOpacity', Number(e.target.value))}
-          className="w-full h-1 accent-primary bg-zinc-700 rounded-full appearance-none cursor-pointer"
-        />
+        <div className="space-y-1">
+          <label className="font-mono text-[9px] uppercase text-on-surface-variant">BG Color</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="color"
+              value={style.backgroundColor || '#000000'}
+              onChange={(e) => update('backgroundColor', e.target.value)}
+              className="w-8 h-8 rounded cursor-pointer bg-transparent border border-outline-variant/20"
+            />
+            <button
+              onClick={() => update('backgroundColor', '')}
+              className="font-mono text-[8px] text-zinc-500 hover:text-on-surface"
+              title="Reset to black"
+            >Reset</button>
+          </div>
+        </div>
       </div>
 
       {/* Position */}

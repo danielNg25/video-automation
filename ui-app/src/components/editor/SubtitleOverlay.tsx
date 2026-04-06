@@ -112,10 +112,18 @@ export function SubtitleOverlay({ segments, currentTime, style, onDragPosition }
     whiteSpace: 'pre-wrap',
     textAlign: 'center',
     padding: style.backgroundOpacity > 0 ? '2px 6px' : undefined,
-    backgroundColor:
-      style.backgroundOpacity > 0
-        ? `rgba(0,0,0,${style.backgroundOpacity / 100})`
-        : undefined,
+    backgroundColor: (() => {
+      if (style.backgroundOpacity <= 0) return undefined;
+      const alpha = style.backgroundOpacity / 100;
+      if (style.backgroundColor && style.backgroundColor.startsWith('#')) {
+        const hex = style.backgroundColor;
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        return `rgba(${r},${g},${b},${alpha})`;
+      }
+      return `rgba(0,0,0,${alpha})`;
+    })(),
     borderRadius: style.backgroundOpacity > 0 ? '3px' : undefined,
   };
 
