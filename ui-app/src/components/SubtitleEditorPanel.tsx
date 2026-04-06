@@ -392,81 +392,82 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
         {/* Export Tab */}
         {bottomTab === 'export' && (
           <div className="space-y-4">
-            {/* Export controls */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">Dub Audio</label>
-                <select value={selectedTtsFile || ''} onChange={e => setSelectedTtsFile(e.target.value || null)}
-                  className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-1.5 px-2 rounded focus:ring-0">
-                  <option value="">No dub</option>
-                  {ttsList.map(entry => <option key={entry.filename} value={entry.filename}>{entry.profile} ({entry.provider} · {entry.language})</option>)}
-                </select>
-              </div>
-              <div />
-              <div className="space-y-1">
-                <div className="flex justify-between">
-                  <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">Video Volume</label>
-                  <span className="text-[9px] font-mono text-primary">{videoVol}%</span>
+            <div className="flex gap-4">
+              {/* Left: Buttons + Preview */}
+              <div className="flex-1 space-y-3">
+                <div className="flex gap-3">
+                  <button disabled={isPreviewing} onClick={handleRenderPreview}
+                    className="flex-1 py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 bg-surface-container-highest text-on-surface hover:bg-surface-container-high transition-colors disabled:opacity-50">
+                    <span className="material-symbols-outlined text-sm">{isPreviewing ? 'progress_activity' : 'preview'}</span>
+                    {isPreviewing ? 'Rendering...' : 'Render Preview (5s)'}
+                  </button>
+                  <button disabled={isExporting} onClick={handleExport}
+                    className="flex-1 py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 bg-gradient-to-r from-primary to-primary-container text-on-primary-fixed hover:shadow-[0_0_20px_rgba(160,120,255,0.3)] transition-all disabled:opacity-50">
+                    <span className="material-symbols-outlined text-sm">{isExporting ? 'progress_activity' : 'movie_edit'}</span>
+                    {isExporting ? 'Exporting...' : 'Export Full Video'}
+                  </button>
                 </div>
-                <input type="range" min={0} max={200} value={videoVol} onChange={e => setVideoVol(Number(e.target.value))}
-                  className="w-full accent-primary h-1 bg-surface-container-highest rounded-lg appearance-none cursor-pointer" />
+
+                {isExporting && (
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[10px] font-mono">
+                      <span className="text-on-surface-variant">{exportProgress.message}</span>
+                      <span className="text-primary">{exportProgress.pct}%</span>
+                    </div>
+                    <div className="h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
+                      <div className="h-full bg-primary transition-all duration-300" style={{ width: `${exportProgress.pct}%` }} />
+                    </div>
+                  </div>
+                )}
+
+                {(previewError || exportError) && (
+                  <div className="p-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">{previewError || exportError}</div>
+                )}
+
+                {(previewUrl || exportDone) && (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold">{exportDone ? 'Exported Video' : 'Preview'}</label>
+                      {exportDone && (
+                        <a href={getExportedVideoUrl(videoId)} download className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline font-bold">
+                          <span className="material-symbols-outlined text-xs">download</span> Download
+                        </a>
+                      )}
+                    </div>
+                    <video controls autoPlay className="w-full max-h-[50vh] rounded-lg bg-black"
+                      src={exportDone ? getExportedVideoUrl(videoId) : previewUrl!} />
+                  </div>
+                )}
               </div>
-              <div className="space-y-1">
-                <div className="flex justify-between">
-                  <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">Dub Volume</label>
-                  <span className="text-[9px] font-mono text-primary">{dubVol}%</span>
+
+              {/* Right: Config */}
+              <div className="w-[240px] shrink-0 space-y-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">Dub Audio</label>
+                  <select value={selectedTtsFile || ''} onChange={e => setSelectedTtsFile(e.target.value || null)}
+                    className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-1.5 px-2 rounded focus:ring-0">
+                    <option value="">No dub</option>
+                    {ttsList.map(entry => <option key={entry.filename} value={entry.filename}>{entry.profile} ({entry.provider} · {entry.language})</option>)}
+                  </select>
                 </div>
-                <input type="range" min={0} max={200} value={dubVol} onChange={e => setDubVol(Number(e.target.value))}
-                  className="w-full accent-primary h-1 bg-surface-container-highest rounded-lg appearance-none cursor-pointer" disabled={!selectedTtsFile} />
+                <div className="space-y-1">
+                  <div className="flex justify-between">
+                    <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">Video Volume</label>
+                    <span className="text-[9px] font-mono text-primary">{videoVol}%</span>
+                  </div>
+                  <input type="range" min={0} max={200} value={videoVol} onChange={e => setVideoVol(Number(e.target.value))}
+                    className="w-full accent-primary h-1 bg-surface-container-highest rounded-lg appearance-none cursor-pointer" />
+                </div>
+                <div className="space-y-1">
+                  <div className="flex justify-between">
+                    <label className="text-[9px] text-zinc-500 uppercase tracking-tighter font-bold">Dub Volume</label>
+                    <span className="text-[9px] font-mono text-primary">{dubVol}%</span>
+                  </div>
+                  <input type="range" min={0} max={200} value={dubVol} onChange={e => setDubVol(Number(e.target.value))}
+                    className="w-full accent-primary h-1 bg-surface-container-highest rounded-lg appearance-none cursor-pointer" disabled={!selectedTtsFile} />
+                </div>
               </div>
             </div>
-
-            {/* Action Buttons */}
-            <div className="flex gap-3">
-              <button disabled={isPreviewing} onClick={handleRenderPreview}
-                className="flex-1 py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 bg-surface-container-highest text-on-surface hover:bg-surface-container-high transition-colors disabled:opacity-50">
-                <span className="material-symbols-outlined text-sm">{isPreviewing ? 'progress_activity' : 'preview'}</span>
-                {isPreviewing ? 'Rendering...' : 'Render Preview (5s)'}
-              </button>
-              <button disabled={isExporting} onClick={handleExport}
-                className="flex-1 py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 bg-gradient-to-r from-primary to-primary-container text-on-primary-fixed hover:shadow-[0_0_20px_rgba(160,120,255,0.3)] transition-all disabled:opacity-50">
-                <span className="material-symbols-outlined text-sm">{isExporting ? 'progress_activity' : 'movie_edit'}</span>
-                {isExporting ? 'Exporting...' : 'Export Full Video'}
-              </button>
-            </div>
-
-            {/* Export Progress */}
-            {isExporting && (
-              <div className="space-y-1">
-                <div className="flex justify-between text-[10px] font-mono">
-                  <span className="text-on-surface-variant">{exportProgress.message}</span>
-                  <span className="text-primary">{exportProgress.pct}%</span>
-                </div>
-                <div className="h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
-                  <div className="h-full bg-primary transition-all duration-300" style={{ width: `${exportProgress.pct}%` }} />
-                </div>
-              </div>
-            )}
-
-            {(previewError || exportError) && (
-              <div className="p-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">{previewError || exportError}</div>
-            )}
-
-            {/* Preview / Export Video Player */}
-            {(previewUrl || exportDone) && (
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold">{exportDone ? 'Exported Video' : 'Preview'}</label>
-                  {exportDone && (
-                    <a href={getExportedVideoUrl(videoId)} download className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline font-bold">
-                      <span className="material-symbols-outlined text-xs">download</span> Download
-                    </a>
-                  )}
-                </div>
-                <video controls autoPlay className="w-full max-h-[50vh] rounded-lg bg-black"
-                  src={exportDone ? getExportedVideoUrl(videoId) : previewUrl!} />
-              </div>
-            )}
           </div>
         )}
       </div>
