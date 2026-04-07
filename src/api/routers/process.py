@@ -212,13 +212,15 @@ def _run_export_ffmpeg(
     scale_pad = f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2"
 
     ass_path = None
-    bg_drawtext = None
+    bg_images = None
     if subtitle_path and subtitle_path.exists():
-        from src.processor.subtitle import srt_to_ass, build_background_drawtext_filter
+        from src.processor.subtitle import srt_to_ass, generate_subtitle_background_images
         ass_path = subtitle_path.with_suffix(".export.ass")
         srt_to_ass(subtitle_path, style, ass_path)
-        bg_drawtext = build_background_drawtext_filter(
-            subtitle_path, style, int(w), int(h)
+        # Generate rounded-rect background PNGs
+        bg_dir = output_path.parent / "bg_tmp"
+        bg_images = generate_subtitle_background_images(
+            subtitle_path, style, bg_dir, int(w), int(h),
         )
     use_subs_filter = ass_path is not None
 
@@ -235,11 +237,36 @@ def _run_export_ffmpeg(
     if duration_seconds is not None:
         cmd1 += ["-t", str(duration_seconds)]
 
-    bg_suffix = f",{bg_drawtext}" if bg_drawtext else ""
     ass_suffix = f",ass='{ass_path}'" if use_subs_filter else ""
 
-    if blur_filter:
-        fc = f"{blur_filter};[blurred]{scale_pad}{bg_suffix}{ass_suffix}[out]"
+    if bg_images:
+        from src.processor.subtitle import build_background_overlay_filter
+        # Add PNG inputs and build overlay chain
+        for img in bg_images:
+            cmd1 += ["-i", img["path"]]
+
+        if blur_filter:
+            # blur → scale+pad → [bg_base] → overlay PNGs → ass text → [out]
+            fc_start = f"{blur_filter};[blurred]{scale_pad}[bg_base]"
+        else:
+            fc_start = f"[0:v]{scale_pad}[bg_base]"
+
+        overlay_fc = build_background_overlay_filter(bg_images)
+        fc = f"{fc_start};{overlay_fc};[bg_out]{ass_suffix.lstrip(',')}[out]" if ass_suffix else f"{fc_start};{overlay_fc}"
+        if not ass_suffix:
+            fc = fc.replace("[bg_out]", "[out]")
+
+        cmd1 += [
+            "-filter_complex", fc,
+            "-map", "[out]",
+            "-map", "0:a",
+            "-af", f"volume={video_volume}",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+            "-c:a", "aac", "-b:a", "192k",
+            str(intermediate),
+        ]
+    elif blur_filter:
+        fc = f"{blur_filter};[blurred]{scale_pad}{ass_suffix}[out]"
         cmd1 += [
             "-filter_complex", fc,
             "-map", "[out]",
@@ -250,7 +277,7 @@ def _run_export_ffmpeg(
             str(intermediate),
         ]
     else:
-        vf = f"{scale_pad}{bg_suffix}{ass_suffix}"
+        vf = f"{scale_pad}{ass_suffix}"
         cmd1 += [
             "-vf", vf,
             "-af", f"volume={video_volume}",
@@ -260,6 +287,13 @@ def _run_export_ffmpeg(
         ]
 
     result = subprocess.run(cmd1, capture_output=True, text=True, timeout=600)
+
+    # Clean up background PNG temp dir
+    if bg_images:
+        import shutil
+        bg_dir = output_path.parent / "bg_tmp"
+        shutil.rmtree(bg_dir, ignore_errors=True)
+
     if result.returncode != 0:
         raise RuntimeError(f"Export failed: {result.stderr[-500:]}")
 

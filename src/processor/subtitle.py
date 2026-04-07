@@ -199,6 +199,151 @@ def srt_to_ass(srt_path: Path, style_config: dict, output_path: Path) -> Path:
     return output_path
 
 
+def generate_subtitle_background_images(
+    srt_path: Path,
+    style_config: dict,
+    output_dir: Path,
+    target_width: int = 1080,
+    target_height: int = 1920,
+    corner_radius: int = 12,
+) -> list[dict] | None:
+    """Generate transparent PNGs with rounded-rectangle backgrounds for each segment.
+
+    Uses PIL to draw true rounded rectangles. Returns metadata for ffmpeg overlay.
+
+    Args:
+        srt_path: SRT file path.
+        style_config: Style dict with background_color, background_opacity, font_size, margin_v.
+        output_dir: Directory to write PNG files.
+        target_width: Output video width.
+        target_height: Output video height.
+        corner_radius: Border radius in pixels.
+
+    Returns:
+        List of dicts with 'path', 'start', 'end', 'x', 'y' for ffmpeg overlay,
+        or None if no background configured.
+    """
+    bg_color_hex = style_config.get("background_color", "")
+    bg_opacity = style_config.get("background_opacity", 0)
+    if bg_opacity <= 0:
+        return None
+
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        logger.warning("Pillow not installed — cannot render rounded-corner backgrounds")
+        return None
+
+    # Parse color
+    if bg_color_hex and bg_color_hex.startswith("#") and len(bg_color_hex) == 7:
+        r = int(bg_color_hex[1:3], 16)
+        g = int(bg_color_hex[3:5], 16)
+        b = int(bg_color_hex[5:7], 16)
+    else:
+        r, g, b = 0, 0, 0
+    alpha = int(bg_opacity * 255 / 100)
+
+    font_size = style_config.get("font_size", 24)
+    margin_v = style_config.get("margin_v", 30)
+    alignment = style_config.get("alignment", 2)
+    font_name = style_config.get("font_name", "Arial")
+    bold = style_config.get("bold", True)
+
+    # Scale font from PlayRes (1920) to target
+    scaled_font = int(font_size * target_height / 1920)
+    pad_x = max(10, int(scaled_font * 0.35))
+    pad_y = max(6, int(scaled_font * 0.2))
+
+    # Try to load font for text measurement
+    try:
+        import platform
+        if platform.system() == "Darwin":
+            font_path = "/System/Library/Fonts/Supplemental/Arial Bold.ttf" if bold else "/System/Library/Fonts/Supplemental/Arial.ttf"
+        else:
+            font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        pil_font = ImageFont.truetype(font_path, scaled_font)
+    except Exception:
+        pil_font = ImageFont.load_default()
+
+    segments = parse_srt(srt_path)
+    if not segments:
+        return None
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    results = []
+
+    for i, seg in enumerate(segments):
+        text = seg["text"]
+        # Measure text width
+        bbox = pil_font.getbbox(text)
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
+
+        img_w = text_w + 2 * pad_x
+        img_h = text_h + 2 * pad_y
+
+        # Create transparent image with rounded rectangle
+        img = Image.new("RGBA", (img_w, img_h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        draw.rounded_rectangle(
+            [(0, 0), (img_w - 1, img_h - 1)],
+            radius=corner_radius,
+            fill=(r, g, b, alpha),
+        )
+        png_path = output_dir / f"bg_{i:04d}.png"
+        img.save(png_path)
+
+        # Calculate overlay position
+        # Center horizontally
+        x = (target_width - img_w) // 2
+        # Vertical: based on alignment
+        scaled_margin = int(margin_v * target_height / 1920)
+        if alignment in (1, 2, 3):  # bottom
+            y = target_height - scaled_margin - img_h
+        elif alignment in (7, 8, 9):  # top
+            y = scaled_margin
+        else:  # middle
+            y = (target_height - img_h) // 2
+
+        results.append({
+            "path": str(png_path),
+            "start": seg["start"],
+            "end": seg["end"],
+            "x": x,
+            "y": y,
+        })
+
+    logger.info(f"Generated {len(results)} rounded-rect background PNGs in {output_dir}")
+    return results
+
+
+def build_background_overlay_filter(bg_images: list[dict]) -> str:
+    """Build ffmpeg filter_complex fragment to overlay rounded-rect background PNGs.
+
+    Each image is overlaid with enable='between(t,start,end)' for timing.
+
+    Args:
+        bg_images: List from generate_subtitle_background_images().
+
+    Returns:
+        filter_complex fragment string. Input is [bg_base], output is [bg_out].
+    """
+    if not bg_images:
+        return ""
+
+    parts = []
+    prev_label = "bg_base"
+    for i, img in enumerate(bg_images):
+        out_label = f"bg_{i}" if i < len(bg_images) - 1 else "bg_out"
+        parts.append(
+            f"[{prev_label}][{i + 1}:v]overlay={img['x']}:{img['y']}"
+            f":enable='between(t,{img['start']:.3f},{img['end']:.3f})'[{out_label}]"
+        )
+        prev_label = out_label
+
+    return ";".join(parts)
+
+
 def build_background_drawtext_filter(
     srt_path: Path,
     style_config: dict,
