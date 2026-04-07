@@ -296,14 +296,16 @@ def generate_subtitle_background_images(
         # Calculate overlay position
         # Center horizontally
         x = (target_width - img_w) // 2
-        # Vertical: based on alignment
+        # Vertical: center the PNG on the ASS text center.
+        # ASS alignment 2: text bottom = PlayResY - MarginV, center = bottom - fontSize/2
         scaled_margin = int(margin_v * target_height / 1920)
         if alignment in (1, 2, 3):  # bottom
-            y = target_height - scaled_margin - img_h
+            text_center_y = target_height - scaled_margin - scaled_font // 2
         elif alignment in (7, 8, 9):  # top
-            y = scaled_margin
+            text_center_y = scaled_margin + scaled_font // 2
         else:  # middle
-            y = (target_height - img_h) // 2
+            text_center_y = target_height // 2
+        y = text_center_y - img_h // 2
 
         results.append({
             "path": str(png_path),
