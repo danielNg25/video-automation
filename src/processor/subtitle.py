@@ -186,50 +186,102 @@ def srt_to_ass(srt_path: Path, style_config: dict, output_path: Path) -> Path:
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
 
-    # For background rectangles: estimate center position from alignment + margin_v
-    # PlayRes is 1080x1920. Alignment 2 = bottom-center.
-    play_res_x, play_res_y = 1080, 1920
-    if alignment in (1, 2, 3):  # bottom row
-        text_center_y = play_res_y - margin_v - font_size // 2
-    elif alignment in (4, 5, 6):  # middle row
-        text_center_y = play_res_y // 2
-    else:  # top row (7, 8, 9)
-        text_center_y = margin_v + font_size // 2
-    text_center_x = play_res_x // 2 + margin_h
-
-    # Approximate character width: ~60% of font_size for Vietnamese/Latin text
-    char_width = font_size * 0.55
-    box_pad_x = int(font_size * 0.3)  # horizontal padding
-    box_pad_y = int(font_size * 0.25)  # vertical padding
-
     lines = [header]
     for seg in segments:
         start = _seconds_to_ass_timestamp(seg["start"])
         end = _seconds_to_ass_timestamp(seg["end"])
         text = seg["text"].replace("\n", "\\N")
-        if bg_box_colour:
-            # Layer 0: draw a solid rectangle using \p1 drawing command
-            text_width = int(len(text) * char_width)
-            half_w = text_width // 2 + box_pad_x
-            half_h = font_size // 2 + box_pad_y
-            rect_tag = (
-                f"{{\\an5\\pos({text_center_x},{text_center_y})"
-                f"\\p1\\bord0\\shad0\\1c{bg_box_colour}\\1a&H00&}}"
-                f"m -{half_w} -{half_h} l {half_w} -{half_h} "
-                f"{half_w} {half_h} -{half_w} {half_h}"
-                f"{{\\p0}}"
-            )
-            lines.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{rect_tag}\n")
-            # Layer 1: visible text at same position on top
-            text_tag = f"{{\\an5\\pos({text_center_x},{text_center_y})}}"
-            lines.append(f"Dialogue: 1,{start},{end},Default,,0,0,0,,{text_tag}{text}\n")
-        else:
-            lines.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{text}\n")
+        lines.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{text}\n")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text("".join(lines), encoding="utf-8")
     logger.info(f"Generated ASS file: {output_path} ({len(segments)} segments)")
     return output_path
+
+
+def build_background_drawtext_filter(
+    srt_path: Path,
+    style_config: dict,
+    target_width: int = 1080,
+    target_height: int = 1920,
+) -> str | None:
+    """Build an ffmpeg drawtext filter chain for subtitle background boxes.
+
+    Uses drawtext with box=1 for each segment, timed with enable='between(t,s,e)'.
+    Returns None if no background is configured.
+
+    Args:
+        srt_path: SRT file to read segments from.
+        style_config: Style dict with background_color, background_opacity, font_size, margin_v, etc.
+        target_width: Output video width (after scale+pad).
+        target_height: Output video height (after scale+pad).
+    """
+    bg_color_hex = style_config.get("background_color", "")
+    bg_opacity = style_config.get("background_opacity", 0)
+    if bg_opacity <= 0:
+        return None
+
+    # Convert color to ffmpeg format: 0xRRGGBB
+    if bg_color_hex and bg_color_hex.startswith("#") and len(bg_color_hex) == 7:
+        ffmpeg_color = f"0x{bg_color_hex[1:]}"
+    else:
+        ffmpeg_color = "0x000000"
+    alpha = bg_opacity / 100.0
+
+    font_size = style_config.get("font_size", 24)
+    margin_v = style_config.get("margin_v", 30)
+    alignment = style_config.get("alignment", 2)
+    font_name = style_config.get("font_name", "Arial")
+    bold = style_config.get("bold", True)
+
+    # Calculate Y position based on alignment
+    # drawtext y is from top; ASS margin_v with alignment 2 is from bottom
+    if alignment in (1, 2, 3):
+        # Bottom: y = height - margin_v - font_size (text top)
+        y_expr = f"{target_height}-{margin_v}-text_h"
+    elif alignment in (7, 8, 9):
+        y_expr = f"{margin_v}"
+    else:
+        y_expr = f"({target_height}-text_h)/2"
+
+    # X centering
+    x_expr = "(w-text_w)/2"
+
+    segments = parse_srt(srt_path)
+    if not segments:
+        return None
+
+    # Find a font file
+    import platform
+    if platform.system() == "Darwin":
+        fontfile = "/System/Library/Fonts/Supplemental/Arial.ttf"
+    else:
+        fontfile = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+
+    # Scale font_size from PlayRes (1920) to target
+    scaled_font = int(font_size * target_height / 1920)
+    box_pad = max(8, int(scaled_font * 0.25))
+
+    filters = []
+    for seg in segments:
+        text = seg["text"].replace("'", "'\\''").replace(":", "\\:")
+        start = seg["start"]
+        end = seg["end"]
+        f = (
+            f"drawtext=text='{text}'"
+            f":fontfile='{fontfile}'"
+            f":fontsize={scaled_font}"
+            f":fontcolor=white@0"  # invisible text — just for box sizing
+            f":x={x_expr}:y={y_expr}"
+            f":box=1:boxcolor={ffmpeg_color}@{alpha:.2f}:boxborderw={box_pad}"
+            f":enable='between(t,{start:.3f},{end:.3f})'"
+        )
+        if bold:
+            # drawtext doesn't have bold, but we can use a bold font variant
+            pass
+        filters.append(f)
+
+    return ",".join(filters)
 
 
 def merge_subtitles(primary_srt: Path, secondary_srt: Path, output_path: Path) -> Path:

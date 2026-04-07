@@ -213,15 +213,20 @@ def _run_export_ffmpeg(
 
     ass_path = None
     if subtitle_path and subtitle_path.exists():
-        # Convert SRT to ASS with style baked in — avoids force_style escaping issues
-        from src.processor.subtitle import srt_to_ass
+        from src.processor.subtitle import srt_to_ass, build_background_drawtext_filter
         ass_path = subtitle_path.with_suffix(".export.ass")
         srt_to_ass(subtitle_path, style, ass_path)
+        # Build drawtext filter for background rectangles (ASS \p1 doesn't work in filter_complex)
+        bg_drawtext = build_background_drawtext_filter(
+            subtitle_path, style, int(w), int(h)
+        )
+    else:
+        bg_drawtext = None
     use_subs_filter = ass_path is not None
 
     has_tts = tts_path and tts_path.exists()
 
-    # Step 1: Build intermediate (blur + scale + pad + subtitles) without audio mixing
+    # Step 1: Build intermediate (blur + scale + pad + bg boxes + subtitles)
     intermediate = output_path.with_suffix(".tmp.mp4") if has_tts else output_path
     intermediate.parent.mkdir(parents=True, exist_ok=True)
 
@@ -232,12 +237,12 @@ def _run_export_ffmpeg(
     if duration_seconds is not None:
         cmd1 += ["-t", str(duration_seconds)]
 
+    # Build video filter chain: blur → scale+pad → bg boxes → ASS text
+    bg_suffix = f",{bg_drawtext}" if bg_drawtext else ""
+    ass_suffix = f",ass='{ass_path}'" if use_subs_filter else ""
+
     if blur_filter:
-        # Use filter_complex for blur, then chain scale+pad+subtitles
-        if use_subs_filter:
-            fc = f"{blur_filter};[blurred]{scale_pad},ass='{ass_path}'[out]"
-        else:
-            fc = f"{blur_filter};[blurred]{scale_pad}[out]"
+        fc = f"{blur_filter};[blurred]{scale_pad}{bg_suffix}{ass_suffix}[out]"
         cmd1 += [
             "-filter_complex", fc,
             "-map", "[out]",
@@ -248,11 +253,7 @@ def _run_export_ffmpeg(
             str(intermediate),
         ]
     else:
-        # Simple -vf path (no blur)
-        if use_subs_filter:
-            vf = f"{scale_pad},ass='{ass_path}'"
-        else:
-            vf = scale_pad
+        vf = f"{scale_pad}{bg_suffix}{ass_suffix}"
         cmd1 += [
             "-vf", vf,
             "-af", f"volume={video_volume}",
