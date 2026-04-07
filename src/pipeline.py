@@ -237,8 +237,14 @@ class Pipeline:
                 translator = None
                 llm_caller = None
                 try:
+                    import os
                     trans_cfg = self.config.get("translation", {})
-                    api_key = trans_cfg.get("api_key")
+                    api_key = (
+                        trans_cfg.get("api_key")
+                        or os.environ.get("DEEPSEEK_API_KEY")
+                        or os.environ.get("ANTHROPIC_API_KEY")
+                        or os.environ.get("OPENAI_API_KEY")
+                    )
                     if api_key:
                         from src.translator.llm import LLMTranslator
                         backend = trans_cfg.get("backend", "deepseek")
@@ -272,6 +278,7 @@ class Pipeline:
                     on_progress=tts_progress,
                     merge_sentences=True,
                     llm_caller=llm_caller,
+                    srt_path=srt_path,
                 )
 
                 state.mark_stage_complete("tts", {
@@ -308,6 +315,22 @@ class Pipeline:
                     if tts_path.exists():
                         tts_audio_paths = {p: tts_path for p in platforms}
 
+                # Auto-detect subtitle region for blur (from OCR metadata)
+                subtitle_region = None
+                blur_settings = None
+                from src.processor.region_detector import load_subtitle_region
+
+                subtitle_region = load_subtitle_region(srt_dir, video_id)
+                if subtitle_region:
+                    blur_settings = {
+                        "enabled": True,
+                        "blur_strength": 15,
+                        "blur_mode": "blur",
+                        "fill_color": "#000000",
+                        "auto_match_style": True,
+                    }
+                    emit("process", 0.72, "Detected subtitle region — will blur original subs")
+
                 results = await asyncio.to_thread(
                     process_for_all_platforms,
                     video_id,
@@ -321,6 +344,8 @@ class Pipeline:
                     None,  # subtitle_language_overrides
                     tts_audio_paths,
                     tts_mix_settings,
+                    subtitle_region,
+                    blur_settings,
                 )
 
                 outputs = {p: str(r.output_path) for p, r in results.items()}

@@ -2,17 +2,17 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
 import { TTSPreview } from '../components/TTSPreview';
+import { SubtitleEditorPanel } from '../components/SubtitleEditorPanel';
 import {
   getVideo, getSrt, postTranscribe, postTranslate, postTTS,
   subscribeSSE, getProfiles, getTTSProfiles, getTTSProviders, getTTSVoices,
-  getTTSAudioUrl, getTTSList, getPlatforms, getRawVideoUrl,
-  getSrtDownloadUrl, patchVideoTitle, postTTSPreview,
-  postExport, postExportPreview, getExportedVideoUrl,
+  getTTSAudioUrl, getTTSList, deleteTTSAudio, getRawVideoUrl,
+  patchVideoTitle, postTTSPreview,
 } from '../api/client';
 import type { TTSAudioEntry } from '../api/client';
 import type {
   VideoMetadata, SubtitleSegment, TranslationProfileSummary,
-  VoiceProfileConfig, TTSProviderInfo, VoiceInfo, PlatformSpec,
+  VoiceProfileConfig, TTSProviderInfo, VoiceInfo,
 } from '../api/types';
 import { loadApiKeys, loadLLMPrefs, saveLLMPrefs } from '../utils/storage';
 
@@ -70,18 +70,17 @@ function VideoDetailPage() {
   const [ttsList, setTtsList] = useState<TTSAudioEntry[]>([]);
   const [playingTts, setPlayingTts] = useState<string | null>(null);
 
-  // Export state
-  const [platformSpecs, setPlatformSpecs] = useState<Record<string, PlatformSpec>>({});
-  const [exportSubLang, setExportSubLang] = useState<string | null>(null);
-  const [exportTtsFile, setExportTtsFile] = useState<string | null>(null);
-  const [exportVideoVol, setExportVideoVol] = useState(100);
-  const [exportTtsVol, setExportTtsVol] = useState(100);
-  const [isExporting, setIsExporting] = useState(false);
-  const [exportProgress, setExportProgress] = useState({ pct: 0, message: '' });
-  const [exportError, setExportError] = useState('');
-  const [exportDone, setExportDone] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [isPreviewing, setIsPreviewing] = useState(false);
+  // Export state (managed by SubtitleEditorPanel, just need previewLanguage for pass-through)
+
+  // Panel collapse state — editor open by default
+  const [openPanels, setOpenPanels] = useState<Set<string>>(new Set(['editor']));
+  const togglePanel = useCallback((key: string) => {
+    setOpenPanels(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }, []);
 
   const MODEL_OPTIONS: Record<string, { label: string; value: string }[]> = {
     deepseek: [
@@ -120,6 +119,21 @@ function VideoDetailPage() {
     }
   }, []);
 
+  const handleEditorReload = useCallback(async () => {
+    if (!videoId) return;
+    try {
+      const video = await getVideo(videoId);
+      setVideoMeta(video);
+      if (video.srt_languages.length > 0 && !previewLanguage) {
+        setPreviewLanguage(video.srt_languages[0]);
+      }
+    } catch { /* ignore */ }
+    try {
+      const list = await getTTSList(videoId);
+      setTtsList(list);
+    } catch { /* ignore */ }
+  }, [videoId, previewLanguage]);
+
   const loadVoicesForProvider = useCallback(async (provider: string, apiKey?: string) => {
     try {
       const voices = await getTTSVoices(undefined, provider, apiKey);
@@ -142,7 +156,7 @@ function VideoDetailPage() {
         setVideoMeta(video);
         if (video.srt_languages.length > 0) {
           loadSrt(videoId, video.srt_languages[0]);
-          setExportSubLang(video.srt_languages[0]);
+          setPreviewLanguage(video.srt_languages[0]);
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load video');
@@ -159,11 +173,6 @@ function VideoDetailPage() {
         setTtsProfiles(profs);
         setTtsProviders(provs);
       } catch { /* TTS not available */ }
-
-      try {
-        const specs = await getPlatforms();
-        setPlatformSpecs(specs);
-      } catch { /* platforms not available */ }
 
       // Load existing TTS audio files
       try {
@@ -336,7 +345,6 @@ function VideoDetailPage() {
     }
   };
 
-  void platformSpecs; // loaded for potential future use
 
   return (
     <div className="flex flex-col h-full bg-surface">
@@ -344,13 +352,6 @@ function VideoDetailPage() {
 
       <section className="flex-1 overflow-y-auto p-6 space-y-6">
         {/* Back button + title */}
-        <div className="flex items-center gap-3 mb-6">
-          <button onClick={() => navigate('/download')} className="flex items-center gap-1 text-xs text-on-surface-variant hover:text-on-surface">
-            <span className="material-symbols-outlined text-sm">arrow_back</span>
-            Back to Pipeline
-          </button>
-          <h1 className="text-lg font-semibold text-on-surface truncate">{videoMeta?.title || videoId}</h1>
-        </div>
 
         {/* Error Banner */}
         {error && (
@@ -363,155 +364,114 @@ function VideoDetailPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left Column */}
-          <div className="lg:col-span-8 space-y-6">
-
-            {/* Video Card */}
-            {videoMeta && (
-              <div className="bg-surface-container-low rounded-xl overflow-hidden flex flex-col md:flex-row border border-primary/20">
-                <div className="w-full md:w-64 aspect-video bg-surface-container-highest relative group overflow-hidden">
-                  {videoMeta.thumbnail ? (
-                    <img src={videoMeta.thumbnail} alt={videoMeta.title} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <span className="material-symbols-outlined text-4xl text-zinc-600">movie</span>
-                    </div>
-                  )}
-                  <div className="absolute bottom-2 right-2 bg-black/80 text-white text-[10px] px-1.5 py-0.5 rounded font-mono">
-                    {formatDuration(videoMeta.duration)}
-                  </div>
+        <div className="space-y-6">
+          {/* Video Editor — main view */}
+          {videoMeta && videoMeta.has_srt && (
+            <div className="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/10">
+              <div className="p-4 border-b border-outline-variant/10 flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary text-lg">edit_note</span>
+                  <span className="text-xs font-bold uppercase tracking-widest">Video Editor</span>
                 </div>
-                <div className="flex-1 p-5 flex flex-col justify-between">
-                  <div>
-                    <div className="flex justify-between items-start mb-2">
-                      {editingTitle ? (
-                        <input
-                          autoFocus
-                          className="text-sm font-bold bg-surface-container-highest border border-primary/30 rounded px-2 py-1 text-on-surface focus:ring-1 focus:ring-primary flex-1 mr-2"
-                          value={titleDraft}
-                          onChange={(e) => setTitleDraft(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleSaveTitle();
-                            if (e.key === 'Escape') setEditingTitle(false);
-                          }}
-                          onBlur={handleSaveTitle}
-                        />
-                      ) : (
-                        <h3
-                          className="text-sm font-bold leading-tight cursor-pointer group/title flex items-center gap-1.5"
-                          onClick={() => {
-                            setEditingTitle(true);
-                            setTitleDraft(videoMeta.title || videoMeta.video_id);
-                          }}
-                        >
-                          {videoMeta.title || videoMeta.video_id}
-                          <span className="material-symbols-outlined text-xs text-zinc-600 opacity-0 group-hover/title:opacity-100 transition-opacity">
-                            edit
-                          </span>
-                        </h3>
-                      )}
-                      <span
-                        className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                          videoMeta.has_srt
-                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                            : 'bg-primary/10 text-primary border border-primary/20'
-                        }`}
-                      >
-                        {videoMeta.has_srt ? 'TRANSCRIBED' : 'DOWNLOADED'}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-y-2 gap-x-4">
-                      <div className="flex flex-col">
-                        <span className="text-[10px] text-zinc-500 uppercase tracking-tighter">Author</span>
-                        <span className="text-xs font-medium">@{videoMeta.author || 'unknown'}</span>
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-[10px] text-zinc-500 uppercase tracking-tighter">Resolution</span>
-                        <span className="text-xs font-medium font-mono">{videoMeta.resolution || 'N/A'}</span>
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-[10px] text-zinc-500 uppercase tracking-tighter">Size</span>
-                        <span className="text-xs font-medium font-mono">{videoMeta.size}</span>
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-[10px] text-zinc-500 uppercase tracking-tighter">Codec</span>
-                        <span className="text-xs font-medium font-mono">{videoMeta.codec || 'N/A'}</span>
-                      </div>
-                    </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-mono text-zinc-500">
+                    {videoMeta.resolution} · {videoMeta.size} · {videoMeta.codec}
+                  </span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20`}>
+                    TRANSCRIBED
+                  </span>
+                  <a
+                    href={getRawVideoUrl(videoMeta.video_id)}
+                    download
+                    className="p-1.5 hover:bg-surface-container-highest rounded transition-colors text-zinc-400"
+                    title="Download MP4"
+                  >
+                    <span className="material-symbols-outlined text-sm">save_alt</span>
+                  </a>
+                </div>
+              </div>
+              <div className="p-5">
+                <SubtitleEditorPanel
+                  videoId={videoMeta.video_id}
+                  srtLanguages={videoMeta.srt_languages}
+                  defaultLang={previewLanguage || videoMeta.srt_languages.find(l => l !== 'zh') || videoMeta.srt_languages[0]}
+                  ttsList={ttsList}
+                  onReload={handleEditorReload}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Not transcribed yet — show extract button */}
+          {videoMeta && !videoMeta.has_srt && !isTranscribing && (
+            <div className="bg-surface-container-low rounded-xl p-8 border border-outline-variant/10 flex flex-col items-center gap-4 text-center">
+              <span className="material-symbols-outlined text-4xl text-zinc-600">subtitles_off</span>
+              <p className="text-sm text-zinc-400">No subtitles extracted yet</p>
+              <button
+                onClick={handleTranscribe}
+                className="bg-primary text-on-primary-fixed px-6 py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 active:scale-95 transition-all"
+              >
+                <span>Extract Subtitles</span>
+                <span className="material-symbols-outlined text-sm">document_scanner</span>
+              </button>
+            </div>
+          )}
+
+          {/* Transcription Progress */}
+          {isTranscribing && (
+            <div className="bg-surface-container-low rounded-xl p-5 border border-outline-variant/10">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-full border-2 border-primary border-t-transparent animate-spin"></div>
+                <div className="flex-1">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs font-bold uppercase tracking-widest text-primary">Extracting Subtitles (OCR)...</span>
+                    <span className="text-[10px] font-mono text-zinc-500">PADDLEOCR</span>
                   </div>
-                  <div className="mt-4 space-y-3">
-                    <div className="flex items-center gap-3">
-                      <span className="text-[10px] text-zinc-500 font-mono uppercase whitespace-nowrap">
-                        OCR — Auto-detect (CN)
-                      </span>
-                      <button
-                        onClick={handleTranscribe}
-                        disabled={isTranscribing}
-                        className="bg-primary text-on-primary-fixed px-4 py-2 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap active:scale-95 transition-all disabled:opacity-50"
-                      >
-                        <span>{isTranscribing ? 'Extracting...' : videoMeta.has_srt ? 'Re-Extract' : 'Extract Subtitles'}</span>
-                        <span className="material-symbols-outlined text-sm">document_scanner</span>
-                      </button>
-                      {videoMeta.has_srt && (
-                        <button
-                          onClick={() => navigate(`/editor/${videoMeta.video_id}?lang=${previewLanguage || videoMeta.srt_languages[0] || 'zh'}`)}
-                          className="bg-surface-container-highest text-on-surface px-4 py-2 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap active:scale-95 transition-all hover:bg-surface-container-high"
-                        >
-                          <span>Edit Subtitles</span>
-                          <span className="material-symbols-outlined text-sm">edit_note</span>
-                        </button>
-                      )}
-                      <a
-                        href={getRawVideoUrl(videoMeta.video_id)}
-                        download
-                        className="bg-surface-container-highest text-on-surface px-3 py-2 rounded-md font-bold text-xs flex items-center gap-1.5 whitespace-nowrap active:scale-95 transition-all hover:bg-surface-container-high"
-                        title="Download MP4"
-                      >
-                        <span className="material-symbols-outlined text-sm">save_alt</span>
-                      </a>
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-on-surface-variant font-mono">Current Stage:</span>
+                    <span className="text-[11px] font-medium text-emerald-400">{transcribeMessage}</span>
                   </div>
                 </div>
               </div>
-            )}
+            </div>
+          )}
 
-            {/* Transcription Progress */}
-            {isTranscribing && (
-              <div className="bg-surface-container-low rounded-xl p-5 border border-outline-variant/10">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-full border-2 border-primary border-t-transparent animate-spin"></div>
-                  <div className="flex-1">
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="text-xs font-bold uppercase tracking-widest text-primary">Extracting Subtitles (OCR)...</span>
-                      <span className="text-[10px] font-mono text-zinc-500">PADDLEOCR</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-on-surface-variant font-mono">Current Stage:</span>
-                      <span className="text-[11px] font-medium text-emerald-400">{transcribeMessage}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+          {/* Re-Extract button (below editor when already transcribed) */}
+          {videoMeta && videoMeta.has_srt && !isTranscribing && (
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleTranscribe}
+                className="bg-surface-container-highest text-on-surface px-4 py-2 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap active:scale-95 transition-all hover:bg-surface-container-high"
+              >
+                <span className="material-symbols-outlined text-sm">document_scanner</span>
+                <span>Re-Extract Subtitles (OCR)</span>
+              </button>
+            </div>
+          )}
 
             {/* Translation Panel */}
             {videoMeta && videoMeta.has_srt && (
               <div className="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/10">
-                <div className="p-4 border-b border-outline-variant/10 flex justify-between items-center">
+                <button
+                  onClick={() => togglePanel('translate')}
+                  className="w-full p-4 border-b border-outline-variant/10 flex justify-between items-center hover:bg-surface-container/50 transition-colors"
+                >
                   <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-primary text-lg">translate</span>
                     <span className="text-xs font-bold uppercase tracking-widest">LLM Translation</span>
                   </div>
-                  <button
-                    onClick={() => navigate('/profiles')}
-                    className="text-[10px] font-bold text-primary uppercase tracking-wider hover:underline flex items-center gap-1"
-                  >
-                    <span className="material-symbols-outlined text-xs">settings</span>
-                    Manage Profiles
-                  </button>
-                </div>
-                <div className="p-5 space-y-4">
+                  <div className="flex items-center gap-2">
+                    <span
+                      onClick={(e) => { e.stopPropagation(); navigate('/profiles'); }}
+                      className="text-[10px] font-bold text-primary uppercase tracking-wider hover:underline flex items-center gap-1"
+                    >
+                      <span className="material-symbols-outlined text-xs">settings</span>
+                      Profiles
+                    </span>
+                    <span className={`material-symbols-outlined text-sm text-zinc-500 transition-transform ${openPanels.has('translate') ? 'rotate-180' : ''}`}>expand_more</span>
+                  </div>
+                </button>
+                {openPanels.has('translate') && <div className="p-5 space-y-4">
                   {/* Profile Selector */}
                   <div className="flex items-center gap-3">
                     <div className="flex-1">
@@ -628,23 +588,29 @@ function VideoDetailPage() {
                       </button>
                     </div>
                   )}
-                </div>
+                </div>}
               </div>
             )}
 
             {/* TTS Dubbing Panel */}
             {videoMeta && videoMeta.has_srt && videoMeta.srt_languages.some(l => l !== 'zh') && (
               <div className="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/10">
-                <div className="p-4 border-b border-outline-variant/10 flex justify-between items-center">
+                <button
+                  onClick={() => togglePanel('tts')}
+                  className="w-full p-4 border-b border-outline-variant/10 flex justify-between items-center hover:bg-surface-container/50 transition-colors"
+                >
                   <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-primary text-lg">record_voice_over</span>
                     <span className="text-xs font-bold uppercase tracking-widest">TTS Dubbing</span>
                   </div>
-                  <span className="font-mono text-[10px] text-primary bg-primary/10 px-2 py-0.5 rounded uppercase">
-                    {selectedTtsProvider}
-                  </span>
-                </div>
-                <div className="p-5 space-y-4">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[10px] text-primary bg-primary/10 px-2 py-0.5 rounded uppercase">
+                      {selectedTtsProvider}
+                    </span>
+                    <span className={`material-symbols-outlined text-sm text-zinc-500 transition-transform ${openPanels.has('tts') ? 'rotate-180' : ''}`}>expand_more</span>
+                  </div>
+                </button>
+                {openPanels.has('tts') && <div className="p-5 space-y-4">
                   {/* Provider + Language */}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -859,6 +825,20 @@ function VideoDetailPage() {
                                 <span className="text-[9px] text-zinc-500 ml-2">{entry.provider} · {entry.language} · {sizeMb}MB</span>
                               </div>
                               <span className="text-[9px] font-mono text-zinc-600">{ago}</span>
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  if (!confirm(`Delete dub "${entry.profile}"?`)) return;
+                                  try {
+                                    await deleteTTSAudio(videoMeta.video_id, entry.filename);
+                                    setTtsList(prev => prev.filter(e => e.filename !== entry.filename));
+                                  } catch { /* ignore */ }
+                                }}
+                                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 text-zinc-600 hover:text-red-400 transition-all"
+                                title="Delete dub"
+                              >
+                                <span className="material-symbols-outlined text-sm">delete</span>
+                              </button>
                               {isPlaying && (
                                 <audio
                                   className="tts-player"
@@ -881,255 +861,10 @@ function VideoDetailPage() {
                       {ttsError}
                     </div>
                   )}
-                </div>
+                </div>}
               </div>
             )}
 
-            {/* Export Panel */}
-            {videoMeta && (
-              <div className="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/10">
-                <div className="p-4 border-b border-outline-variant/10 flex justify-between items-center">
-                  <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-primary text-lg">movie_edit</span>
-                    <span className="text-xs font-bold uppercase tracking-widest">Export Video</span>
-                  </div>
-                </div>
-                <div className="p-5 space-y-4">
-                  {/* Subtitle Language */}
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold">Subtitles</label>
-                    <div className="flex gap-2">
-                      <button onClick={() => setExportSubLang(null)}
-                        className={`px-3 py-1.5 rounded text-[10px] font-bold uppercase ${exportSubLang === null ? 'bg-primary/20 text-primary' : 'bg-surface-container-highest text-zinc-400 hover:text-on-surface'}`}>
-                        None
-                      </button>
-                      {(videoMeta.srt_languages || []).map(lang => (
-                        <button key={lang} onClick={() => setExportSubLang(lang)}
-                          className={`px-3 py-1.5 rounded text-[10px] font-bold uppercase ${exportSubLang === lang ? 'bg-primary/20 text-primary' : 'bg-surface-container-highest text-zinc-400 hover:text-on-surface'}`}>
-                          {lang === 'zh' ? 'Chinese' : lang === 'vi' ? 'Vietnamese' : lang === 'en' ? 'English' : lang}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Dub Audio Selection */}
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold">Dub Audio</label>
-                    <select value={exportTtsFile || ''} onChange={e => setExportTtsFile(e.target.value || null)}
-                      className="w-full bg-surface-container border-none text-xs text-on-surface h-9 px-3 rounded-lg focus:ring-1 focus:ring-primary">
-                      <option value="">No dub</option>
-                      {ttsList.map(entry => (
-                        <option key={entry.filename} value={entry.filename}>
-                          {entry.profile} ({entry.provider} · {entry.language})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Volume Sliders */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between">
-                        <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold">Video Volume</label>
-                        <span className="text-[10px] font-mono text-primary">{exportVideoVol}%</span>
-                      </div>
-                      <input type="range" min={0} max={200} value={exportVideoVol}
-                        onChange={e => setExportVideoVol(Number(e.target.value))}
-                        className="w-full accent-primary h-1 bg-surface-container-highest rounded-lg appearance-none cursor-pointer" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between">
-                        <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold">Dub Volume</label>
-                        <span className="text-[10px] font-mono text-primary">{exportTtsVol}%</span>
-                      </div>
-                      <input type="range" min={0} max={200} value={exportTtsVol}
-                        onChange={e => setExportTtsVol(Number(e.target.value))}
-                        className="w-full accent-primary h-1 bg-surface-container-highest rounded-lg appearance-none cursor-pointer"
-                        disabled={!exportTtsFile} />
-                    </div>
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="flex gap-3">
-                    <button
-                      disabled={isPreviewing}
-                      onClick={async () => {
-                        if (!videoMeta) return;
-                        setIsPreviewing(true); setExportError('');
-                        try {
-                          const blob = await postExportPreview(
-                            videoMeta.video_id, exportSubLang, exportTtsFile,
-                            exportVideoVol / 100, exportTtsVol / 100,
-                          );
-                          if (previewUrl) URL.revokeObjectURL(previewUrl);
-                          setPreviewUrl(URL.createObjectURL(blob));
-                        } catch (e) {
-                          setExportError(e instanceof Error ? e.message : 'Preview failed');
-                        } finally {
-                          setIsPreviewing(false);
-                        }
-                      }}
-                      className="flex-1 py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 bg-surface-container-highest text-on-surface hover:bg-surface-container-high transition-colors disabled:opacity-50">
-                      <span className="material-symbols-outlined text-sm">{isPreviewing ? 'progress_activity' : 'preview'}</span>
-                      {isPreviewing ? 'Rendering...' : 'Preview 5s'}
-                    </button>
-                    <button
-                      disabled={isExporting}
-                      onClick={async () => {
-                        if (!videoMeta) return;
-                        setIsExporting(true); setExportError(''); setExportDone(false);
-                        setExportProgress({ pct: 0, message: 'Starting...' });
-                        try {
-                          const { task_id } = await postExport(
-                            videoMeta.video_id, exportSubLang, exportTtsFile,
-                            exportVideoVol / 100, exportTtsVol / 100,
-                          );
-                          const es = subscribeSSE(task_id, (eventType, data) => {
-                            if (eventType === 'progress') {
-                              setExportProgress({
-                                pct: Math.round((data.progress as number) * 100),
-                                message: data.message as string,
-                              });
-                            } else if (eventType === 'complete') {
-                              setIsExporting(false); setExportDone(true);
-                              setExportProgress({ pct: 100, message: 'Export complete' });
-                              es.close();
-                            } else if (eventType === 'error') {
-                              setIsExporting(false);
-                              setExportError(data.message as string);
-                              es.close();
-                            }
-                          });
-                        } catch (e) {
-                          setIsExporting(false);
-                          setExportError(e instanceof Error ? e.message : 'Export failed');
-                        }
-                      }}
-                      className="flex-1 py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 bg-gradient-to-r from-primary to-primary-container text-on-primary-fixed hover:shadow-[0_0_20px_rgba(160,120,255,0.3)] transition-all disabled:opacity-50">
-                      <span className="material-symbols-outlined text-sm">{isExporting ? 'progress_activity' : 'movie_edit'}</span>
-                      {isExporting ? 'Exporting...' : 'Export Full Video'}
-                    </button>
-                  </div>
-
-                  {/* Export Progress */}
-                  {isExporting && (
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[10px] font-mono">
-                        <span className="text-on-surface-variant">{exportProgress.message}</span>
-                        <span className="text-primary">{exportProgress.pct}%</span>
-                      </div>
-                      <div className="h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
-                        <div className="h-full bg-primary transition-all duration-300" style={{ width: `${exportProgress.pct}%` }} />
-                      </div>
-                    </div>
-                  )}
-
-                  {exportError && (
-                    <div className="p-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">{exportError}</div>
-                  )}
-
-                  {/* Preview Player */}
-                  {previewUrl && (
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold">Preview</label>
-                      <video controls autoPlay className="w-full max-h-[300px] rounded-lg bg-black" src={previewUrl} />
-                    </div>
-                  )}
-
-                  {/* Export Output Player */}
-                  {exportDone && videoMeta && (
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold">Exported Video</label>
-                      <video controls className="w-full max-h-[300px] rounded-lg bg-black"
-                        src={getExportedVideoUrl(videoMeta.video_id)} />
-                      <a href={getExportedVideoUrl(videoMeta.video_id)} download
-                        className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline font-bold mt-1">
-                        <span className="material-symbols-outlined text-xs">download</span>
-                        Download
-                      </a>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Right Column: SRT Preview */}
-          <div className="lg:col-span-4 flex flex-col max-h-[600px]">
-            <div className="bg-surface-container-low rounded-xl flex-1 flex flex-col border border-outline-variant/10 overflow-hidden">
-              <div className="p-4 border-b border-outline-variant/10 flex justify-between items-center bg-surface-container-high/30">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-zinc-400">subtitles</span>
-                  <span className="text-xs font-bold uppercase tracking-widest">SRT Preview</span>
-                  {srtSegments.length > 0 && (
-                    <span className="text-[10px] font-mono text-zinc-500">({srtSegments.length} segments)</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  {videoMeta && videoMeta.srt_languages.length > 1 && (
-                    <select
-                      value={previewLanguage}
-                      onChange={(e) => {
-                        if (videoMeta) loadSrt(videoMeta.video_id, e.target.value);
-                      }}
-                      className="bg-surface-container-highest border-none text-[10px] text-on-surface py-1 px-2 rounded focus:ring-0 font-mono uppercase"
-                    >
-                      {videoMeta.srt_languages.map((lang) => (
-                        <option key={lang} value={lang}>
-                          {lang}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                  {videoMeta && videoMeta.srt_languages.length === 1 && (
-                    <span className="text-[10px] font-mono text-zinc-500 uppercase">{previewLanguage}</span>
-                  )}
-                  {videoMeta && previewLanguage && (
-                    <a
-                      href={getSrtDownloadUrl(videoMeta.video_id, previewLanguage)}
-                      download
-                      className="p-1.5 hover:bg-surface-container-highest rounded transition-colors text-zinc-400"
-                      title="Export SRT"
-                    >
-                      <span className="material-symbols-outlined text-sm">download</span>
-                    </a>
-                  )}
-                  <button className="p-1.5 hover:bg-surface-container-highest rounded transition-colors text-zinc-400" title="Copy Text">
-                    <span className="material-symbols-outlined text-sm">content_copy</span>
-                  </button>
-                </div>
-              </div>
-              <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                {srtSegments.length > 0 ? (
-                  srtSegments.map((seg) => (
-                    <div
-                      key={seg.id}
-                      className="group p-3 rounded hover:bg-surface-container-high transition-colors cursor-pointer border-l-2 border-transparent hover:border-primary"
-                    >
-                      <div className="flex justify-between mb-1">
-                        <span className="text-[10px] font-mono text-primary font-bold">
-                          {seg.startTime} → {seg.endTime}
-                        </span>
-                        <span className="text-[10px] text-zinc-600 font-mono">#{seg.id}</span>
-                      </div>
-                      <p className="text-xs leading-relaxed text-on-surface-variant group-hover:text-on-surface">
-                        {seg.text}
-                      </p>
-                    </div>
-                  ))
-                ) : (
-                  <div className="flex flex-col items-center justify-center h-full text-center p-8">
-                    <span className="material-symbols-outlined text-3xl text-zinc-700 mb-3">subtitles_off</span>
-                    <p className="text-xs text-zinc-500">
-                      {isTranscribing
-                        ? 'Transcription in progress...'
-                        : 'Extract subtitles to see them here'}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
         </div>
       </section>
     </div>

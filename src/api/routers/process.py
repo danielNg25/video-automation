@@ -32,6 +32,24 @@ async def start_process(request: ProcessRequest):
     if invalid:
         raise HTTPException(status_code=400, detail=f"Invalid platforms: {invalid}")
 
+    # Build blur settings dict if provided
+    blur_dict = None
+    manual_region_dict = None
+    if request.blur_settings:
+        blur_dict = {
+            "enabled": request.blur_settings.enabled,
+            "strength": request.blur_settings.strength,
+            "mode": request.blur_settings.mode,
+            "fill_color": request.blur_settings.fill_color,
+        }
+    if request.manual_region:
+        manual_region_dict = {
+            "x": request.manual_region.x,
+            "y": request.manual_region.y,
+            "width": request.manual_region.width,
+            "height": request.manual_region.height,
+        }
+
     task = tm.create_task("process")
     asyncio.create_task(
         tm.run_process(
@@ -43,6 +61,8 @@ async def start_process(request: ProcessRequest):
             config,
             enable_tts=request.enable_tts,
             tts_mix_settings=request.tts_mix_settings,
+            blur_settings=blur_dict,
+            manual_region=manual_region_dict,
         )
     )
     return TaskResponse(task_id=task.task_id, status=task.status)
@@ -164,28 +184,49 @@ def _run_export_ffmpeg(
     tts_volume: float,
     seek_seconds: float | None = None,
     duration_seconds: float | None = None,
+    video_id: str | None = None,
 ) -> None:
-    """Run ffmpeg export with optional subtitles and TTS mixing."""
+    """Run ffmpeg export with optional subtitles, blur, and TTS mixing."""
     from src.processor.ffmpeg import FFmpegProcessor
 
     w, h = resolution.split("x")
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Auto-detect blur region from OCR metadata
+    blur_filter = None
+    if video_id:
+        from src.processor.region_detector import load_subtitle_region
+        region = load_subtitle_region(Path("data/srt"), video_id)
+        if region:
+            blur_filter = FFmpegProcessor._build_blur_filter(region, blur_strength=15, blur_mode="blur")
+
+            # Apply style matching from detected region
+            from src.processor.style_matcher import SubtitleStyleMatcher
+            proc = FFmpegProcessor()
+            info = proc.get_video_info(video_path)
+            matcher = SubtitleStyleMatcher()
+            matched = matcher.match_style(region, info["width"], info["height"], style)
+            style = {**style, **matched}
+
     # Build video filter
     scale_pad = f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2"
 
     ass_path = None
+    bg_images = None
     if subtitle_path and subtitle_path.exists():
-        # Convert SRT to ASS with style baked in — avoids force_style escaping issues
-        from src.processor.subtitle import srt_to_ass
+        from src.processor.subtitle import srt_to_ass, generate_subtitle_background_images
         ass_path = subtitle_path.with_suffix(".export.ass")
         srt_to_ass(subtitle_path, style, ass_path)
+        # Generate rounded-rect background PNGs
+        bg_dir = output_path.parent / "bg_tmp"
+        bg_images = generate_subtitle_background_images(
+            subtitle_path, style, bg_dir, int(w), int(h),
+        )
     use_subs_filter = ass_path is not None
 
     has_tts = tts_path and tts_path.exists()
 
-    # Step 1: Build intermediate (scale + pad + subtitles) without audio mixing
-    # This avoids filter_complex escaping hell by keeping -vf simple
+    # Step 1: Build intermediate (blur + scale + pad + bg boxes + subtitles)
     intermediate = output_path.with_suffix(".tmp.mp4") if has_tts else output_path
     intermediate.parent.mkdir(parents=True, exist_ok=True)
 
@@ -196,21 +237,63 @@ def _run_export_ffmpeg(
     if duration_seconds is not None:
         cmd1 += ["-t", str(duration_seconds)]
 
-    # Video filter: scale + pad + optional ASS subtitles
-    if use_subs_filter:
-        vf = f"{scale_pad},ass='{ass_path}'"
-    else:
-        vf = scale_pad
+    ass_suffix = f",ass='{ass_path}'" if use_subs_filter else ""
 
-    cmd1 += [
-        "-vf", vf,
-        "-af", f"volume={video_volume}",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "20",
-        "-c:a", "aac", "-b:a", "192k",
-        str(intermediate),
-    ]
+    if bg_images:
+        from src.processor.subtitle import build_background_overlay_filter
+        # Add PNG inputs and build overlay chain
+        for img in bg_images:
+            cmd1 += ["-i", img["path"]]
+
+        if blur_filter:
+            # blur → scale+pad → [bg_base] → overlay PNGs → ass text → [out]
+            fc_start = f"{blur_filter};[blurred]{scale_pad}[bg_base]"
+        else:
+            fc_start = f"[0:v]{scale_pad}[bg_base]"
+
+        overlay_fc = build_background_overlay_filter(bg_images)
+        fc = f"{fc_start};{overlay_fc};[bg_out]{ass_suffix.lstrip(',')}[out]" if ass_suffix else f"{fc_start};{overlay_fc}"
+        if not ass_suffix:
+            fc = fc.replace("[bg_out]", "[out]")
+
+        cmd1 += [
+            "-filter_complex", fc,
+            "-map", "[out]",
+            "-map", "0:a",
+            "-af", f"volume={video_volume}",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+            "-c:a", "aac", "-b:a", "192k",
+            str(intermediate),
+        ]
+    elif blur_filter:
+        fc = f"{blur_filter};[blurred]{scale_pad}{ass_suffix}[out]"
+        cmd1 += [
+            "-filter_complex", fc,
+            "-map", "[out]",
+            "-map", "0:a",
+            "-af", f"volume={video_volume}",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+            "-c:a", "aac", "-b:a", "192k",
+            str(intermediate),
+        ]
+    else:
+        vf = f"{scale_pad}{ass_suffix}"
+        cmd1 += [
+            "-vf", vf,
+            "-af", f"volume={video_volume}",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+            "-c:a", "aac", "-b:a", "192k",
+            str(intermediate),
+        ]
 
     result = subprocess.run(cmd1, capture_output=True, text=True, timeout=600)
+
+    # Clean up background PNG temp dir
+    if bg_images:
+        import shutil
+        bg_dir = output_path.parent / "bg_tmp"
+        shutil.rmtree(bg_dir, ignore_errors=True)
+
     if result.returncode != 0:
         raise RuntimeError(f"Export failed: {result.stderr[-500:]}")
 
@@ -274,6 +357,7 @@ async def export_video(video_id: str, request: ExportRequest):
                 video_path, srt_path, tts_path, output_path,
                 style, request.resolution,
                 request.video_volume, request.tts_volume,
+                video_id=video_id,
             )
 
             task_obj.status = "completed"
@@ -312,6 +396,7 @@ async def preview_export(video_id: str, request: ExportRequest):
         style, request.resolution,
         request.video_volume, request.tts_volume,
         seek_seconds=midpoint, duration_seconds=5,
+        video_id=video_id,
     )
 
     return FileResponse(path=str(output_path), media_type="video/mp4", filename=f"{video_id}_preview.mp4")

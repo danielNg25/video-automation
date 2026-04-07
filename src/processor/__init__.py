@@ -5,12 +5,16 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
 
 from src.processor.ffmpeg import FFmpegProcessor
 from src.processor.subtitle import select_subtitle_for_platform
 from src.utils.logger import setup_logger
+
+if TYPE_CHECKING:
+    from src.processor.region_detector import SubtitleRegion
 
 logger = setup_logger(__name__)
 
@@ -53,6 +57,8 @@ def process_for_all_platforms(
     subtitle_language_overrides: dict[str, str] | None = None,
     tts_audio_paths: dict[str, Path] | None = None,
     tts_mix_settings: dict[str, dict] | None = None,
+    subtitle_region: SubtitleRegion | None = None,
+    blur_settings: dict | None = None,
 ) -> dict[str, PlatformResult]:
     """Process a video for all requested platforms.
 
@@ -77,6 +83,8 @@ def process_for_all_platforms(
             If provided for a platform, uses burn_reformat_and_dub instead of burn_and_reformat.
         tts_mix_settings: Optional dict mapping platform name to mix settings
             (keys: 'original_volume', 'tts_volume').
+        subtitle_region: Optional detected subtitle region for blur.
+        blur_settings: Optional dict with blur_strength, blur_mode, fill_color.
 
     Returns:
         Dict mapping platform name to PlatformResult (output path + language used).
@@ -124,12 +132,33 @@ def process_for_all_platforms(
         sub_lang = srt_path.stem.split("_")[-1]
         logger.info(f"Platform {platform}: using {sub_lang} subtitles ({srt_path.name})")
 
-        # Merge styles
+        # Merge styles — if blur is active, apply style matching from region
         p_style = platform_styles.get(platform, {})
         merged_style = _merge_styles(default_style, p_style, style_overrides)
 
+        if subtitle_region is not None and blur_settings and blur_settings.get("auto_match_style", True):
+            from src.processor.style_matcher import SubtitleStyleMatcher
+
+            info = processor.get_video_info(video_path)
+            matcher = SubtitleStyleMatcher()
+            matched = matcher.match_style(
+                subtitle_region, info["width"], info["height"], merged_style
+            )
+            merged_style.update(matched)
+
         # Output path
         output_path = output_dir / f"{video_id}_{platform}.mp4"
+
+        # Determine blur params
+        blur_kwargs = {}
+        use_blur = subtitle_region is not None and blur_settings and blur_settings.get("enabled", True)
+        if use_blur:
+            blur_kwargs = {
+                "region": subtitle_region,
+                "blur_strength": blur_settings.get("blur_strength", 15),
+                "blur_mode": blur_settings.get("blur_mode", "blur"),
+                "fill_color": blur_settings.get("fill_color", "#000000"),
+            }
 
         # Check if TTS audio is available for this platform
         tts_path = (tts_audio_paths or {}).get(platform)
@@ -138,19 +167,43 @@ def process_for_all_platforms(
             original_vol = mix.get("original_volume", 0.3)
             tts_vol = mix.get("tts_volume", 1.0)
             logger.info(f"Platform {platform}: using TTS dubbing (orig={original_vol}, tts={tts_vol})")
-            processor.burn_reformat_and_dub(
+            if use_blur:
+                processor.blur_burn_reformat_and_dub(
+                    video_path=video_path,
+                    subtitle_path=srt_path,
+                    tts_audio_path=tts_path,
+                    platform=platform,
+                    output_path=output_path,
+                    style=merged_style,
+                    platform_specs=platform_spec,
+                    original_volume=original_vol,
+                    tts_volume=tts_vol,
+                    **blur_kwargs,
+                )
+            else:
+                processor.burn_reformat_and_dub(
+                    video_path=video_path,
+                    subtitle_path=srt_path,
+                    tts_audio_path=tts_path,
+                    platform=platform,
+                    output_path=output_path,
+                    style=merged_style,
+                    platform_specs=platform_spec,
+                    original_volume=original_vol,
+                    tts_volume=tts_vol,
+                )
+        elif use_blur:
+            processor.blur_burn_and_reformat(
                 video_path=video_path,
                 subtitle_path=srt_path,
-                tts_audio_path=tts_path,
                 platform=platform,
                 output_path=output_path,
                 style=merged_style,
                 platform_specs=platform_spec,
-                original_volume=original_vol,
-                tts_volume=tts_vol,
+                **blur_kwargs,
             )
         else:
-            # Single-pass burn + reformat (no TTS)
+            # Single-pass burn + reformat (no TTS, no blur)
             processor.burn_and_reformat(
                 video_path=video_path,
                 subtitle_path=srt_path,

@@ -20,11 +20,11 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
     return (
       <div className="relative bg-black rounded-lg overflow-hidden group">
         {/* Video element */}
-        <div className="relative min-h-[200px]">
+        <div className="relative min-h-[200px] flex items-center justify-center">
           <video
             ref={ref}
             src={src}
-            className="w-full block"
+            className="max-w-full max-h-[70vh] block"
             playsInline
             preload="auto"
             onClick={controls.togglePlay}

@@ -6,7 +6,55 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Pipeline auto-blur: full pipeline (`Pipeline.process_single`) automatically detects OCR subtitle region and applies blur during the process stage — no manual config needed
+- Pipeline stepper: added 5th "Process & Burn" step showing blur, subtitle burn-in, and platform reformat info; TTS and Process are now separate steps
+- Phase 6 unit tests (`tests/test_subtitle_replacement.py`): 26 tests covering region detection, style matching, blur filter construction, single-pass blur+burn, OCR metadata persistence, and batch processor blur integration
+- Region selector component (`ui-app/src/components/editor/RegionSelector.tsx`): interactive drag-to-resize/reposition overlay on video frame with coordinate display and auto-detect button
+- Blur preview component (`ui-app/src/components/editor/BlurPreview.tsx`): before/after comparison with refresh button, toggle between original and blurred frame
+- Subtitle replacement section on Video Studio: collapsible "Original Subtitle Removal" panel with enable toggle, region selector, blur mode/strength controls, and live blur preview
+- TypeScript types for subtitle replacement: `SubtitleRegion`, `BlurSettings`, `PreviewBlurRequest`; `blur_settings` and `manual_region` on `ProcessRequest`
+- API client functions: `getSubtitleRegion()`, `setSubtitleRegion()`, `postPreviewBlur()`
+- Subtitle replacement router (`src/api/routers/replacement.py`): `GET/POST /api/videos/{id}/subtitle-region` (auto-detect and manual override), `POST /api/videos/{id}/preview-blur` (single-frame JPEG preview)
+- Process endpoint blur integration: `blur_settings` and `manual_region` on `ProcessRequest`, task manager loads region and passes to batch processor
+- Combined blur+burn+reformat pipeline: `blur_and_burn_subtitles()`, `blur_burn_and_reformat()`, `blur_burn_reformat_and_dub()` — single-pass ffmpeg for blur + subtitle burn + platform reformat + TTS mix
+- Batch processor blur support: `process_for_all_platforms()` accepts `subtitle_region` and `blur_settings`, auto-selects blur methods with style matching
+- Blur filter in FFmpeg (`src/processor/ffmpeg.py`): `apply_region_blur()`, `apply_blur_to_frame()`, `extract_single_frame()` with three modes — boxblur, solid fill, pixelate
+- Subtitle style matcher (`src/processor/style_matcher.py`): derives font_size, margin_v, alignment from detected region dimensions
+- Subtitle region detector (`src/processor/region_detector.py`): `SubtitleRegion` dataclass and `SubtitleRegionDetector` that loads from OCR metadata or computes from raw bounding boxes
+- OCR metadata persistence: OCR transcriber now saves `{video_id}_ocr_meta.json` with subtitle region bounding box after transcription
+- Subtitle replacement API models: `SubtitleRegionResponse`, `BlurSettings`, `SubtitleReplacementRequest`, `PreviewBlurRequest`
+- `blur_settings` and `manual_region` fields on `ProcessRequest` for Phase 6 blur integration
+
+### Changed
+- Video Editor now has three tabs: Segments (edit text/timing), Style (font/position/outline), Export (dub selector, volumes, render preview with ffmpeg, export full video)
+- Export tab renders ffmpeg preview with blur + burned ASS subs + TTS audio — shows exactly what the final export produces
+
 ### Fixed
+- Editor style now applies OCR-detected positioning (fontSize, marginV) on top of any saved style — previously the saved default style overwrote OCR values
+- Subtitle overlay now scales proportionally to the video player size using ResizeObserver — previously used hardcoded pixel multipliers causing mismatched positioning between editor preview and ffmpeg export
+- Live editor now shows CSS blur approximation over the OCR-detected subtitle region (backdrop-filter: blur) so the original Chinese subs are visually hidden during editing
+- Dub audio playback in live editor: select a TTS file from the toolbar dropdown and hear it synced to video playback (play/pause/seek all stay in sync)
+- TTS text shortening now writes back to original SRT — burned-in subtitles match the spoken dub instead of showing the original longer text
+- LLM-powered subtitle segmentation: shortened sentences are split into ≤35-char segments at natural phrase boundaries (commas, clauses) instead of dumb word splitting — timings distributed proportionally
+- Pipeline LLM init now checks env vars (`DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) as fallback, matching Video Studio behavior — text shortening no longer silently fails in pipeline mode
+- Fixed subtitle overlay not appearing during video playback — overlay div now always renders so ResizeObserver can attach (previously returned null when no active segment, preventing height measurement)
+- Subtitle editor auto-loads OCR region data to match subtitle position (marginV, fontSize) to where original Chinese subtitles were detected
+- Video Studio panels (Translation, TTS Dubbing, Subtitle Replacement, Export) are now collapsible — click header to toggle open/closed
+
+### Removed
+- Separate Export panel from Video Studio — merged into editor's Export tab
+- SubtitleReplacement panel from Video Studio — blur is auto-applied by backend
+- Video info card (thumbnail, metadata grid) from Video Studio — replaced by compact header bar
+- SRT Preview right column — replaced by editor's inline segment list
+- Two-column grid layout on Video Studio — now single full-width column
+
+### Fixed
+- Blur region now expands to full video width (minus 3% margin) so translated text is fully covered even when longer than original Chinese
+- Style matcher centers subtitle text vertically within the blur region (was aligned to bottom edge, causing text to appear below blur)
+- Style matcher now scales region coordinates to ASS PlayRes (1080x1920) — fixes subtitle position on non-1080p videos like 576x1024 Douyin clips
+- Export preview and full export now apply blur + style matching when OCR metadata exists — "Preview 5s" shows blurred original subs with translated subs burned in
+- Subtitle editor video player no longer crops/stretches video to fill frame — shows full video with correct aspect ratio
 - Video now appears on FE immediately after pipeline completes (was only visible after server restart)
 - Pipeline TTS now matches Video Studio quality: LLM sentence detection, text shortening, and progress tracking
 

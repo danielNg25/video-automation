@@ -54,6 +54,8 @@ export interface ProcessRequest {
   subtitle_language_overrides?: Record<string, string>;
   enable_tts?: boolean;
   tts_mix_settings?: Record<string, { original_volume: number; tts_volume: number }>;
+  blur_settings?: BlurSettings;
+  manual_region?: SubtitleRegion;
 }
 
 export interface ProcessResult {
@@ -176,6 +178,31 @@ export interface PipelineHistoryEntry {
   error: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// --- Subtitle Replacement (Phase 6) ---
+
+export interface SubtitleRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  confidence: number;
+  video_width: number;
+  video_height: number;
+}
+
+export interface BlurSettings {
+  enabled: boolean;
+  strength: number;
+  mode: 'blur' | 'fill' | 'pixelate';
+  fill_color: string;
+}
+
+export interface PreviewBlurRequest {
+  timestamp: number;
+  blur_settings: BlurSettings;
+  region?: SubtitleRegion;
 }
 
 export interface PlatformSpec {

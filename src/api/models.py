@@ -93,6 +93,8 @@ class ProcessRequest(BaseModel):
     subtitle_language_overrides: dict[str, str] | None = None  # {platform: lang_code}
     enable_tts: bool = False
     tts_mix_settings: dict[str, dict] | None = None  # {platform: {original_volume, tts_volume}}
+    blur_settings: BlurSettings | None = None  # Phase 6: blur original subs
+    manual_region: SubtitleRegionResponse | None = None  # Phase 6: manual region override
 
 
 class ExportRequest(BaseModel):
@@ -236,3 +238,37 @@ class DashboardStats(BaseModel):
     processedToday: int
     successRate: float
     activeTasks: int
+
+
+# --- Subtitle Replacement (Phase 6) ---
+
+
+class SubtitleRegionResponse(BaseModel):
+    x: int
+    y: int
+    width: int
+    height: int
+    confidence: float = 1.0
+    video_width: int = 0
+    video_height: int = 0
+
+
+class BlurSettings(BaseModel):
+    enabled: bool = True
+    strength: int = 15
+    mode: str = "blur"  # "blur" | "fill" | "pixelate"
+    fill_color: str = "#000000"
+
+
+class SubtitleReplacementRequest(BaseModel):
+    video_id: str
+    language: str = "en"
+    blur_settings: BlurSettings = BlurSettings()
+    manual_region: SubtitleRegionResponse | None = None
+    auto_match_style: bool = True
+
+
+class PreviewBlurRequest(BaseModel):
+    timestamp: float = 5.0
+    blur_settings: BlurSettings = BlurSettings()
+    region: SubtitleRegionResponse | None = None  # None = use auto-detected

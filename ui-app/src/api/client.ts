@@ -15,7 +15,8 @@ import type {
   VoiceProfileConfig,
   TTSPlatformConfig,
   TTSProviderInfo,
-  VoiceInfo,
+  SubtitleRegion,
+  BlurSettings,
 } from './types';
 
 const BASE = '/api';
@@ -316,6 +317,10 @@ export interface TTSAudioEntry {
   created_at: number;
 }
 
+export async function deleteTTSAudio(videoId: string, filename: string): Promise<void> {
+  await request(`/videos/${videoId}/tts/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+}
+
 export async function getTTSList(videoId: string): Promise<TTSAudioEntry[]> {
   return request(`/videos/${videoId}/tts`);
 }
@@ -428,6 +433,42 @@ export function postExportPreview(
 
 export function getExportedVideoUrl(videoId: string): string {
   return `${BASE}/videos/${videoId}/export`;
+}
+
+// --- Subtitle Replacement (Phase 6) ---
+
+export function getSubtitleRegion(videoId: string): Promise<SubtitleRegion> {
+  return request(`/videos/${videoId}/subtitle-region`);
+}
+
+export function setSubtitleRegion(videoId: string, region: SubtitleRegion): Promise<SubtitleRegion> {
+  return request(`/videos/${videoId}/subtitle-region`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(region),
+  });
+}
+
+export async function postPreviewBlur(
+  videoId: string,
+  timestamp: number,
+  blurSettings: BlurSettings,
+  region?: SubtitleRegion,
+): Promise<Blob> {
+  const res = await fetch(`${BASE}/videos/${videoId}/preview-blur`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      timestamp,
+      blur_settings: blurSettings,
+      region: region ?? null,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `Blur preview failed (${res.status})`);
+  }
+  return res.blob();
 }
 
 export function subscribeSSE(

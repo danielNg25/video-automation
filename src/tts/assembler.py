@@ -261,6 +261,7 @@ class TTSAssembler:
         on_progress: callable | None = None,
         merge_sentences: bool = True,
         llm_caller: Callable | None = None,
+        srt_path: Path | None = None,
     ) -> Path:
         """Generate a full-length TTS audio track from subtitle segments.
 
@@ -472,8 +473,171 @@ class TTSAssembler:
             write_srt(sentence_segments, sentences_srt)
             logger.info(f"Saved sentences SRT: {sentences_srt}")
 
+            # Write shortened text back to the original SRT.
+            # Use LLM to split each shortened sentence into subtitle-sized
+            # segments at natural phrase boundaries (commas, clauses).
+            if srt_path and self._translator:
+                sentences_to_split: list[tuple[str, float, float]] = []
+                for text, _start, _end, seg_indices in synth_items:
+                    if not text or not seg_indices:
+                        continue
+                    original_concat = " ".join(
+                        segments[j].get("text", "") for j in seg_indices if j < len(segments)
+                    )
+                    if text == original_concat:
+                        continue
+                    valid = [j for j in seg_indices if j < len(segments)]
+                    if not valid:
+                        continue
+                    group_start = segments[valid[0]]["start"]
+                    group_end = segments[valid[-1]]["end"]
+                    sentences_to_split.append((text, group_start, group_end))
+
+                if sentences_to_split:
+                    # Ask LLM to split all sentences in one batch call
+                    split_segments = await _llm_split_subtitles(
+                        self._translator, sentences_to_split
+                    )
+                    if split_segments:
+                        # Merge: keep non-shortened segments as-is,
+                        # replace shortened sentence groups with LLM-split segments
+                        final_segments: list[dict] = []
+                        shortened_ranges: set[int] = set()
+                        for _text, _start, _end, seg_indices in synth_items:
+                            if not _text or not seg_indices:
+                                continue
+                            original_concat = " ".join(
+                                segments[j].get("text", "") for j in seg_indices if j < len(segments)
+                            )
+                            if _text != original_concat:
+                                for j in seg_indices:
+                                    if j < len(segments):
+                                        shortened_ranges.add(j)
+
+                        split_iter = iter(split_segments)
+                        i = 0
+                        while i < len(segments):
+                            if i in shortened_ranges:
+                                # Find the full group
+                                group_indices = []
+                                for _text, _start, _end, seg_indices in synth_items:
+                                    if i in seg_indices:
+                                        group_indices = [j for j in seg_indices if j < len(segments)]
+                                        break
+                                # Get the LLM-split segments for this group
+                                try:
+                                    group_splits = next(split_iter)
+                                    final_segments.extend(group_splits)
+                                except StopIteration:
+                                    # Fallback: keep originals
+                                    for j in group_indices:
+                                        final_segments.append(segments[j])
+                                # Skip all indices in this group
+                                i = max(group_indices) + 1 if group_indices else i + 1
+                            else:
+                                final_segments.append({
+                                    "start": segments[i]["start"],
+                                    "end": segments[i]["end"],
+                                    "text": segments[i].get("text", ""),
+                                })
+                                i += 1
+
+                        write_srt(final_segments, srt_path)
+                        logger.info(
+                            f"Updated SRT with LLM-split segments: "
+                            f"{len(segments)} → {len(final_segments)} segments in {srt_path}"
+                        )
+
         logger.info(f"Generated TTS track: {output_path}")
         return output_path
+
+
+async def _llm_split_subtitles(
+    translator,
+    sentences: list[tuple[str, float, float]],
+) -> list[list[dict]] | None:
+    """Ask LLM to split shortened sentences into subtitle-sized segments.
+
+    Args:
+        translator: LLMTranslator instance with _call_llm method.
+        sentences: List of (text, group_start, group_end) tuples.
+
+    Returns:
+        List of segment lists (one per sentence), where each segment is
+        {"start": float, "end": float, "text": str}. None on failure.
+    """
+    lines = []
+    for i, (text, start, end) in enumerate(sentences):
+        lines.append(f"{i + 1}. [{start:.1f}s-{end:.1f}s] {text}")
+
+    system = (
+        "You are a subtitle segmenter. Split each subtitle sentence into "
+        "short display segments (max 35 characters each). Break at natural "
+        "boundaries: commas, conjunctions, phrase endings. Each segment must "
+        "be a meaningful phrase, not a random word split."
+    )
+    user = (
+        f"Split each of the following {len(sentences)} sentences into subtitle segments.\n"
+        f"Rules:\n"
+        f"- Each segment must be ≤35 characters\n"
+        f"- Break at commas, conjunctions, or natural phrase boundaries\n"
+        f"- Keep the exact same words — do NOT change, add, or remove any text\n"
+        f"- For each sentence, output the segments on separate lines\n"
+        f"- Separate sentences with a blank line\n"
+        f"- Output ONLY the segmented text, no numbering, no timestamps\n\n"
+        + "\n".join(lines)
+    )
+
+    try:
+        result = await translator._call_llm(system, user)
+        # Parse: sentences separated by blank lines, segments on individual lines
+        blocks = [b.strip() for b in result.strip().split("\n\n") if b.strip()]
+
+        if len(blocks) != len(sentences):
+            logger.warning(
+                f"LLM split returned {len(blocks)} blocks for {len(sentences)} sentences, "
+                f"falling back"
+            )
+            return None
+
+        all_splits: list[list[dict]] = []
+        for block, (text, group_start, group_end) in zip(blocks, sentences):
+            seg_texts = [line.strip() for line in block.split("\n") if line.strip()]
+            # Remove any numbering prefixes like "1. " or "- "
+            cleaned = []
+            for t in seg_texts:
+                import re
+                t = re.sub(r"^\d+[\.\)]\s*", "", t)
+                t = re.sub(r"^[-•]\s*", "", t)
+                t = t.strip()
+                if t:
+                    cleaned.append(t)
+
+            if not cleaned:
+                cleaned = [text]
+
+            # Distribute time proportionally by character count
+            total_time = group_end - group_start
+            total_chars = sum(len(t) for t in cleaned) or 1
+            cursor = group_start
+            group_segs: list[dict] = []
+            for k, seg_text in enumerate(cleaned):
+                seg_time = total_time * (len(seg_text) / total_chars)
+                seg_start = round(cursor, 3)
+                seg_end = round(cursor + seg_time, 3) if k < len(cleaned) - 1 else group_end
+                group_segs.append({"start": seg_start, "end": seg_end, "text": seg_text})
+                cursor = seg_end
+            all_splits.append(group_segs)
+
+        logger.info(
+            f"LLM split {len(sentences)} sentences into "
+            f"{sum(len(s) for s in all_splits)} subtitle segments"
+        )
+        return all_splits
+
+    except Exception as e:
+        logger.warning(f"LLM subtitle splitting failed: {e}")
+        return None
 
 
 def _redistribute_slots(slots: list[SegmentSlot], video_duration: float) -> None:

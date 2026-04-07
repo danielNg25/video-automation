@@ -145,20 +145,24 @@ def srt_to_ass(srt_path: Path, style_config: dict, output_path: Path) -> Path:
     margin_h = style_config.get("margin_h", 0)
     bold = -1 if style_config.get("bold", True) else 0
 
-    # Background: BorderStyle=3 (opaque box) when background_color is set
-    back_colour = style_config.get("background_color", "")
+    # Background box: use two-layer approach — a background layer with BorderStyle=3
+    # renders the colored box, then the main text layer renders on top with normal outline.
+    # ASS color format: &HAABBGGRR (alpha, blue, green, red)
+    back_colour_hex = style_config.get("background_color", "")
     bg_opacity = style_config.get("background_opacity", 0)
-    if back_colour:
-        back_colour_val = back_colour
-        border_style = 3  # opaque box behind text
-    elif bg_opacity > 0:
-        # Semi-transparent black background from opacity alone
-        alpha_hex = f"{bg_opacity:02X}"
-        back_colour_val = f"&H{alpha_hex}000000"
-        border_style = 3
-    else:
-        back_colour_val = "&H00000000"
-        border_style = 1  # normal outline + shadow
+    bg_box_colour = ""
+    if bg_opacity > 0:
+        alpha = 255 - int(bg_opacity * 255 / 100)
+        alpha_hex = f"{alpha:02X}"
+        if back_colour_hex and back_colour_hex.startswith("#") and len(back_colour_hex) == 7:
+            r = int(back_colour_hex[1:3], 16)
+            g = int(back_colour_hex[3:5], 16)
+            b = int(back_colour_hex[5:7], 16)
+            bg_box_colour = f"&H{alpha_hex}{b:02X}{g:02X}{r:02X}"
+        else:
+            bg_box_colour = f"&H{alpha_hex}000000"
+    back_colour_val = "&H00000000"
+    border_style = 1  # main style always uses normal outline
 
     margin_l = max(0, 10 + margin_h)
     margin_r = max(0, 10 - margin_h)
@@ -193,6 +197,238 @@ def srt_to_ass(srt_path: Path, style_config: dict, output_path: Path) -> Path:
     output_path.write_text("".join(lines), encoding="utf-8")
     logger.info(f"Generated ASS file: {output_path} ({len(segments)} segments)")
     return output_path
+
+
+def generate_subtitle_background_images(
+    srt_path: Path,
+    style_config: dict,
+    output_dir: Path,
+    target_width: int = 1080,
+    target_height: int = 1920,
+    corner_radius: int = 12,
+) -> list[dict] | None:
+    """Generate transparent PNGs with rounded-rectangle backgrounds for each segment.
+
+    Uses PIL to draw true rounded rectangles. Returns metadata for ffmpeg overlay.
+
+    Args:
+        srt_path: SRT file path.
+        style_config: Style dict with background_color, background_opacity, font_size, margin_v.
+        output_dir: Directory to write PNG files.
+        target_width: Output video width.
+        target_height: Output video height.
+        corner_radius: Border radius in pixels.
+
+    Returns:
+        List of dicts with 'path', 'start', 'end', 'x', 'y' for ffmpeg overlay,
+        or None if no background configured.
+    """
+    bg_color_hex = style_config.get("background_color", "")
+    bg_opacity = style_config.get("background_opacity", 0)
+    if bg_opacity <= 0:
+        return None
+
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        logger.warning("Pillow not installed — cannot render rounded-corner backgrounds")
+        return None
+
+    # Parse color
+    if bg_color_hex and bg_color_hex.startswith("#") and len(bg_color_hex) == 7:
+        r = int(bg_color_hex[1:3], 16)
+        g = int(bg_color_hex[3:5], 16)
+        b = int(bg_color_hex[5:7], 16)
+    else:
+        r, g, b = 0, 0, 0
+    alpha = int(bg_opacity * 255 / 100)
+
+    font_size = style_config.get("font_size", 24)
+    margin_v = style_config.get("margin_v", 30)
+    alignment = style_config.get("alignment", 2)
+    font_name = style_config.get("font_name", "Arial")
+    bold = style_config.get("bold", True)
+
+    # Scale font from PlayRes (1920) to target
+    scaled_font = int(font_size * target_height / 1920)
+    pad_x = max(6, int(scaled_font * 0.15))
+    pad_y = max(6, int(scaled_font * 0.2))
+
+    # Try to load font for text measurement
+    try:
+        import platform
+        if platform.system() == "Darwin":
+            font_path = "/System/Library/Fonts/Supplemental/Arial Bold.ttf" if bold else "/System/Library/Fonts/Supplemental/Arial.ttf"
+        else:
+            font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        pil_font = ImageFont.truetype(font_path, scaled_font)
+    except Exception:
+        pil_font = ImageFont.load_default()
+
+    segments = parse_srt(srt_path)
+    if not segments:
+        return None
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    results = []
+
+    for i, seg in enumerate(segments):
+        text = seg["text"]
+        # Measure text width
+        bbox = pil_font.getbbox(text)
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
+
+        img_w = text_w + 2 * pad_x
+        img_h = text_h + 2 * pad_y
+
+        # Create transparent image with rounded rectangle
+        img = Image.new("RGBA", (img_w, img_h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        draw.rounded_rectangle(
+            [(0, 0), (img_w - 1, img_h - 1)],
+            radius=corner_radius,
+            fill=(r, g, b, alpha),
+        )
+        png_path = output_dir / f"bg_{i:04d}.png"
+        img.save(png_path)
+
+        # Calculate overlay position
+        # Center horizontally
+        x = (target_width - img_w) // 2
+        # Vertical: center the PNG on the ASS text center.
+        # ASS alignment 2: text bottom = PlayResY - MarginV, center = bottom - fontSize/2
+        scaled_margin = int(margin_v * target_height / 1920)
+        if alignment in (1, 2, 3):  # bottom
+            text_center_y = target_height - scaled_margin - scaled_font // 2
+        elif alignment in (7, 8, 9):  # top
+            text_center_y = scaled_margin + scaled_font // 2
+        else:  # middle
+            text_center_y = target_height // 2
+        y = text_center_y - img_h // 2
+
+        results.append({
+            "path": str(png_path),
+            "start": seg["start"],
+            "end": seg["end"],
+            "x": x,
+            "y": y,
+        })
+
+    logger.info(f"Generated {len(results)} rounded-rect background PNGs in {output_dir}")
+    return results
+
+
+def build_background_overlay_filter(bg_images: list[dict]) -> str:
+    """Build ffmpeg filter_complex fragment to overlay rounded-rect background PNGs.
+
+    Each image is overlaid with enable='between(t,start,end)' for timing.
+
+    Args:
+        bg_images: List from generate_subtitle_background_images().
+
+    Returns:
+        filter_complex fragment string. Input is [bg_base], output is [bg_out].
+    """
+    if not bg_images:
+        return ""
+
+    parts = []
+    prev_label = "bg_base"
+    for i, img in enumerate(bg_images):
+        out_label = f"bg_{i}" if i < len(bg_images) - 1 else "bg_out"
+        parts.append(
+            f"[{prev_label}][{i + 1}:v]overlay={img['x']}:{img['y']}"
+            f":enable='between(t,{img['start']:.3f},{img['end']:.3f})'[{out_label}]"
+        )
+        prev_label = out_label
+
+    return ";".join(parts)
+
+
+def build_background_drawtext_filter(
+    srt_path: Path,
+    style_config: dict,
+    target_width: int = 1080,
+    target_height: int = 1920,
+) -> str | None:
+    """Build an ffmpeg drawtext filter chain for subtitle background boxes.
+
+    Uses drawtext with box=1 for each segment, timed with enable='between(t,s,e)'.
+    Returns None if no background is configured.
+
+    Args:
+        srt_path: SRT file to read segments from.
+        style_config: Style dict with background_color, background_opacity, font_size, margin_v, etc.
+        target_width: Output video width (after scale+pad).
+        target_height: Output video height (after scale+pad).
+    """
+    bg_color_hex = style_config.get("background_color", "")
+    bg_opacity = style_config.get("background_opacity", 0)
+    if bg_opacity <= 0:
+        return None
+
+    # Convert color to ffmpeg format: 0xRRGGBB
+    if bg_color_hex and bg_color_hex.startswith("#") and len(bg_color_hex) == 7:
+        ffmpeg_color = f"0x{bg_color_hex[1:]}"
+    else:
+        ffmpeg_color = "0x000000"
+    alpha = bg_opacity / 100.0
+
+    font_size = style_config.get("font_size", 24)
+    margin_v = style_config.get("margin_v", 30)
+    alignment = style_config.get("alignment", 2)
+    font_name = style_config.get("font_name", "Arial")
+    bold = style_config.get("bold", True)
+
+    # Calculate Y position based on alignment
+    # drawtext y is from top; ASS margin_v with alignment 2 is from bottom
+    if alignment in (1, 2, 3):
+        # Bottom: y = height - margin_v - font_size (text top)
+        y_expr = f"{target_height}-{margin_v}-text_h"
+    elif alignment in (7, 8, 9):
+        y_expr = f"{margin_v}"
+    else:
+        y_expr = f"({target_height}-text_h)/2"
+
+    # X centering
+    x_expr = "(w-text_w)/2"
+
+    segments = parse_srt(srt_path)
+    if not segments:
+        return None
+
+    # Find a font file
+    import platform
+    if platform.system() == "Darwin":
+        fontfile = "/System/Library/Fonts/Supplemental/Arial.ttf"
+    else:
+        fontfile = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+
+    # Scale font_size from PlayRes (1920) to target
+    scaled_font = int(font_size * target_height / 1920)
+    box_pad = max(8, int(scaled_font * 0.25))
+
+    filters = []
+    for seg in segments:
+        text = seg["text"].replace("'", "'\\''").replace(":", "\\:")
+        start = seg["start"]
+        end = seg["end"]
+        f = (
+            f"drawtext=text='{text}'"
+            f":fontfile='{fontfile}'"
+            f":fontsize={scaled_font}"
+            f":fontcolor=white@0"  # invisible text — just for box sizing
+            f":x={x_expr}:y={y_expr}"
+            f":box=1:boxcolor={ffmpeg_color}@{alpha:.2f}:boxborderw={box_pad}"
+            f":enable='between(t,{start:.3f},{end:.3f})'"
+        )
+        if bold:
+            # drawtext doesn't have bold, but we can use a bold font variant
+            pass
+        filters.append(f)
+
+    return ",".join(filters)
 
 
 def merge_subtitles(primary_srt: Path, secondary_srt: Path, output_path: Path) -> Path:
