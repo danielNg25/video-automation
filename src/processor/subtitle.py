@@ -220,8 +220,9 @@ def srt_to_ass(srt_path: Path, style_config: dict, output_path: Path) -> Path:
                 f"{{\\p0}}"
             )
             lines.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{rect_tag}\n")
-            # Layer 1: visible text with normal outline on top
-            lines.append(f"Dialogue: 1,{start},{end},Default,,0,0,0,,{text}\n")
+            # Layer 1: visible text at same position on top
+            text_tag = f"{{\\an5\\pos({text_center_x},{text_center_y})}}"
+            lines.append(f"Dialogue: 1,{start},{end},Default,,0,0,0,,{text_tag}{text}\n")
         else:
             lines.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{text}\n")
 
