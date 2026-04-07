@@ -193,8 +193,11 @@ def srt_to_ass(srt_path: Path, style_config: dict, output_path: Path) -> Path:
         text = seg["text"].replace("\n", "\\N")
         if bg_box_colour:
             # Layer 0: background box (transparent text, colored outline+shadow as box)
+            # Large \bord creates a wide colored outline that looks like a
+            # rectangular background. Scale bord with font size for consistency.
+            bord_size = max(15, int(font_size * 0.4))
             box_tag = (
-                f"{{\\bord12\\shad0\\3c{bg_box_colour}\\3a&H00&"
+                f"{{\\bord{bord_size}\\shad0\\3c{bg_box_colour}\\3a&H00&"
                 f"\\4c{bg_box_colour}\\4a&H00&"
                 f"\\1a&HFF&\\2a&HFF&}}"
             )
