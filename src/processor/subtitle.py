@@ -186,22 +186,40 @@ def srt_to_ass(srt_path: Path, style_config: dict, output_path: Path) -> Path:
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
 
+    # For background rectangles: estimate center position from alignment + margin_v
+    # PlayRes is 1080x1920. Alignment 2 = bottom-center.
+    play_res_x, play_res_y = 1080, 1920
+    if alignment in (1, 2, 3):  # bottom row
+        text_center_y = play_res_y - margin_v - font_size // 2
+    elif alignment in (4, 5, 6):  # middle row
+        text_center_y = play_res_y // 2
+    else:  # top row (7, 8, 9)
+        text_center_y = margin_v + font_size // 2
+    text_center_x = play_res_x // 2 + margin_h
+
+    # Approximate character width: ~60% of font_size for Vietnamese/Latin text
+    char_width = font_size * 0.55
+    box_pad_x = int(font_size * 0.3)  # horizontal padding
+    box_pad_y = int(font_size * 0.25)  # vertical padding
+
     lines = [header]
     for seg in segments:
         start = _seconds_to_ass_timestamp(seg["start"])
         end = _seconds_to_ass_timestamp(seg["end"])
         text = seg["text"].replace("\n", "\\N")
         if bg_box_colour:
-            # Layer 0: background box (transparent text, colored outline+shadow as box)
-            # Large \bord creates a wide colored outline that looks like a
-            # rectangular background. Scale bord with font size for consistency.
-            bord_size = max(15, int(font_size * 0.4))
-            box_tag = (
-                f"{{\\bord{bord_size}\\shad0\\3c{bg_box_colour}\\3a&H00&"
-                f"\\4c{bg_box_colour}\\4a&H00&"
-                f"\\1a&HFF&\\2a&HFF&}}"
+            # Layer 0: draw a solid rectangle using \p1 drawing command
+            text_width = int(len(text) * char_width)
+            half_w = text_width // 2 + box_pad_x
+            half_h = font_size // 2 + box_pad_y
+            rect_tag = (
+                f"{{\\an5\\pos({text_center_x},{text_center_y})"
+                f"\\p1\\bord0\\shad0\\1c{bg_box_colour}\\1a&H00&}}"
+                f"m -{half_w} -{half_h} l {half_w} -{half_h} "
+                f"{half_w} {half_h} -{half_w} {half_h}"
+                f"{{\\p0}}"
             )
-            lines.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{box_tag}{text}\n")
+            lines.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{rect_tag}\n")
             # Layer 1: visible text with normal outline on top
             lines.append(f"Dialogue: 1,{start},{end},Default,,0,0,0,,{text}\n")
         else:
