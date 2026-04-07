@@ -191,7 +191,20 @@ def srt_to_ass(srt_path: Path, style_config: dict, output_path: Path) -> Path:
         start = _seconds_to_ass_timestamp(seg["start"])
         end = _seconds_to_ass_timestamp(seg["end"])
         text = seg["text"].replace("\n", "\\N")
-        lines.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{text}\n")
+        if bg_box_colour:
+            # Layer 0: colored outline as rounded background box
+            # \bord creates naturally rounded corners around the text shape
+            bord_size = max(12, int(font_size * 0.3))
+            box_tag = (
+                f"{{\\bord{bord_size}\\shad0"
+                f"\\3c{bg_box_colour}\\3a&H00&"
+                f"\\1a&HFF&\\2a&HFF&}}"
+            )
+            lines.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{box_tag}{text}\n")
+            # Layer 1: visible text with normal outline on top
+            lines.append(f"Dialogue: 1,{start},{end},Default,,0,0,0,,{text}\n")
+        else:
+            lines.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{text}\n")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text("".join(lines), encoding="utf-8")

@@ -213,15 +213,9 @@ def _run_export_ffmpeg(
 
     ass_path = None
     if subtitle_path and subtitle_path.exists():
-        from src.processor.subtitle import srt_to_ass, build_background_drawtext_filter
+        from src.processor.subtitle import srt_to_ass
         ass_path = subtitle_path.with_suffix(".export.ass")
         srt_to_ass(subtitle_path, style, ass_path)
-        # Build drawtext filter for background rectangles (ASS \p1 doesn't work in filter_complex)
-        bg_drawtext = build_background_drawtext_filter(
-            subtitle_path, style, int(w), int(h)
-        )
-    else:
-        bg_drawtext = None
     use_subs_filter = ass_path is not None
 
     has_tts = tts_path and tts_path.exists()
@@ -237,12 +231,10 @@ def _run_export_ffmpeg(
     if duration_seconds is not None:
         cmd1 += ["-t", str(duration_seconds)]
 
-    # Build video filter chain: blur → scale+pad → bg boxes → ASS text
-    bg_suffix = f",{bg_drawtext}" if bg_drawtext else ""
     ass_suffix = f",ass='{ass_path}'" if use_subs_filter else ""
 
     if blur_filter:
-        fc = f"{blur_filter};[blurred]{scale_pad}{bg_suffix}{ass_suffix}[out]"
+        fc = f"{blur_filter};[blurred]{scale_pad}{ass_suffix}[out]"
         cmd1 += [
             "-filter_complex", fc,
             "-map", "[out]",
@@ -253,7 +245,7 @@ def _run_export_ffmpeg(
             str(intermediate),
         ]
     else:
-        vf = f"{scale_pad}{bg_suffix}{ass_suffix}"
+        vf = f"{scale_pad}{ass_suffix}"
         cmd1 += [
             "-vf", vf,
             "-af", f"volume={video_volume}",
