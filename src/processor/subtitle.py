@@ -251,7 +251,7 @@ def generate_subtitle_background_images(
 
     # Scale font from PlayRes (1920) to target
     scaled_font = int(font_size * target_height / 1920)
-    pad_x = max(10, int(scaled_font * 0.35))
+    pad_x = max(6, int(scaled_font * 0.15))
     pad_y = max(6, int(scaled_font * 0.2))
 
     # Try to load font for text measurement
