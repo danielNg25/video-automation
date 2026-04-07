@@ -81,14 +81,25 @@ export function StylePanel({ style, onChange, blur, onBlurChange, hasOcrRegion }
       </div>
 
       {/* Background */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => update('backgroundOpacity', style.backgroundOpacity > 0 ? 0 : 90)}
+            className={`w-7 h-3.5 rounded-full relative cursor-pointer ${style.backgroundOpacity > 0 ? 'bg-primary' : 'bg-surface-container-highest'}`}
+          >
+            <div className={`absolute top-0.5 w-2.5 h-2.5 bg-white rounded-full transition-all ${style.backgroundOpacity > 0 ? 'right-0.5' : 'left-0.5'}`} />
+          </button>
+          <span className="font-mono text-[9px] uppercase text-on-surface">Background</span>
+        </div>
+      </div>
+      {style.backgroundOpacity > 0 && <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <div className="flex justify-between">
             <label className="font-mono text-[9px] uppercase text-on-surface-variant">BG Opacity</label>
             <span className="font-mono text-[9px] text-primary">{style.backgroundOpacity}%</span>
           </div>
           <input
-            type="range" min={0} max={100} value={style.backgroundOpacity}
+            type="range" min={1} max={100} value={style.backgroundOpacity}
             onChange={(e) => update('backgroundOpacity', Number(e.target.value))}
             className="w-full h-1 accent-primary bg-zinc-700 rounded-full appearance-none cursor-pointer"
           />
@@ -109,7 +120,7 @@ export function StylePanel({ style, onChange, blur, onBlurChange, hasOcrRegion }
             >Reset</button>
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* Position */}
       <div className="grid grid-cols-2 gap-3">
