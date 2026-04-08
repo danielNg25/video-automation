@@ -50,6 +50,7 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
 
   // Blur config
   const [blurConfig, setBlurConfig] = useState<BlurConfig>({ enabled: true, mode: 'blur', strength: 15 });
+  const [originalBlurConfig, setOriginalBlurConfig] = useState<BlurConfig>({ enabled: true, mode: 'blur', strength: 15 });
 
   // OCR region for CSS blur approximation in live editor
   const [ocrRegion, setOcrRegion] = useState<{ x: number; y: number; width: number; height: number; videoWidth: number; videoHeight: number } | null>(null);
@@ -142,8 +143,9 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
   const isDirty = useMemo(
     () =>
       JSON.stringify(segments) !== JSON.stringify(originalSegments) ||
-      (originalStyle !== null && JSON.stringify(style) !== JSON.stringify(originalStyle)),
-    [segments, originalSegments, style, originalStyle],
+      (originalStyle !== null && JSON.stringify(style) !== JSON.stringify(originalStyle)) ||
+      JSON.stringify(blurConfig) !== JSON.stringify(originalBlurConfig),
+    [segments, originalSegments, style, originalStyle, blurConfig, originalBlurConfig],
   );
 
   // Auto-select first TTS file
@@ -255,6 +257,26 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
     getSrt(videoId, activeLang)
       .then(res => { setSegments(res.segments); setOriginalSegments(res.segments); setSaveStatus('idle'); })
       .catch(() => {});
+    // Reload style
+    getVideoStyle(videoId)
+      .then(({ style: d, is_custom }) => {
+        if (d && is_custom) {
+          const loaded: SubtitleStyle = {
+            fontName: (d.font_name as string) || 'Arial',
+            fontSize: (d.font_size as number) || 24,
+            outlineWidth: (d.outline_width as number) ?? 2,
+            marginV: (d.margin_v as number) ?? 30,
+            marginH: (d.margin_h as number) ?? 0,
+            bold: d.bold !== undefined ? Boolean(d.bold) : true,
+            shadow: d.shadow_depth !== undefined ? Number(d.shadow_depth) > 0 : true,
+            backgroundColor: (d.background_color as string) || '',
+            backgroundOpacity: (d.background_opacity as number) ?? 0,
+          };
+          setStyle(loaded);
+          setOriginalStyle(loaded);
+        }
+      })
+      .catch(() => {});
     onReload?.();
   }, [videoId, activeLang, onReload]);
 
@@ -268,7 +290,7 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
         margin_v: style.marginV, margin_h: style.marginH, bold: style.bold,
         shadow_depth: style.shadow ? 1 : 0, background_color: style.backgroundColor, background_opacity: style.backgroundOpacity,
       });
-      setOriginalSegments(segments); setOriginalStyle(style);
+      setOriginalSegments(segments); setOriginalStyle(style); setOriginalBlurConfig(blurConfig);
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
     } catch { setSaveStatus('error'); }
