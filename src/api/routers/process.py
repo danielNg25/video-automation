@@ -192,13 +192,16 @@ def _run_export_ffmpeg(
     w, h = resolution.split("x")
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Auto-detect blur region from OCR metadata
+    # Auto-detect blur region from OCR metadata (respects saved blur_enabled flag)
     blur_filter = None
-    if video_id:
+    blur_enabled = style.get("blur_enabled", True)  # default on if not saved
+    if video_id and blur_enabled:
         from src.processor.region_detector import load_subtitle_region
         region = load_subtitle_region(Path("data/srt"), video_id)
         if region:
-            blur_filter = FFmpegProcessor._build_blur_filter(region, blur_strength=15, blur_mode="blur")
+            blur_mode = style.get("blur_mode", "blur")
+            blur_strength = style.get("blur_strength", 15)
+            blur_filter = FFmpegProcessor._build_blur_filter(region, blur_strength=blur_strength, blur_mode=blur_mode)
 
             # Apply style matching from detected region
             from src.processor.style_matcher import SubtitleStyleMatcher

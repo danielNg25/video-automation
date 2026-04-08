@@ -175,6 +175,16 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
           };
           setStyle(loaded);
           setOriginalStyle(loaded);
+          // Load blur config from saved style
+          if (d.blur_enabled !== undefined) {
+            const loadedBlur: BlurConfig = {
+              enabled: Boolean(d.blur_enabled),
+              mode: (d.blur_mode as BlurConfig['mode']) || 'blur',
+              strength: (d.blur_strength as number) || 15,
+            };
+            setBlurConfig(loadedBlur);
+            setOriginalBlurConfig(loadedBlur);
+          }
         }
       } catch { /* no saved style */ }
       try {
@@ -274,6 +284,15 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
           };
           setStyle(loaded);
           setOriginalStyle(loaded);
+          if (d.blur_enabled !== undefined) {
+            const loadedBlur: BlurConfig = {
+              enabled: Boolean(d.blur_enabled),
+              mode: (d.blur_mode as BlurConfig['mode']) || 'blur',
+              strength: (d.blur_strength as number) || 15,
+            };
+            setBlurConfig(loadedBlur);
+            setOriginalBlurConfig(loadedBlur);
+          }
         }
       })
       .catch(() => {});
@@ -289,6 +308,7 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
         font_name: style.fontName, font_size: style.fontSize, outline_width: style.outlineWidth,
         margin_v: style.marginV, margin_h: style.marginH, bold: style.bold,
         shadow_depth: style.shadow ? 1 : 0, background_color: style.backgroundColor, background_opacity: style.backgroundOpacity,
+        blur_enabled: blurConfig.enabled, blur_mode: blurConfig.mode, blur_strength: blurConfig.strength,
       });
       setOriginalSegments(segments); setOriginalStyle(style); setOriginalBlurConfig(blurConfig);
       setSaveStatus('saved');
