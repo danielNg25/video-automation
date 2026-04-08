@@ -409,3 +409,26 @@ async def get_exported_video(video_id: str):
     if not output_path.exists():
         raise HTTPException(status_code=404, detail="Export not found")
     return FileResponse(path=str(output_path), media_type="video/mp4", filename=f"{video_id}_export.mp4")
+
+
+@router.get("/api/videos/{video_id}/export/status")
+async def get_export_status(video_id: str):
+    """Check if an exported video exists."""
+    output_path = Path("data/output") / f"{video_id}_export.mp4"
+    if output_path.exists():
+        stat = output_path.stat()
+        return {"exists": True, "size": stat.st_size, "modified": stat.st_mtime}
+    return {"exists": False}
+
+
+@router.delete("/api/videos/{video_id}/export")
+async def delete_exported_video(video_id: str):
+    """Delete the exported video."""
+    output_path = Path("data/output") / f"{video_id}_export.mp4"
+    if output_path.exists():
+        output_path.unlink()
+    # Also delete preview
+    preview_path = Path("data/output") / f"{video_id}_preview.mp4"
+    if preview_path.exists():
+        preview_path.unlink()
+    return {"status": "deleted"}

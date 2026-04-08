@@ -12,6 +12,7 @@ import {
   getSrt, putSrt, getProxyVideoUrl, getRawVideoUrl,
   getSubtitleRegion, getVideoStyle, putVideoStyle,
   postExportPreview, postExport, getExportedVideoUrl,
+  getExportStatus, deleteExport,
   subscribeSSE, getTTSAudioUrl,
 } from '../api/client';
 import type { TTSAudioEntry } from '../api/client';
@@ -289,11 +290,23 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
   // Cache-bust timestamp for exported video URL
   const [exportTimestamp, setExportTimestamp] = useState(0);
 
-  // Export full video (auto-saves first)
+  // Check if export already exists on mount
+  useEffect(() => {
+    getExportStatus(videoId).then(status => {
+      if (status.exists) {
+        setExportDone(true);
+        setExportTimestamp(status.modified ? Math.round(status.modified * 1000) : Date.now());
+      }
+    }).catch(() => {});
+  }, [videoId]);
+
+  // Export full video (auto-saves first, deletes old export)
   const handleExport = useCallback(async () => {
     setIsExporting(true); setExportError(''); setExportDone(false);
     setExportProgress({ pct: 0, message: 'Starting...' });
     try {
+      // Delete old export first
+      await deleteExport(videoId).catch(() => {});
       if (isDirty) { await handleSave(); }
       const { task_id } = await postExport(videoId, activeLang, selectedTtsFile, videoVol / 100, dubVol / 100);
       subscribeSSE(task_id, (eventType, data) => {
@@ -438,7 +451,7 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
                   <button disabled={isExporting} onClick={handleExport}
                     className="flex-1 py-2 rounded-md font-bold text-[10px] uppercase tracking-wider flex items-center justify-center gap-1.5 bg-gradient-to-r from-primary to-primary-container text-on-primary-fixed hover:shadow-[0_0_20px_rgba(160,120,255,0.3)] transition-all disabled:opacity-50">
                     <span className="material-symbols-outlined text-sm">{isExporting ? 'progress_activity' : 'movie_edit'}</span>
-                    {isExporting ? 'Exporting...' : 'Export'}
+                    {isExporting ? 'Exporting...' : exportDone ? 'Re-Export' : 'Export'}
                   </button>
                 </div>
 

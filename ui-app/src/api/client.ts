@@ -435,6 +435,14 @@ export function getExportedVideoUrl(videoId: string): string {
   return `${BASE}/videos/${videoId}/export`;
 }
 
+export function getExportStatus(videoId: string): Promise<{ exists: boolean; size?: number; modified?: number }> {
+  return request(`/videos/${videoId}/export/status`);
+}
+
+export async function deleteExport(videoId: string): Promise<void> {
+  await request(`/videos/${videoId}/export`, { method: 'DELETE' });
+}
+
 // --- Subtitle Replacement (Phase 6) ---
 
 export function getSubtitleRegion(videoId: string): Promise<SubtitleRegion> {
