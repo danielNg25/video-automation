@@ -290,8 +290,11 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
   // Cache-bust timestamp for exported video URL
   const [exportTimestamp, setExportTimestamp] = useState(0);
 
-  // Check if export already exists on mount
+  // Check if export already exists — only on first mount
+  const exportChecked = useRef(false);
   useEffect(() => {
+    if (exportChecked.current) return;
+    exportChecked.current = true;
     getExportStatus(videoId).then(status => {
       if (status.exists) {
         setExportDone(true);
