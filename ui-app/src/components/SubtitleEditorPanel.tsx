@@ -286,6 +286,9 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
     finally { setIsPreviewing(false); }
   }, [videoId, activeLang, selectedTtsFile, videoVol, dubVol, isDirty, handleSave, previewUrl]);
 
+  // Cache-bust timestamp for exported video URL
+  const [exportTimestamp, setExportTimestamp] = useState(0);
+
   // Export full video (auto-saves first)
   const handleExport = useCallback(async () => {
     setIsExporting(true); setExportError(''); setExportDone(false);
@@ -295,7 +298,7 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
       const { task_id } = await postExport(videoId, activeLang, selectedTtsFile, videoVol / 100, dubVol / 100);
       subscribeSSE(task_id, (eventType, data) => {
         if (eventType === 'progress') setExportProgress({ pct: Math.round((data.progress as number) * 100), message: data.message as string });
-        else if (eventType === 'complete') { setIsExporting(false); setExportDone(true); setExportProgress({ pct: 100, message: 'Export complete' }); onExportDone?.(); }
+        else if (eventType === 'complete') { setIsExporting(false); setExportDone(true); setExportTimestamp(Date.now()); setExportProgress({ pct: 100, message: 'Export complete' }); onExportDone?.(); }
         else if (eventType === 'error') { setIsExporting(false); setExportError(data.message as string); }
       });
     } catch (e) { setIsExporting(false); setExportError(e instanceof Error ? e.message : 'Export failed'); }
@@ -460,13 +463,13 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
                     <div className="flex items-center justify-between">
                       <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold">{exportDone ? 'Exported' : 'Preview'}</label>
                       {exportDone && (
-                        <a href={getExportedVideoUrl(videoId)} download className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline font-bold">
+                        <a href={`${getExportedVideoUrl(videoId)}?t=${exportTimestamp}`} download className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline font-bold">
                           <span className="material-symbols-outlined text-xs">download</span>
                         </a>
                       )}
                     </div>
                     <video controls autoPlay className="w-full rounded-lg bg-black"
-                      src={exportDone ? getExportedVideoUrl(videoId) : previewUrl!} />
+                      src={exportDone ? `${getExportedVideoUrl(videoId)}?t=${exportTimestamp}` : previewUrl!} />
                   </div>
                 )}
               </div>
