@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- Pipeline no longer generates per-platform videos (_youtube.mp4, _tiktok.mp4, etc.) — export is handled via Video Studio's Export tab, producing a single _export.mp4
+
 ### Added
 - Pipeline auto-blur: full pipeline (`Pipeline.process_single`) automatically detects OCR subtitle region and applies blur during the process stage — no manual config needed
 - Pipeline stepper: added 5th "Process & Burn" step showing blur, subtitle burn-in, and platform reformat info; TTS and Process are now separate steps

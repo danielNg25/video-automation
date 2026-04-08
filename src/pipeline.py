@@ -68,7 +68,7 @@ class Pipeline:
         """
         options = options or {}
         force = options.get("force", False)
-        platforms = platforms or ["youtube", "tiktok"]
+        platforms = platforms or []
 
         self._setup_signal_handlers()
 
@@ -292,76 +292,15 @@ class Pipeline:
             if self._interrupted:
                 return self._make_result(state, "interrupted")
 
-            # --- Stage: Process (subtitle burn-in + reformat) ---
+            # --- Stage: Process — skipped, export via Video Studio ---
             if not state.is_stage_complete("process"):
-                emit("process", 0.70, f"Processing for {len(platforms)} platforms...")
-                state.mark_stage_start("process")
+                emit("process", 0.90, "Processing skipped — use Video Studio to export")
+                state.mark_stage_complete("process", {"note": "export via Video Studio"})
 
-                from src.processor import process_for_all_platforms
-
-                video_path = Path(state.stage_results.get("download", {}).get(
-                    "file_path", f"data/raw/{video_id}.mp4"
-                ))
-                srt_dir = Path("data/srt")
-                output_dir = Path("data/output")
-                output_dir.mkdir(parents=True, exist_ok=True)
-
-                # Build TTS audio paths if TTS was run
-                tts_audio_paths = None
-                tts_mix_settings = None
-                if state.is_stage_complete("tts"):
-                    tts_result = state.stage_results.get("tts", {})
-                    tts_path = Path(tts_result.get("audio_path", ""))
-                    if tts_path.exists():
-                        tts_audio_paths = {p: tts_path for p in platforms}
-
-                # Auto-detect subtitle region for blur (from OCR metadata)
-                subtitle_region = None
-                blur_settings = None
-                from src.processor.region_detector import load_subtitle_region
-
-                subtitle_region = load_subtitle_region(srt_dir, video_id)
-                if subtitle_region:
-                    blur_settings = {
-                        "enabled": True,
-                        "blur_strength": 15,
-                        "blur_mode": "blur",
-                        "fill_color": "#000000",
-                        "auto_match_style": True,
-                    }
-                    emit("process", 0.72, "Detected subtitle region — will blur original subs")
-
-                results = await asyncio.to_thread(
-                    process_for_all_platforms,
-                    video_id,
-                    video_path,
-                    srt_dir,
-                    output_dir,
-                    platforms,
-                    self.config,
-                    None,  # style_overrides
-                    None,  # on_progress
-                    None,  # subtitle_language_overrides
-                    tts_audio_paths,
-                    tts_mix_settings,
-                    subtitle_region,
-                    blur_settings,
-                )
-
-                outputs = {p: str(r.output_path) for p, r in results.items()}
-                state.mark_stage_complete("process", {"outputs": outputs})
-                emit("process", 0.90, f"Processing complete for {len(outputs)} platforms")
-            else:
-                emit("process", 0.90, "Processing already complete")
-
-            if self._interrupted:
-                return self._make_result(state, "interrupted")
-
-            # --- Stage: Upload (placeholder — uploaders in Phase 6) ---
+            # --- Stage: Upload — skipped, not yet implemented ---
             if not state.is_stage_complete("upload"):
-                emit("upload", 0.90, "Upload stage (uploaders not yet implemented)")
-                # Skip upload for now — Phase 6 will implement uploaders
-                state.mark_stage_complete("upload", {"note": "uploaders pending Phase 6"})
+                emit("upload", 0.95, "Upload skipped — not yet implemented")
+                state.mark_stage_complete("upload", {"note": "uploaders pending"})
                 emit("upload", 1.0, "Pipeline complete")
 
             # --- Done ---
