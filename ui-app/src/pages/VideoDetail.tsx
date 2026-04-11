@@ -348,6 +348,11 @@ function VideoDetailPage() {
     const info = ttsProviders.find(p => p.id === provider);
     if (info && !info.requires_key) {
       loadVoicesForProvider(provider);
+    } else {
+      // Auto-load voices if API key exists in Settings
+      const keys = loadApiKeys();
+      const key = keys[provider] || '';
+      if (key) loadVoicesForProvider(provider, key);
     }
   };
 
@@ -678,7 +683,7 @@ function VideoDetailPage() {
                         Profiles
                       </button>
                       <button
-                        onClick={() => { setUseDirectVoice(true); if (ttsVoices.length === 0 && !ttsProviders.find(p => p.id === selectedTtsProvider)?.requires_key) loadVoicesForProvider(selectedTtsProvider); }}
+                        onClick={() => { setUseDirectVoice(true); if (ttsVoices.length === 0) loadVoicesForProvider(selectedTtsProvider, ttsApiKey || undefined); }}
                         className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded ${useDirectVoice ? 'bg-primary/20 text-primary' : 'text-zinc-500 hover:text-on-surface'}`}
                       >
                         All Voices
