@@ -565,8 +565,8 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
                 </button>
               </div>
             </div>
-            <div className="p-4">
-              <video controls autoPlay className="w-full rounded-lg bg-black"
+            <div className="p-4 flex justify-center">
+              <video controls autoPlay className="max-w-full max-h-[75vh] rounded-lg bg-black"
                 src={`${getExportedVideoUrl(videoId)}?t=${exportTimestamp}`} />
             </div>
           </div>
