@@ -343,18 +343,25 @@ function VideoDetailPage() {
 
   const handleTtsProviderChange = (provider: string) => {
     setSelectedTtsProvider(provider);
-    setUseDirectVoice(true);
     setTtsVoices([]);
-    setSelectedVoiceId('');
     setTtsGenerated(false);
-    const info = ttsProviders.find(p => p.id === provider);
-    if (info && !info.requires_key) {
-      loadVoicesForProvider(provider);
+    if (provider === 'elevenlabs') {
+      // Load saved voice ID for ElevenLabs — no voice list fetch needed
+      const savedId = storageGet('tts_voice_id') || '';
+      setSelectedVoiceId(savedId);
+      setVoiceIdInput(savedId);
     } else {
-      // Auto-load voices if API key exists in Settings
-      const keys = loadApiKeys();
-      const key = keys[provider] || '';
-      if (key) loadVoicesForProvider(provider, key);
+      setSelectedVoiceId('');
+      setVoiceIdInput('');
+      // Auto-fetch voice list for non-ElevenLabs providers
+      const info = ttsProviders.find(p => p.id === provider);
+      if (info && !info.requires_key) {
+        loadVoicesForProvider(provider);
+      } else {
+        const keys = loadApiKeys();
+        const key = keys[provider] || '';
+        if (key) loadVoicesForProvider(provider, key);
+      }
     }
   };
 
@@ -675,46 +682,45 @@ function VideoDetailPage() {
                     </div>
                   )}
 
-                  {/* Voice ID input */}
-                  <div className="space-y-2">
-                    <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block">Voice ID</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={voiceIdInput}
-                        onChange={(e) => { setVoiceIdInput(e.target.value); setVoiceIdSaved(false); }}
-                        placeholder="Enter voice ID or select below"
-                        className="flex-1 bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary placeholder:text-zinc-600"
-                      />
-                      <button
-                        onClick={() => {
-                          setSelectedVoiceId(voiceIdInput);
-                          storageSet('tts_voice_id', voiceIdInput);
-                          setVoiceIdSaved(true);
-                          setTtsGenerated(false);
-                          setTimeout(() => setVoiceIdSaved(false), 2000);
-                        }}
-                        disabled={!voiceIdInput}
-                        className="px-3 py-2 rounded text-[10px] font-bold uppercase bg-primary/20 text-primary hover:bg-primary/30 disabled:opacity-50 transition-colors"
-                      >
-                        {voiceIdSaved ? 'Saved' : 'Save'}
-                      </button>
+                  {/* ElevenLabs: Voice ID input */}
+                  {selectedTtsProvider === 'elevenlabs' && (
+                    <div className="space-y-2">
+                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block">Voice ID</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={voiceIdInput}
+                          onChange={(e) => { setVoiceIdInput(e.target.value); setVoiceIdSaved(false); }}
+                          placeholder="Paste ElevenLabs voice ID"
+                          className="flex-1 bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary placeholder:text-zinc-600 font-mono"
+                        />
+                        <button
+                          onClick={() => {
+                            setSelectedVoiceId(voiceIdInput);
+                            storageSet('tts_voice_id', voiceIdInput);
+                            setVoiceIdSaved(true);
+                            setTtsGenerated(false);
+                            setTimeout(() => setVoiceIdSaved(false), 2000);
+                          }}
+                          disabled={!voiceIdInput}
+                          className="px-3 py-2 rounded text-[10px] font-bold uppercase bg-primary/20 text-primary hover:bg-primary/30 disabled:opacity-50 transition-colors"
+                        >
+                          {voiceIdSaved ? 'Saved' : 'Save'}
+                        </button>
+                      </div>
                     </div>
-                    {selectedVoiceId && (
-                      <span className="text-[9px] font-mono text-zinc-500">Active: {selectedVoiceId}</span>
-                    )}
-                  </div>
+                  )}
 
-                  {/* Browse voices from provider */}
-                  {ttsVoices.length > 0 && (
+                  {/* Other providers: Browse voices dropdown */}
+                  {selectedTtsProvider !== 'elevenlabs' && (
                     <div className="space-y-1">
-                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block">Browse Voices</label>
+                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block">Voice</label>
                       <select
                         value={selectedVoiceId}
-                        onChange={(e) => { const id = e.target.value; setSelectedVoiceId(id); setVoiceIdInput(id); setTtsGenerated(false); }}
+                        onChange={(e) => { setSelectedVoiceId(e.target.value); setTtsGenerated(false); }}
                         className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
                       >
-                        <option value="">Select a voice...</option>
+                        {ttsVoices.length === 0 && <option value="">Loading voices...</option>}
                         {ttsVoices.map((v) => (
                           <option key={v.name} value={v.name}>
                             {v.friendly_name || v.name} ({v.gender}) — {v.language}
