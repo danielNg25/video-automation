@@ -109,6 +109,12 @@ function VideoDetailPage() {
     else setLlmBaseUrl('');
   }, [llmBackend]);
 
+  // Load TTS API key from localStorage when provider changes
+  useEffect(() => {
+    const keys = loadApiKeys();
+    setTtsApiKey(keys[selectedTtsProvider] || '');
+  }, [selectedTtsProvider]);
+
   const loadSrt = useCallback(async (vid: string, lang: string) => {
     try {
       const srt = await getSrt(vid, lang);
@@ -647,26 +653,18 @@ function VideoDetailPage() {
                     </div>
                   </div>
 
-                  {/* API Key for paid providers */}
-                  {ttsProviders.find(p => p.id === selectedTtsProvider)?.requires_key && (
-                    <div>
-                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">API Key</label>
-                      <div className="flex gap-2">
-                        <input
-                          type="password"
-                          value={ttsApiKey}
-                          onChange={(e) => setTtsApiKey(e.target.value)}
-                          placeholder={`Enter ${selectedTtsProvider} API key`}
-                          className="flex-1 bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary placeholder:text-zinc-600"
-                        />
-                        <button
-                          onClick={() => loadVoicesForProvider(selectedTtsProvider, ttsApiKey)}
-                          disabled={!ttsApiKey}
-                          className="bg-primary/20 text-primary px-3 py-2 rounded text-[10px] font-bold uppercase hover:bg-primary/30 disabled:opacity-50"
-                        >
-                          Load Voices
-                        </button>
-                      </div>
+                  {/* API Key Warning for paid providers */}
+                  {ttsProviders.find(p => p.id === selectedTtsProvider)?.requires_key && !ttsApiKey && (
+                    <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs p-3 rounded-lg flex items-center gap-2">
+                      <span className="material-symbols-outlined text-sm">warning</span>
+                      <span>No API key configured for <strong>{selectedTtsProvider}</strong>.</span>
+                      <button
+                        onClick={() => navigate('/settings#apikeys')}
+                        className="ml-auto text-[10px] font-bold uppercase tracking-wider text-amber-300 hover:text-amber-200 flex items-center gap-1 whitespace-nowrap"
+                      >
+                        <span className="material-symbols-outlined text-xs">settings</span>
+                        Configure
+                      </button>
                     </div>
                   )}
 

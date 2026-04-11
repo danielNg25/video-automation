@@ -34,6 +34,9 @@ export interface LLMApiKeys {
   anthropic: string;
   openai: string;
   deepseek: string;
+  elevenlabs: string;
+  google: string;
+  [key: string]: string;
 }
 
 export function loadApiKeys(): LLMApiKeys {
@@ -41,6 +44,8 @@ export function loadApiKeys(): LLMApiKeys {
     anthropic: storageGet('api_key_anthropic'),
     openai: storageGet('api_key_openai'),
     deepseek: storageGet('api_key_deepseek'),
+    elevenlabs: storageGet('api_key_elevenlabs'),
+    google: storageGet('api_key_google'),
   };
 }
 

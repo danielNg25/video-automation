@@ -275,7 +275,9 @@ function SettingsPage() {
                   { key: 'anthropic', label: 'Anthropic', placeholder: 'sk-ant-...', icon: 'neurology' },
                   { key: 'openai', label: 'OpenAI', placeholder: 'sk-...', icon: 'psychology' },
                   { key: 'deepseek', label: 'DeepSeek', placeholder: 'sk-...', icon: 'model_training' },
-                ] as const).map((provider) => (
+                  { key: 'elevenlabs', label: 'ElevenLabs', placeholder: 'xi-...', icon: 'record_voice_over' },
+                  { key: 'google', label: 'Google Cloud', placeholder: 'AIza...', icon: 'cloud' },
+                ] as { key: string; label: string; placeholder: string; icon: string }[]).map((provider) => (
                   <div key={provider.key} className="space-y-2">
                     <div className="flex items-center gap-2">
                       <span className="material-symbols-outlined text-sm text-zinc-400">{provider.icon}</span>
