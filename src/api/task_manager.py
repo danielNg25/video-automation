@@ -31,6 +31,21 @@ class Task:
     events: list[dict] = field(default_factory=list)
 
 
+def _detect_video_status(video_id: str, has_srt: bool, srt_langs: list[str]) -> str:
+    """Detect video status from filesystem state."""
+    from pathlib import Path
+    # Exported?
+    if (Path("data/output") / f"{video_id}_export.mp4").exists():
+        return "exported"
+    # Translated? (has non-Chinese SRT)
+    if any(lang != "zh" for lang in srt_langs):
+        return "translated"
+    # Transcribed?
+    if has_srt:
+        return "transcribed"
+    return "downloaded"
+
+
 class TaskManager:
     def __init__(self):
         self.tasks: dict[str, Task] = {}
@@ -100,7 +115,7 @@ class TaskManager:
                 thumbnail=thumbnail,
                 has_srt=has_srt,
                 srt_languages=srt_langs,
-                status="transcribed" if has_srt else "downloaded",
+                status=_detect_video_status(video_id, has_srt, srt_langs),
             )
 
         logger.info(f"Scanned {len(self.video_index)} existing videos")
@@ -460,6 +475,12 @@ class TaskManager:
             from src.processor.subtitle import parse_srt
 
             segments = parse_srt(output_path)
+
+            # Update video status to translated
+            video_info = self.video_index.get(video_id)
+            if video_info:
+                video_info.status = "translated"
+                self.video_index[video_id] = video_info
 
             task.status = "completed"
             task.progress = 1.0

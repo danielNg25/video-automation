@@ -363,6 +363,12 @@ async def export_video(video_id: str, request: ExportRequest):
                 video_id=video_id,
             )
 
+            # Update video status to exported
+            video_info = tm.video_index.get(video_id)
+            if video_info:
+                video_info.status = "exported"
+                tm.video_index[video_id] = video_info
+
             task_obj.status = "completed"
             task_obj.progress = 1.0
             task_obj.result = {"output_path": str(output_path)}

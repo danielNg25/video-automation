@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
-import { getVideos, deleteVideo } from '../api/client';
+import { getVideos, deleteVideo, getExportedVideoUrl } from '../api/client';
 import type { VideoMetadata } from '../api/types';
 
 function formatDuration(seconds: number): string {
@@ -17,6 +17,7 @@ export default function VideoListPage() {
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [viewingExport, setViewingExport] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -59,8 +60,9 @@ export default function VideoListPage() {
   };
 
   const statusBadge = (v: VideoMetadata) => {
-    if (v.status === 'processed') return { text: 'Processed', cls: 'bg-emerald-900/30 text-emerald-400' };
-    if (v.has_srt) return { text: 'Transcribed', cls: 'bg-primary/20 text-primary' };
+    if (v.status === 'exported') return { text: 'Exported', cls: 'bg-emerald-900/30 text-emerald-400' };
+    if (v.status === 'translated') return { text: 'Translated', cls: 'bg-blue-900/30 text-blue-400' };
+    if (v.status === 'transcribed' || v.has_srt) return { text: 'Transcribed', cls: 'bg-primary/20 text-primary' };
     return { text: 'Downloaded', cls: 'bg-zinc-700/40 text-zinc-400' };
   };
 
@@ -163,28 +165,32 @@ export default function VideoListPage() {
                     {/* Actions */}
                     <div className="flex gap-2 pt-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/videos/${v.video_id}`);
-                        }}
+                        onClick={(e) => { e.stopPropagation(); navigate(`/videos/${v.video_id}`); }}
                         className="flex-1 py-1.5 text-[10px] font-bold uppercase bg-primary/10 text-primary rounded hover:bg-primary/20 transition-colors"
                       >
                         Open Studio
                       </button>
+                      {v.status === 'exported' && (
+                        <>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setViewingExport(v.video_id); }}
+                            className="py-1.5 px-3 text-[10px] font-bold uppercase bg-emerald-500/10 text-emerald-400 rounded hover:bg-emerald-500/20 transition-colors flex items-center gap-1"
+                          >
+                            <span className="material-symbols-outlined text-xs">play_circle</span>
+                            View
+                          </button>
+                          <a
+                            href={getExportedVideoUrl(v.video_id)}
+                            download
+                            onClick={(e) => e.stopPropagation()}
+                            className="py-1.5 px-3 text-[10px] font-bold uppercase bg-primary/10 text-primary rounded hover:bg-primary/20 transition-colors flex items-center gap-1"
+                          >
+                            <span className="material-symbols-outlined text-xs">download</span>
+                          </a>
+                        </>
+                      )}
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/editor/${v.video_id}`);
-                        }}
-                        className="py-1.5 px-3 text-[10px] font-bold uppercase bg-surface-container-highest text-zinc-400 rounded hover:text-on-surface transition-colors"
-                      >
-                        Edit Subs
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDelete(v.video_id);
-                        }}
+                        onClick={(e) => { e.stopPropagation(); handleDelete(v.video_id); }}
                         disabled={deleting === v.video_id}
                         className="py-1.5 px-2 text-[10px] text-zinc-500 hover:text-error transition-colors"
                       >
@@ -198,6 +204,31 @@ export default function VideoListPage() {
           </div>
         )}
       </div>
+
+      {/* Export view modal */}
+      {viewingExport && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-8" onClick={() => setViewingExport(null)}>
+          <div className="bg-surface-container rounded-xl border border-outline-variant/10 max-w-2xl w-full overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-outline-variant/10">
+              <span className="text-sm font-medium text-on-surface">Exported Video</span>
+              <div className="flex items-center gap-2">
+                <a href={getExportedVideoUrl(viewingExport)} download
+                  className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1">
+                  <span className="material-symbols-outlined text-sm">download</span>
+                  Download
+                </a>
+                <button onClick={() => setViewingExport(null)} className="text-on-surface-variant hover:text-on-surface">
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
+            </div>
+            <div className="p-4 flex justify-center">
+              <video controls autoPlay className="max-w-full max-h-[75vh] rounded-lg bg-black"
+                src={getExportedVideoUrl(viewingExport)} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

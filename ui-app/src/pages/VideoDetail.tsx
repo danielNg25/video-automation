@@ -377,8 +377,12 @@ function VideoDetailPage() {
                   <span className="text-[10px] font-mono text-zinc-500">
                     {videoMeta.resolution} · {videoMeta.size} · {videoMeta.codec}
                   </span>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20`}>
-                    TRANSCRIBED
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                    videoMeta.status === 'exported' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                    : videoMeta.status === 'translated' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                    : 'bg-primary/10 text-primary border border-primary/20'
+                  }`}>
+                    {videoMeta.status === 'exported' ? 'EXPORTED' : videoMeta.status === 'translated' ? 'TRANSLATED' : 'TRANSCRIBED'}
                   </span>
                   <a
                     href={getRawVideoUrl(videoMeta.video_id)}
