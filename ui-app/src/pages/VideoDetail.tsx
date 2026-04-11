@@ -140,9 +140,9 @@ function VideoDetailPage() {
     } catch { /* ignore */ }
   }, [videoId, previewLanguage]);
 
-  const loadVoicesForProvider = useCallback(async (provider: string, apiKey?: string) => {
+  const loadVoicesForProvider = useCallback(async (provider: string, apiKey?: string, language?: string) => {
     try {
-      const voices = await getTTSVoices(undefined, provider, apiKey);
+      const voices = await getTTSVoices(language || ttsLanguage, provider, apiKey);
       setTtsVoices(voices);
       if (voices.length > 0) {
         setSelectedVoiceId(voices[0].name);
@@ -646,7 +646,7 @@ function VideoDetailPage() {
                       <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">Language</label>
                       <select
                         value={ttsLanguage}
-                        onChange={(e) => { setTtsLanguage(e.target.value); setTtsGenerated(false); }}
+                        onChange={(e) => { const lang = e.target.value; setTtsLanguage(lang); setTtsGenerated(false); setTtsVoices([]); loadVoicesForProvider(selectedTtsProvider, ttsApiKey || undefined, lang); }}
                         className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
                       >
                         {videoMeta?.srt_languages.filter(l => l !== 'zh').map((lang) => (
