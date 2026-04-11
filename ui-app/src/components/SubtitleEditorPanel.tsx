@@ -90,6 +90,7 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
   const [exportProgress, setExportProgress] = useState({ pct: 0, message: '' });
   const [exportError, setExportError] = useState('');
   const [exportDone, setExportDone] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
 
   const ttsAudioRef = useRef<HTMLAudioElement>(null);
 
@@ -516,18 +517,29 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
                   <div className="p-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">{previewError || exportError}</div>
                 )}
 
-                {(previewUrl || exportDone) && (
+                {/* Preview player (5s only) */}
+                {previewUrl && !exportDone && (
                   <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold">{exportDone ? 'Exported' : 'Preview'}</label>
-                      {exportDone && (
-                        <a href={`${getExportedVideoUrl(videoId)}?t=${exportTimestamp}`} download className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline font-bold">
-                          <span className="material-symbols-outlined text-xs">download</span>
-                        </a>
-                      )}
-                    </div>
-                    <video controls autoPlay className="w-full rounded-lg bg-black"
-                      src={exportDone ? `${getExportedVideoUrl(videoId)}?t=${exportTimestamp}` : previewUrl!} />
+                    <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold">Preview</label>
+                    <video controls autoPlay className="w-full rounded-lg bg-black" src={previewUrl} />
+                  </div>
+                )}
+
+                {/* Export status */}
+                {exportDone && (
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                    <span className="material-symbols-outlined text-emerald-400">check_circle</span>
+                    <span className="text-xs text-emerald-400 font-medium flex-1">Export complete</span>
+                    <button onClick={() => setShowExportModal(true)}
+                      className="px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider bg-surface-container-highest text-on-surface hover:bg-surface-container-high transition-colors flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-sm">play_circle</span>
+                      View
+                    </button>
+                    <a href={`${getExportedVideoUrl(videoId)}?t=${exportTimestamp}`} download
+                      className="px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider bg-primary/20 text-primary hover:bg-primary/30 transition-colors flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-sm">download</span>
+                      Download
+                    </a>
                   </div>
                 )}
               </div>
@@ -535,6 +547,31 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
           </div>
         </div>
       </div>
+
+      {/* Export video modal */}
+      {showExportModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-8" onClick={() => setShowExportModal(false)}>
+          <div className="bg-surface-container rounded-xl border border-outline-variant/10 max-w-2xl w-full overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-outline-variant/10">
+              <span className="text-sm font-medium text-on-surface">Exported Video</span>
+              <div className="flex items-center gap-2">
+                <a href={`${getExportedVideoUrl(videoId)}?t=${exportTimestamp}`} download
+                  className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1">
+                  <span className="material-symbols-outlined text-sm">download</span>
+                  Download
+                </a>
+                <button onClick={() => setShowExportModal(false)} className="text-on-surface-variant hover:text-on-surface">
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
+            </div>
+            <div className="p-4">
+              <video controls autoPlay className="w-full rounded-lg bg-black"
+                src={`${getExportedVideoUrl(videoId)}?t=${exportTimestamp}`} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
