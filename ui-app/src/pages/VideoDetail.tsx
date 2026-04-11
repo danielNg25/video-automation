@@ -300,8 +300,8 @@ function VideoDetailPage() {
         videoMeta.video_id,
         ttsLanguage,
         selectedTtsProfile,
-        useDirectVoice ? selectedTtsProvider : undefined,
-        useDirectVoice ? selectedVoiceId : undefined,
+        selectedTtsProvider,
+        selectedVoiceId || undefined,
         ttsApiKey || undefined,
         llmApiKey || undefined,
         llmBackend || undefined,
@@ -705,66 +705,36 @@ function VideoDetailPage() {
                     )}
                   </div>
 
-                  {/* Browse voices */}
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => { setUseDirectVoice(false); }}
-                        className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded ${!useDirectVoice ? 'bg-primary/20 text-primary' : 'text-zinc-500 hover:text-on-surface'}`}
-                      >
-                        Profiles
-                      </button>
-                      <button
-                        onClick={() => { setUseDirectVoice(true); if (ttsVoices.length === 0) loadVoicesForProvider(selectedTtsProvider, ttsApiKey || undefined); }}
-                        className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded ${useDirectVoice ? 'bg-primary/20 text-primary' : 'text-zinc-500 hover:text-on-surface'}`}
-                      >
-                        Browse Voices
-                      </button>
-                    </div>
-
-                    {!useDirectVoice ? (
-                      <select
-                        value={selectedTtsProfile}
-                        onChange={(e) => handleTtsProfileChange(e.target.value)}
-                        className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
-                      >
-                        {Object.entries(ttsProfiles).map(([name, profile]) => (
-                          <option key={name} value={name}>
-                            {name} ({profile.provider} / {profile.language})
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
+                  {/* Browse voices from provider */}
+                  {ttsVoices.length > 0 && (
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block">Browse Voices</label>
                       <select
                         value={selectedVoiceId}
                         onChange={(e) => { const id = e.target.value; setSelectedVoiceId(id); setVoiceIdInput(id); setTtsGenerated(false); }}
                         className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
                       >
-                        {ttsVoices.length === 0 && <option value="">No voices loaded</option>}
+                        <option value="">Select a voice...</option>
                         {ttsVoices.map((v) => (
                           <option key={v.name} value={v.name}>
                             {v.friendly_name || v.name} ({v.gender}) — {v.language}
                           </option>
                         ))}
                       </select>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
                   {/* Voice Preview */}
                   {(() => {
-                    const previewVoice = useDirectVoice
-                      ? selectedVoiceId
-                      : ttsProfiles[selectedTtsProfile]?.voice;
-                    const previewProvider = useDirectVoice
-                      ? selectedTtsProvider
-                      : ttsProfiles[selectedTtsProfile]?.provider || 'edge';
+                    const previewVoice = selectedVoiceId;
+                    const previewProvider = selectedTtsProvider;
                     return previewVoice ? (
                       <div className="flex items-center gap-3">
                         <TTSPreview
                           voice={previewVoice}
                           provider={previewProvider}
-                          speed={useDirectVoice ? '+0%' : ttsProfiles[selectedTtsProfile]?.speed}
-                          pitch={useDirectVoice ? '+0Hz' : ttsProfiles[selectedTtsProfile]?.pitch}
+                          speed="+0%"
+                          pitch="+0Hz"
                           apiKey={ttsApiKey || undefined}
                           sampleText={
                             ttsLanguage === 'vi'
