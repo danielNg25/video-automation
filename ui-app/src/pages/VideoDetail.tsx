@@ -14,7 +14,7 @@ import type {
   VideoMetadata, SubtitleSegment, TranslationProfileSummary,
   VoiceProfileConfig, TTSProviderInfo, VoiceInfo,
 } from '../api/types';
-import { loadApiKeys, loadLLMPrefs, saveLLMPrefs } from '../utils/storage';
+import { loadApiKeys, loadLLMPrefs, saveLLMPrefs, storageGet, storageSet } from '../utils/storage';
 
 const PLATFORM_INFO: Record<string, { label: string; subLangLabel: string; constraint: string }> = {
   tiktok: { label: 'TikTok', subLangLabel: 'Vietnamese', constraint: '9:16 / 10min / 4GB' },
@@ -55,11 +55,13 @@ function VideoDetailPage() {
 
   // TTS state
   const [ttsProviders, setTtsProviders] = useState<TTSProviderInfo[]>([]);
-  const [selectedTtsProvider, setSelectedTtsProvider] = useState('edge');
+  const [selectedTtsProvider, setSelectedTtsProvider] = useState('elevenlabs');
   const [ttsProfiles, setTtsProfiles] = useState<Record<string, VoiceProfileConfig>>({});
   const [selectedTtsProfile, setSelectedTtsProfile] = useState('female-vi-natural');
   const [ttsVoices, setTtsVoices] = useState<VoiceInfo[]>([]);
-  const [selectedVoiceId, setSelectedVoiceId] = useState('');
+  const [selectedVoiceId, setSelectedVoiceId] = useState(() => storageGet('tts_voice_id') || '');
+  const [voiceIdInput, setVoiceIdInput] = useState(() => storageGet('tts_voice_id') || '');
+  const [voiceIdSaved, setVoiceIdSaved] = useState(false);
   const [ttsApiKey, setTtsApiKey] = useState('');
   const [ttsLanguage, setTtsLanguage] = useState('vi');
   const [useDirectVoice, setUseDirectVoice] = useState(false);
@@ -673,11 +675,41 @@ function VideoDetailPage() {
                     </div>
                   )}
 
-                  {/* Voice selection: Profiles / All Voices tabs */}
-                  <div>
-                    <div className="flex items-center gap-3 mb-2">
+                  {/* Voice ID input */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block">Voice ID</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={voiceIdInput}
+                        onChange={(e) => { setVoiceIdInput(e.target.value); setVoiceIdSaved(false); }}
+                        placeholder="Enter voice ID or select below"
+                        className="flex-1 bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary placeholder:text-zinc-600"
+                      />
                       <button
-                        onClick={() => setUseDirectVoice(false)}
+                        onClick={() => {
+                          setSelectedVoiceId(voiceIdInput);
+                          storageSet('tts_voice_id', voiceIdInput);
+                          setVoiceIdSaved(true);
+                          setTtsGenerated(false);
+                          setTimeout(() => setVoiceIdSaved(false), 2000);
+                        }}
+                        disabled={!voiceIdInput}
+                        className="px-3 py-2 rounded text-[10px] font-bold uppercase bg-primary/20 text-primary hover:bg-primary/30 disabled:opacity-50 transition-colors"
+                      >
+                        {voiceIdSaved ? 'Saved' : 'Save'}
+                      </button>
+                    </div>
+                    {selectedVoiceId && (
+                      <span className="text-[9px] font-mono text-zinc-500">Active: {selectedVoiceId}</span>
+                    )}
+                  </div>
+
+                  {/* Browse voices */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => { setUseDirectVoice(false); }}
                         className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded ${!useDirectVoice ? 'bg-primary/20 text-primary' : 'text-zinc-500 hover:text-on-surface'}`}
                       >
                         Profiles
@@ -686,7 +718,7 @@ function VideoDetailPage() {
                         onClick={() => { setUseDirectVoice(true); if (ttsVoices.length === 0) loadVoicesForProvider(selectedTtsProvider, ttsApiKey || undefined); }}
                         className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded ${useDirectVoice ? 'bg-primary/20 text-primary' : 'text-zinc-500 hover:text-on-surface'}`}
                       >
-                        All Voices
+                        Browse Voices
                       </button>
                     </div>
 
@@ -705,7 +737,7 @@ function VideoDetailPage() {
                     ) : (
                       <select
                         value={selectedVoiceId}
-                        onChange={(e) => { setSelectedVoiceId(e.target.value); setTtsGenerated(false); }}
+                        onChange={(e) => { const id = e.target.value; setSelectedVoiceId(id); setVoiceIdInput(id); setTtsGenerated(false); }}
                         className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
                       >
                         {ttsVoices.length === 0 && <option value="">No voices loaded</option>}
