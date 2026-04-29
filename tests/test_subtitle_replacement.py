@@ -38,7 +38,7 @@ class TestSubtitleRegion:
 
 class TestSubtitleRegionDetector:
     def test_detect_from_ocr_meta_file(self, tmp_path):
-        """Loads region from OCR metadata JSON, width expanded to full video."""
+        """Region is loaded from OCR metadata exactly — no padding applied."""
         meta = {
             "video_id": "test123",
             "video_width": 1080,
@@ -53,11 +53,28 @@ class TestSubtitleRegionDetector:
         region = detector.detect_from_ocr_meta(meta_path)
 
         assert region is not None
+        assert region.x == 90
         assert region.y == 1550
+        assert region.width == 900
         assert region.height == 80
-        # Width expanded to cover full video width minus margins
-        assert region.width > 900
-        assert region.x < 90
+
+    def test_horizontal_video_region_unchanged(self, tmp_path):
+        """Horizontal video: blur region matches OCR bbox exactly, no width balloon."""
+        meta = {
+            "video_id": "horiz",
+            "video_width": 1920,
+            "video_height": 1080,
+            "subtitle_region": {"x": 85, "y": 854, "width": 1748, "height": 206},
+            "frames_analyzed": 100,
+        }
+        meta_path = tmp_path / "horiz_ocr_meta.json"
+        meta_path.write_text(json.dumps(meta))
+
+        detector = SubtitleRegionDetector()
+        region = detector.detect_from_ocr_meta(meta_path)
+
+        assert region is not None
+        assert (region.x, region.y, region.width, region.height) == (85, 854, 1748, 206)
 
     def test_detect_from_missing_file(self, tmp_path):
         """Returns None when OCR metadata file doesn't exist."""
@@ -153,8 +170,8 @@ class TestLoadSubtitleRegion:
 
         region = load_subtitle_region(srt_dir, "abc")
         assert region is not None
-        # Width expanded to cover full video width minus margins
-        assert region.width > 980
+        # Region matches OCR bbox exactly — no padding
+        assert (region.x, region.y, region.width, region.height) == (50, 1500, 980, 70)
 
     def test_returns_none_when_missing(self, tmp_path):
         """Returns None for Whisper-transcribed videos without OCR metadata."""
@@ -305,32 +322,55 @@ class TestBlurAndBurnCommand:
 
 
 class TestOCRMetadataPersistence:
-    def test_save_ocr_metadata(self, tmp_path):
-        """OCR transcriber saves _ocr_meta.json with subtitle region."""
+    def test_save_ocr_metadata_picks_largest_frame(self, tmp_path):
+        """Saves the largest single-frame bbox (no cross-frame union, no padding)."""
         from src.transcriber.ocr import OCRTranscriber
 
         transcriber = OCRTranscriber()
-        bboxes = [
-            [[100, 1560], [980, 1560], [980, 1620], [100, 1620]],
-            [[120, 1570], [960, 1570], [960, 1630], [120, 1630]],
+        # Three frames; frame 1 is the largest by area.
+        per_frame = [
+            # Frame 0 — short sub: 200×60 = 12_000
+            [[[400, 1700], [600, 1700], [600, 1760], [400, 1760]]],
+            # Frame 1 — long sub: 880×60 = 52_800 (winner)
+            [[[100, 1560], [980, 1560], [980, 1620], [100, 1620]]],
+            # Frame 2 — medium: 400×60 = 24_000
+            [[[300, 1600], [700, 1600], [700, 1660], [300, 1660]]],
         ]
 
         srt_dir = tmp_path / "srt"
-        transcriber._save_ocr_metadata(srt_dir, "test_vid", 1080, 1920, bboxes, 100)
+        transcriber._save_ocr_metadata(srt_dir, "test_vid", 1080, 1920, per_frame, 100)
 
-        meta_path = srt_dir / "test_vid_ocr_meta.json"
-        assert meta_path.exists()
-
-        meta = json.loads(meta_path.read_text())
+        meta = json.loads((srt_dir / "test_vid_ocr_meta.json").read_text())
         assert meta["video_id"] == "test_vid"
         assert meta["video_width"] == 1080
         assert meta["video_height"] == 1920
-        assert "subtitle_region" in meta
-        region = meta["subtitle_region"]
-        assert region["x"] <= 100  # with padding
-        assert region["y"] <= 1560
-        assert region["width"] >= 860  # spans from ~100 to ~980
-        assert region["height"] >= 50  # min clamp
+        # Frame 1 picked — bbox saved exactly, no padding.
+        assert meta["subtitle_region"] == {"x": 100, "y": 1560, "width": 880, "height": 60}
+
+    def test_save_ocr_metadata_unions_within_frame(self, tmp_path):
+        """A frame with multi-line subs unions its own boxes (covers stacked text)."""
+        from src.transcriber.ocr import OCRTranscriber
+
+        transcriber = OCRTranscriber()
+        # Frame 0 — single line, 880×60 = 52_800
+        # Frame 1 — TWO stacked lines (multi-line wrap):
+        #   line A: 600×60 at y=1500
+        #   line B: 700×60 at y=1580
+        #   union within frame: x∈[150,850], y∈[1500,1640] → 700×140 = 98_000 (winner)
+        per_frame = [
+            [[[100, 1560], [980, 1560], [980, 1620], [100, 1620]]],
+            [
+                [[200, 1500], [800, 1500], [800, 1560], [200, 1560]],
+                [[150, 1580], [850, 1580], [850, 1640], [150, 1640]],
+            ],
+        ]
+
+        srt_dir = tmp_path / "srt"
+        transcriber._save_ocr_metadata(srt_dir, "vid", 1080, 1920, per_frame, 50)
+
+        region = json.loads((srt_dir / "vid_ocr_meta.json").read_text())["subtitle_region"]
+        # Within-frame union of frame 1 (the larger-area frame).
+        assert region == {"x": 150, "y": 1500, "width": 700, "height": 140}
 
     def test_save_no_boxes(self, tmp_path):
         """Does not save metadata when there are no subtitle boxes."""

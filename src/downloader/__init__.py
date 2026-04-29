@@ -48,8 +48,17 @@ async def download_with_fallback(url: str, output_dir: Path, config: dict) -> Vi
 
     # Fallback to yt-dlp
     try:
-        timeout = config.get("douyin", {}).get("download_timeout", 120)
-        fallback = YtDlpDownloader(timeout=timeout)
+        douyin_cfg = config.get("douyin", {})
+        timeout = douyin_cfg.get("download_timeout", 120)
+        cookie_file = douyin_cfg.get("cookie_file")
+        fallback = YtDlpDownloader(timeout=timeout, cookie_file=cookie_file)
         return await fallback.download(url, output_dir)
     except Exception as e:
+        error_str = str(e)
+        if "cookie" in error_str.lower() or "Fresh cookies" in error_str:
+            cookie_path = douyin_cfg.get("cookie_file", "config/douyin_cookie.txt")
+            raise RuntimeError(
+                f"Douyin cookies expired. Please refresh cookies in '{cookie_path}' "
+                f"by logging into douyin.com and exporting fresh cookies."
+            ) from e
         raise RuntimeError(f"All downloaders failed for {url}: {e}") from e

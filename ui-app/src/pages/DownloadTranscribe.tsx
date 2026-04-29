@@ -35,6 +35,7 @@ function PipelinePage() {
   const [selectedTtsProvider, setSelectedTtsProvider] = useState('edge');
   const [ttsProfiles, setTtsProfiles] = useState<Record<string, VoiceProfileConfig>>({});
   const [selectedTtsProfile, setSelectedTtsProfile] = useState('female-vi-natural');
+  const [blurEnabled, setBlurEnabled] = useState(true);
   const [savedPrefs] = useState(loadLLMPrefs);
   const [llmBackend, setLlmBackend] = useState(savedPrefs.backend);
   const [llmModel, setLlmModel] = useState(savedPrefs.model);
@@ -214,6 +215,8 @@ function PipelinePage() {
             concurrency: batchConcurrency,
             translate_profile: selectedProfile || null,
             translation_override: selectedProfile ? { backend: llmBackend, model: llmModel, api_key: llmApiKey || undefined } : null,
+            tts_profile: selectedTtsProfile || null,
+            blur_enabled: blurEnabled,
           }),
         });
         const data = await res.json();
@@ -229,7 +232,7 @@ function PipelinePage() {
     setError(''); setIsPipeline(true); setPipelineStage('download'); setPipelineProgress(0); setPipelineMessage('Starting download...');
     try {
       const translationOverride = selectedProfile ? { backend: llmBackend, model: llmModel, api_key: llmApiKey || undefined } : undefined;
-      const { task_id } = await postPipeline(url, selectedProfile || undefined, 'zh', translationOverride, selectedTtsProfile || undefined);
+      const { task_id } = await postPipeline(url, selectedProfile || undefined, 'zh', translationOverride, selectedTtsProfile || undefined, blurEnabled);
       saveActiveTask(task_id, 'single');
       startPolling(task_id, 'single');
     } catch (e) { setIsPipeline(false); setError(e instanceof Error ? e.message : 'Pipeline failed'); }
@@ -291,7 +294,7 @@ function PipelinePage() {
         const prof = ttsProfiles[selectedTtsProfile];
         return `${prov?.name || selectedTtsProvider} · ${selectedTtsProfile}${prof ? ` (${prof.language === 'vi' ? 'Vietnamese' : prof.language === 'en' ? 'English' : prof.language})` : ''}`;
       })() },
-    { num: 5, key: 'process', icon: 'movie_edit', title: 'Process & Burn', summary: 'Blur original subs · burn translated subs · reformat per platform' },
+    { num: 5, key: 'process', icon: 'movie_edit', title: 'Process & Burn', summary: blurEnabled ? 'Blur original subs · burn translated subs · reformat per platform' : 'Burn translated subs · reformat per platform (blur off)' },
   ];
 
   return (
@@ -555,11 +558,16 @@ function PipelinePage() {
                           <div className="space-y-2">
                             <div className="flex items-center gap-2 p-3 bg-surface-container rounded-lg">
                               <span className="material-symbols-outlined text-sm text-primary">blur_on</span>
-                              <div>
+                              <div className="flex-1">
                                 <p className="text-xs text-on-surface font-medium">Original Subtitle Removal</p>
                                 <p className="text-[10px] text-on-surface-variant">Auto-detects OCR region and blurs original Chinese subtitles before burning translated subs</p>
                               </div>
-                              <span className="text-[9px] font-mono uppercase text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded ml-auto">auto</span>
+                              <button
+                                onClick={() => setBlurEnabled(!blurEnabled)}
+                                className={`w-8 h-4 rounded-full relative cursor-pointer transition-colors ${blurEnabled ? 'bg-primary' : 'bg-surface-container-highest'}`}
+                              >
+                                <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${blurEnabled ? 'right-0.5' : 'left-0.5'}`} />
+                              </button>
                             </div>
                             <div className="flex items-center gap-2 p-3 bg-surface-container rounded-lg">
                               <span className="material-symbols-outlined text-sm text-primary">subtitles</span>

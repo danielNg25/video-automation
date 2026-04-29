@@ -634,8 +634,9 @@ class LLMTranslator:
         system = (
             "You are a subtitle editor optimizing text for TTS dubbing. "
             "Shorten each subtitle line so it can be spoken in the target duration. "
-            "Be aggressive — remove filler words, simplify phrases, keep only essential meaning. "
-            "Output must be natural speech suitable for text-to-speech."
+            "Trim only what's necessary to fit the target — preserve full meaning "
+            "and natural phrasing. Aim for the longest version that still fits. "
+            "Do not collapse a sentence to a fragment."
         )
         user = (
             f"Shorten each of the following {len(items)} subtitle lines. "
@@ -653,11 +654,30 @@ class LLMTranslator:
 
             shortened = []
             for i, item in enumerate(items):
-                if i < len(parsed) and parsed[i] and len(parsed[i]) < len(item["text"]):
-                    logger.info(f"  Segment: '{item['text'][:30]}' → '{parsed[i][:30]}' ({item['speed_ratio']:.1f}x)")
-                    shortened.append(parsed[i])
+                original = item["text"]
+                candidate = parsed[i] if i < len(parsed) else None
+                # Per-item floor: respect the target_pct we asked for, with an
+                # absolute minimum of 25% to still reject one-word garbage.
+                target_pct = item.get("target_pct", 100)
+                floor_pct = max(25, target_pct - 10)
+                floor_chars = max(1, int(len(original) * floor_pct / 100))
+                if candidate and len(candidate) < len(original):
+                    if len(candidate) < floor_chars:
+                        logger.warning(
+                            f"  Segment: rejecting over-shortened '{original[:30]}' "
+                            f"→ '{candidate[:30]}' "
+                            f"({len(candidate)}/{len(original)} chars, "
+                            f"floor {floor_pct}%)"
+                        )
+                        shortened.append(original)
+                    else:
+                        logger.info(
+                            f"  Segment: '{original[:30]}' → '{candidate[:30]}' "
+                            f"({item['speed_ratio']:.1f}x)"
+                        )
+                        shortened.append(candidate)
                 else:
-                    shortened.append(item["text"])
+                    shortened.append(original)
             return shortened
         except Exception as e:
             logger.warning(f"Batch shortening failed: {e}")

@@ -43,7 +43,7 @@ class SubtitleRegion:
 class SubtitleRegionDetector:
     """Detects the original subtitle region from OCR metadata."""
 
-    def __init__(self, padding: int = 10):
+    def __init__(self, padding: int = 0):
         self.padding = padding
 
     def detect_from_ocr_meta(
@@ -71,19 +71,7 @@ class SubtitleRegionDetector:
             return None
 
         region = SubtitleRegion.from_dict(region_data)
-
-        # Add horizontal padding so blur covers the full text area
-        video_width = meta.get("video_width", 0)
-        if video_width > 0:
-            pad = max(10, int(region.width * 0.05))
-            new_x = max(0, region.x - pad)
-            new_w = min(video_width - new_x, region.width + 2 * pad)
-            region = SubtitleRegion(
-                x=new_x,
-                y=region.y,
-                width=new_w,
-                height=region.height,
-            )
+        # No padding — blur exactly the OCR-detected subtitle bounding box.
 
         logger.info(
             f"Loaded subtitle region: x={region.x}, y={region.y}, "

@@ -58,6 +58,7 @@ class FullPipelineRequest(BaseModel):
     force: bool = False
     metadata: dict | None = None
     tts_profile: str | None = None  # e.g. "female-vi-natural" — if set, generates TTS dub
+    blur_enabled: bool = True  # blur original subtitles before burn-in
 
 
 class BatchPipelineRequest(BaseModel):
@@ -68,6 +69,8 @@ class BatchPipelineRequest(BaseModel):
     translation_override: dict | None = None  # {backend, model, api_key, base_url}
     source_language: str = "zh"
     force: bool = False
+    tts_profile: str | None = None  # e.g. "female-vi-natural" — if set, generates TTS dub
+    blur_enabled: bool = True  # blur original subtitles before burn-in
 
 
 class PipelineHistoryEntry(BaseModel):

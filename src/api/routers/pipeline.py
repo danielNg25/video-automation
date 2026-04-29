@@ -75,6 +75,7 @@ async def start_full_pipeline(request: FullPipelineRequest):
             force=request.force,
             config=config,
             tts_profile=request.tts_profile,
+            blur_enabled=request.blur_enabled,
         )
     )
     return TaskResponse(task_id=task.task_id, status=task.status)
@@ -91,6 +92,7 @@ async def _run_full_pipeline(
     config: dict,
     translation_override: dict | None = None,
     tts_profile: str | None = None,
+    blur_enabled: bool = True,
 ):
     """Execute the full pipeline as a background task with SSE events."""
     from src.pipeline import Pipeline
@@ -122,6 +124,7 @@ async def _run_full_pipeline(
             "subtitle_lang": source_language,
             "translate_profile": translate_profile,
             "tts_profile": tts_profile,
+            "blur_enabled": blur_enabled,
         }
 
         result = await pipeline.process_single(url, platforms, options, emit)
@@ -247,6 +250,8 @@ async def start_batch_pipeline(request: BatchPipelineRequest):
             source_language=request.source_language,
             force=request.force,
             config=config,
+            tts_profile=request.tts_profile,
+            blur_enabled=request.blur_enabled,
         )
     )
 
@@ -268,6 +273,8 @@ async def _run_batch_pipeline(
     source_language: str,
     force: bool,
     config: dict,
+    tts_profile: str | None = None,
+    blur_enabled: bool = True,
 ):
     """Execute batch pipeline with concurrency control."""
     from src.pipeline import Pipeline
@@ -293,6 +300,8 @@ async def _run_batch_pipeline(
                 source_language=source_language,
                 force=force,
                 config=config,
+                tts_profile=tts_profile,
+                blur_enabled=blur_enabled,
             )
             child_task = tm.tasks.get(child_task_id)
             if child_task and child_task.status == "failed":

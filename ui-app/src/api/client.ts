@@ -215,6 +215,7 @@ export function postPipeline(
   sourceLanguage: string = 'zh',
   translationOverride?: { backend: string; model: string; api_key?: string; base_url?: string },
   ttsProfile?: string,
+  blurEnabled: boolean = true,
 ): Promise<TaskResponse> {
   return request('/pipeline/full', {
     method: 'POST',
@@ -226,6 +227,7 @@ export function postPipeline(
       translation_override: translationOverride ?? null,
       source_language: sourceLanguage,
       tts_profile: ttsProfile ?? null,
+      blur_enabled: blurEnabled,
     }),
   });
 }

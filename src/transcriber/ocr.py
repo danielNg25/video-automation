@@ -139,7 +139,10 @@ class OCRTranscriber(BaseTranscriber):
 
             # Pass 2: OCR all frames, skip watermark positions
             frame_texts = []
-            all_subtitle_bboxes: list[list] = []
+            # One inner list per analyzed frame that had at least one subtitle box.
+            # Per-frame grouping is required so _save_ocr_metadata can pick the
+            # largest single-frame bbox instead of unioning across frames.
+            all_subtitle_bboxes: list[list[list]] = []
             for i, frame_path in enumerate(frames):
                 pct = 0.15 + (i / total_frames) * 0.65
                 if i % 10 == 0:
@@ -160,7 +163,8 @@ class OCRTranscriber(BaseTranscriber):
                     crop_y_offset=int(frame_height * (1 - crop_pct)) if crop_pct > 0 else 0,
                 )
                 frame_texts.append(subtitle_text)
-                all_subtitle_bboxes.extend(subtitle_bboxes)
+                if subtitle_bboxes:
+                    all_subtitle_bboxes.append(subtitle_bboxes)
 
             # Deduplicate consecutive frames into segments
             self._emit_progress(0.85, "Deduplicating and generating SRT...")
@@ -480,48 +484,48 @@ class OCRTranscriber(BaseTranscriber):
         video_id: str,
         video_width: int,
         video_height: int,
-        subtitle_boxes: list[list],
+        subtitle_boxes_per_frame: list[list[list]],
         frames_analyzed: int,
     ) -> None:
-        """Save OCR metadata including subtitle region for Phase 6 blur.
+        """Save OCR metadata with the largest single-frame subtitle bbox.
 
-        Computes the bounding rectangle of all subtitle text across frames
-        and writes to {video_id}_ocr_meta.json.
+        For each analyzed frame, unions the subtitle boxes within that one
+        frame (covering multi-line subs). Among all frames, picks the bbox
+        with the largest area and saves it exactly — no padding, no
+        cross-frame union — so the blur covers exactly one real subtitle.
         """
-        if not subtitle_boxes:
+        if not subtitle_boxes_per_frame:
             logger.info("No subtitle boxes collected — skipping OCR metadata save")
             return
 
-        # Flatten all bounding box points to find the union rectangle
-        all_points: list[tuple[float, float]] = []
-        for bbox in subtitle_boxes:
-            if len(bbox) >= 4:
+        best: tuple[int, int, int, int, int] | None = None  # (area, x, y, w, h)
+        for frame_bboxes in subtitle_boxes_per_frame:
+            xs: list[float] = []
+            ys: list[float] = []
+            for bbox in frame_bboxes:
+                if len(bbox) < 4:
+                    continue
                 for point in bbox:
-                    all_points.append((float(point[0]), float(point[1])))
+                    xs.append(float(point[0]))
+                    ys.append(float(point[1]))
+            if not xs or not ys:
+                continue
+            x = max(0, int(min(xs)))
+            y = max(0, int(min(ys)))
+            w = min(video_width, int(max(xs))) - x
+            h = min(video_height, int(max(ys))) - y
+            if w <= 0 or h <= 0:
+                continue
+            area = w * h
+            if best is None or area > best[0]:
+                best = (area, x, y, w, h)
 
-        if not all_points:
+        if best is None:
+            logger.info("No usable subtitle bboxes — skipping OCR metadata save")
             return
 
-        padding = 10
-        min_x = max(0, int(min(p[0] for p in all_points)) - padding)
-        min_y = max(0, int(min(p[1] for p in all_points)) - padding)
-        max_x = min(video_width, int(max(p[0] for p in all_points)) + padding)
-        max_y = min(video_height, int(max(p[1] for p in all_points)) + padding)
-
-        height = max_y - min_y
-        if height < 50:
-            height = 50
-            max_y = min_y + height
-        if height > int(video_height * 0.4):
-            height = int(video_height * 0.4)
-            max_y = min_y + height
-
-        region = {
-            "x": min_x,
-            "y": min_y,
-            "width": max_x - min_x,
-            "height": height,
-        }
+        _, x, y, w, h = best
+        region = {"x": x, "y": y, "width": w, "height": h}
 
         meta = {
             "video_id": video_id,
@@ -537,8 +541,10 @@ class OCRTranscriber(BaseTranscriber):
             json.dump(meta, f, indent=2)
 
         logger.info(
-            f"Saved OCR metadata: region x={region['x']}, y={region['y']}, "
-            f"w={region['width']}, h={region['height']} → {meta_path.name}"
+            f"Saved OCR metadata: largest-frame region x={region['x']}, "
+            f"y={region['y']}, w={region['width']}, h={region['height']} "
+            f"(picked from {len(subtitle_boxes_per_frame)} frames with subs) "
+            f"→ {meta_path.name}"
         )
 
     def _emit_progress(self, progress: float, message: str):

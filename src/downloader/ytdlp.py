@@ -1,6 +1,7 @@
 import asyncio
 import json
 import re
+import tempfile
 from pathlib import Path
 
 import httpx
@@ -11,11 +12,51 @@ from src.utils.metadata import VideoMetadata
 logger = setup_logger(__name__)
 
 
+def _raw_cookies_to_netscape(raw_cookie: str, domain: str = ".douyin.com") -> str:
+    """Convert a raw Cookie header string to Netscape cookie file format."""
+    lines = ["# Netscape HTTP Cookie File"]
+    for pair in raw_cookie.split(";"):
+        pair = pair.strip()
+        if not pair or "=" not in pair:
+            continue
+        name, value = pair.split("=", 1)
+        lines.append(f"{domain}\tTRUE\t/\tFALSE\t0\t{name.strip()}\t{value.strip()}")
+    return "\n".join(lines) + "\n"
+
+
 class YtDlpDownloader:
     """Downloads videos using yt-dlp CLI as a fallback."""
 
-    def __init__(self, timeout: int = 120):
+    def __init__(self, timeout: int = 120, cookie_file: str | None = None):
         self.timeout = timeout
+        self.cookie_file = cookie_file
+
+    def _build_cookie_args(self) -> tuple[list[str], str | None]:
+        """Build yt-dlp cookie args from cookie file.
+
+        Returns (args_list, temp_file_path_or_None).
+        The caller must clean up the temp file if returned.
+        """
+        if not self.cookie_file:
+            return [], None
+        cookie_path = Path(self.cookie_file)
+        if not cookie_path.exists():
+            return [], None
+
+        content = cookie_path.read_text().strip()
+        if content.startswith("# Netscape") or content.startswith("# HTTP Cookie"):
+            # Already in Netscape format
+            return ["--cookies", str(cookie_path)], None
+
+        # Raw header format — convert to Netscape temp file
+        netscape = _raw_cookies_to_netscape(content)
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix="_cookies.txt", delete=False
+        )
+        tmp.write(netscape)
+        tmp.close()
+        logger.info(f"Converted raw cookies to Netscape format: {tmp.name}")
+        return ["--cookies", tmp.name], tmp.name
 
     async def download(self, url: str, output_dir: Path) -> VideoMetadata:
         """Download a video using yt-dlp.
@@ -32,10 +73,22 @@ class YtDlpDownloader:
         """
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        cookie_args, tmp_cookie_path = self._build_cookie_args()
+        try:
+            return await self._do_download(url, output_dir, cookie_args)
+        finally:
+            if tmp_cookie_path:
+                Path(tmp_cookie_path).unlink(missing_ok=True)
+
+    async def _do_download(
+        self, url: str, output_dir: Path, cookie_args: list[str]
+    ) -> VideoMetadata:
+
         # First, dump JSON metadata
         logger.info(f"Fetching metadata via yt-dlp: {url}")
         meta_proc = await asyncio.create_subprocess_exec(
             "yt-dlp",
+            *cookie_args,
             "--dump-json",
             "--no-download",
             url,
@@ -55,6 +108,7 @@ class YtDlpDownloader:
         logger.info(f"Downloading video {video_id} via yt-dlp")
         dl_proc = await asyncio.create_subprocess_exec(
             "yt-dlp",
+            *cookie_args,
             "-o",
             str(output_path),
             "--merge-output-format",

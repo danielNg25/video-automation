@@ -161,25 +161,44 @@ class TaskManager:
             if path.exists():
                 path.unlink()
 
-        # SRT files + subtitle style
-        for srt in srt_dir.glob(f"{video_id}_*.srt"):
-            srt.unlink()
-        style_path = srt_dir / f"{video_id}_style.json"
-        if style_path.exists():
-            style_path.unlink()
+        # All per-video files in srt_dir: SRTs, OCR metadata, export ASS, style, etc.
+        for path in srt_dir.glob(f"{video_id}_*"):
+            try:
+                path.unlink()
+            except OSError as e:
+                logger.warning(f"Failed to delete {path}: {e}")
+        for path in srt_dir.glob(f"{video_id}.*"):
+            try:
+                path.unlink()
+            except OSError as e:
+                logger.warning(f"Failed to delete {path}: {e}")
 
         # Proxy video
         for proxy in proxy_dir.glob(f"{video_id}*"):
-            proxy.unlink()
+            try:
+                proxy.unlink()
+            except OSError as e:
+                logger.warning(f"Failed to delete {proxy}: {e}")
 
-        # Output videos (per-platform)
+        # Output videos (export + per-platform), plus the lone {video_id}.mp4 form
         for output in output_dir.glob(f"{video_id}_*"):
-            output.unlink()
+            try:
+                output.unlink()
+            except OSError as e:
+                logger.warning(f"Failed to delete {output}: {e}")
+        for output in output_dir.glob(f"{video_id}.*"):
+            try:
+                output.unlink()
+            except OSError as e:
+                logger.warning(f"Failed to delete {output}: {e}")
 
         # TTS audio files
         tts_dir = Path("data/tts")
         for tts in tts_dir.glob(f"{video_id}_*"):
-            tts.unlink()
+            try:
+                tts.unlink()
+            except OSError as e:
+                logger.warning(f"Failed to delete {tts}: {e}")
 
         # State + duplicate registry
         logs_dir = Path("data/logs")

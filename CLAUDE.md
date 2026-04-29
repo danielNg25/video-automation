@@ -45,6 +45,8 @@ Each module follows: `__init__.py` (factory), `base.py` (ABC), then provider/pla
 
 ## Commands
 
+Requires Python 3.11+ and ffmpeg with libx264 support.
+
 ```bash
 # Install (macOS dev)
 make install        # or: python3 -m venv .venv && pip install -e ".[macos]"
@@ -52,17 +54,21 @@ make install        # or: python3 -m venv .venv && pip install -e ".[macos]"
 # Install (Linux prod)
 make install-linux  # or: pip install -e ".[linux]"
 
+# UI setup (first time)
+cd ui-app && npm install
+
 # Run CLI
 python -m src --help
 python -m src process "https://v.douyin.com/xxxxx" --platforms youtube,tiktok
 
 # Run servers
 make api            # uvicorn FastAPI at :8000 with reload
-make ui             # Vite React dev server at :5173
+make ui             # Vite React dev server at :5173 (proxied to :8000)
 
 # Tests
 make test                                             # all tests
 python -m pytest tests/test_downloader.py -v          # single file
+python -m pytest tests/test_downloader.py::test_name  # single test
 make test-unit                                        # skip integration tests
 make test-integration                                 # integration only
 
@@ -71,9 +77,15 @@ make lint           # ruff check src/ tests/
 make format         # ruff format src/ tests/
 make check          # lint + test
 
+# UI lint
+cd ui-app && npm run lint
+
 # Docker (Douyin API)
 make docker-up      # docker compose up -d
 make docker-down
+
+# Cleanup
+make clean          # remove __pycache__, .pytest_cache, build artifacts
 
 # OAuth setup per platform
 python scripts/setup_oauth.py youtube
@@ -119,24 +131,15 @@ python scripts/setup_oauth.py youtube
 
 ## Configuration
 
-Three YAML files in `config/`:
+Environment: copy `.env.example` to `.env` and `config/config.example.yaml` to `config/config.yaml`, then edit with your API keys.
+
+YAML files in `config/`:
 - `config.yaml` — API endpoints, Whisper model settings, platform credentials (supports `${ENV_VAR}` interpolation)
 - `platforms.yaml` — Per-platform subtitle language and video specifications
 - `subtitle_styles.yaml` — ASS subtitle styling (font, color, position) with per-platform overrides
-
-Additional config:
-- `config/tts_voices.yaml` — Voice profiles, per-platform defaults, volume mix settings
-- `config/translation_profiles/` — Translation style profiles (tone, terminology, examples)
+- `tts_voices.yaml` — Voice profiles, per-platform defaults, volume mix settings
+- `translation_profiles/` — Translation style profiles (tone, terminology, examples)
 
 ## Implementation Plans
 
-Detailed phase plans with task lists, dependency graphs, and verification checklists are in `plans/`:
-- `phase1-core-download-transcribe.md` (17 tasks)
-- `phase2-subtitle-burnin-reformat.md` (6 tasks)
-- `phase3-ocr-subtitle-extraction.md` (10 tasks)
-- `phase4-tts-dubbing.md` (18 tasks)
-- `phase5-orchestration-batch.md` (15 tasks)
-- `phase6-subtitle-replacement.md` (15 tasks)
-- `phase7-platform-uploads.md` (11 tasks)
-
-Progress is tracked via the checklist in `README.md`.
+Detailed phase plans live in `plans/phase{1-7}-*.md`. Progress is tracked via the checklist in `README.md`.

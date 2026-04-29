@@ -453,7 +453,7 @@ douyin-automation/
 - [x] **6.15** Subtitle replacement section on Video Studio page
 
 **Verification:**
-- [ ] V6.1 — Region auto-detection returns correct bounding box from OCR metadata
+- [x] V6.1 — Region auto-detection returns correct bounding box from OCR metadata
 - [ ] V6.2 — Blur preview: JPEG shows original subtitle area blurred out
 - [ ] V6.3 — Three blur modes work (blur, fill, pixelate)
 - [ ] V6.4 — Style matching: new subtitle appears at same position/size as original
@@ -462,7 +462,7 @@ douyin-automation/
 - [ ] V6.7 — Graceful fallback: no OCR data → skip blur, process normally
 - [ ] V6.8 — Manual region override via UI
 - [ ] V6.9 — UI flow: detect region → preview blur → process → clean output
-- [ ] V6.10 — Unit tests pass
+- [x] V6.10 — Unit tests pass (incl. horizontal-video pad regression test)
 
 ---
 

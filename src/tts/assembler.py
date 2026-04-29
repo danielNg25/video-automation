@@ -18,6 +18,10 @@ logger = setup_logger(__name__)
 
 # Warn if TTS clip needs to be sped up beyond this ratio
 MAX_SAFE_SPEED_RATIO = 2.5
+# Hard cap on atempo speed in Stage 4: above this, audio overruns the slot
+# rather than being chipmunked into unintelligibility. Brief overlap with
+# the next sentence is mixed by amix and remains preferable to a silent gap.
+MAX_PLAYBACK_SPEED = 1.8
 # Trigger LLM text shortening above this ratio
 # 1.5x speedup still sounds natural; only shorten above that
 SHORTENING_TRIGGER = 1.5
@@ -103,33 +107,30 @@ async def _detect_sentence_boundaries_llm(
         if not line:
             continue
 
-        # Match [numbers] text pattern
-        m = re.match(r"\[([^\]]+)\]\s*(.+)", line)
+        # Match [numbers] text pattern, or fall back to plain comma-separated numbers
+        m = re.match(r"\[([^\]]+)\]\s*(.*)", line)
         if m:
             nums_str = m.group(1)
             merged_text = m.group(2).strip()
-            nums = re.findall(r"\d+", nums_str)
-            group = []
-            for n in nums:
-                idx = int(n) - 1  # convert to 0-based
-                if 0 <= idx < len(segments) and idx not in seen:
-                    group.append(idx)
-                    seen.add(idx)
-            if group and merged_text:
-                results.append((sorted(group), merged_text))
         else:
-            # Fallback: try plain comma-separated numbers (old format)
-            nums = re.findall(r"\d+", line)
-            if nums:
-                group = []
-                for n in nums:
-                    idx = int(n) - 1
-                    if 0 <= idx < len(segments) and idx not in seen:
-                        group.append(idx)
-                        seen.add(idx)
-                if group:
-                    # No merged text from LLM, will fall back to joining later
-                    results.append((sorted(group), ""))
+            nums_str = line
+            merged_text = ""
+        nums = re.findall(r"\d+", nums_str)
+        if not nums:
+            continue
+        group = []
+        for n in nums:
+            idx = int(n) - 1  # convert to 0-based
+            if 0 <= idx < len(segments) and idx not in seen:
+                group.append(idx)
+        if not group:
+            continue
+        # Mark seen only when we actually commit the group, so empty-text lines
+        # don't strand segments (the missing-segments fallback below depends on
+        # `seen` accurately reflecting what landed in `results`).
+        for idx in group:
+            seen.add(idx)
+        results.append((sorted(group), merged_text))
 
     # Add any missing segments as individual groups
     for i in range(len(segments)):
@@ -213,6 +214,10 @@ async def _merge_into_sentences(
                 merged_text = " ".join(t for t in texts if t)
 
             if not merged_text:
+                logger.warning(
+                    f"Sentence group {group_indices} has no usable text after cleaning — "
+                    f"originals: {[segments[i].get('text', '') for i in group_indices]}"
+                )
                 continue
 
             start = segments[group_indices[0]]["start"]
@@ -333,9 +338,21 @@ class TTSAssembler:
             ):
                 clip_path = None
                 clip_duration = 0.0
-                if not isinstance(clip_result, Exception) and clip_result is not None:
+                if isinstance(clip_result, Exception):
+                    logger.warning(
+                        f"Sentence {i} synthesis failed: {clip_result!r} — "
+                        f"text={text[:60]!r}"
+                    )
+                elif clip_result is None:
+                    if text:
+                        logger.warning(f"Sentence {i} has text but no audio clip: {text[:60]!r}")
+                else:
                     clip_path = clip_result
                     clip_duration = _get_audio_duration(clip_result)
+                    if clip_duration <= 0:
+                        logger.warning(
+                            f"Sentence {i} synthesized clip has zero duration: {clip_result}"
+                        )
 
                 anchor = (window_start + window_end) / 2.0
                 slots.append(SegmentSlot(
@@ -421,7 +438,16 @@ class TTSAssembler:
                 resynth_tasks = []
                 for (slot, text, _ratio), shortened in zip(needs_shortening, shortened_texts):
                     resynth_tasks.append(resynth(slot, text, shortened))
-                await asyncio.gather(*resynth_tasks)
+                await asyncio.gather(*resynth_tasks, return_exceptions=True)
+
+                # Re-distribute with the post-shortening clip durations: donors
+                # that fed an overflowing slot get their time back if the slot
+                # was shortened, and slots that still overflow can re-borrow
+                # from now-freed neighbors.
+                for slot in slots:
+                    slot.effective_start = slot.window_start
+                    slot.effective_end = slot.window_end
+                _redistribute_slots(slots, video_duration)
 
                 if on_progress:
                     on_progress(total, total, "Text shortening complete")
@@ -434,15 +460,45 @@ class TTSAssembler:
                     on_progress(slot.index + 1, total, f"Fitting segment {slot.index + 1}/{total}")
 
                 if slot.clip_path is None or slot.clip_duration <= 0:
+                    logger.warning(
+                        f"Sentence {slot.index} dropped from output: no audio clip "
+                        f"(window {slot.window_start:.2f}–{slot.window_end:.2f}s)"
+                    )
                     fitted_clips.append((slot.effective_start, None))
                     continue
 
                 effective_window = slot.effective_end - slot.effective_start
                 if effective_window <= 0:
-                    fitted_clips.append((slot.effective_start, None))
-                    continue
+                    base_window = slot.window_end - slot.window_start
+                    if base_window <= 0:
+                        # Truly degenerate (zero-width SRT segment); play at
+                        # natural speed from window_start. May overrun the next
+                        # slot, but the alternative is total silence.
+                        logger.warning(
+                            f"Sentence {slot.index}: zero-width window, "
+                            f"playing at natural speed"
+                        )
+                        fitted_clips.append((slot.window_start, slot.clip_path))
+                        continue
+                    logger.warning(
+                        f"Sentence {slot.index}: effective window collapsed "
+                        f"({effective_window:.2f}s), falling back to base "
+                        f"window ({base_window:.2f}s)"
+                    )
+                    slot.effective_start = slot.window_start
+                    slot.effective_end = slot.window_end
+                    effective_window = base_window
 
                 speed_ratio = slot.clip_duration / effective_window
+
+                if speed_ratio > MAX_PLAYBACK_SPEED:
+                    logger.warning(
+                        f"Sentence {slot.index}: would need {speed_ratio:.1f}x "
+                        f"speedup ({slot.clip_duration:.1f}s in "
+                        f"{effective_window:.1f}s); capping at "
+                        f"{MAX_PLAYBACK_SPEED}x and letting audio overrun"
+                    )
+                    speed_ratio = MAX_PLAYBACK_SPEED
 
                 if speed_ratio > 1.05:
                     if speed_ratio > MAX_SAFE_SPEED_RATIO:
@@ -494,78 +550,128 @@ class TTSAssembler:
                     sentences_to_split.append((text, group_start, group_end))
 
                 if sentences_to_split:
-                    # Ask LLM to split all sentences in one batch call
+                    # Always returns a list — uses deterministic split on LLM failure
                     split_segments = await _llm_split_subtitles(
                         self._translator, sentences_to_split
                     )
-                    if split_segments:
-                        # Merge: keep non-shortened segments as-is,
-                        # replace shortened sentence groups with LLM-split segments
-                        final_segments: list[dict] = []
-                        shortened_ranges: set[int] = set()
-                        for _text, _start, _end, seg_indices in synth_items:
-                            if not _text or not seg_indices:
-                                continue
-                            original_concat = " ".join(
-                                segments[j].get("text", "") for j in seg_indices if j < len(segments)
-                            )
-                            if _text != original_concat:
-                                for j in seg_indices:
-                                    if j < len(segments):
-                                        shortened_ranges.add(j)
-
-                        split_iter = iter(split_segments)
-                        i = 0
-                        while i < len(segments):
-                            if i in shortened_ranges:
-                                # Find the full group
-                                group_indices = []
-                                for _text, _start, _end, seg_indices in synth_items:
-                                    if i in seg_indices:
-                                        group_indices = [j for j in seg_indices if j < len(segments)]
-                                        break
-                                # Get the LLM-split segments for this group
-                                try:
-                                    group_splits = next(split_iter)
-                                    final_segments.extend(group_splits)
-                                except StopIteration:
-                                    # Fallback: keep originals
-                                    for j in group_indices:
-                                        final_segments.append(segments[j])
-                                # Skip all indices in this group
-                                i = max(group_indices) + 1 if group_indices else i + 1
-                            else:
-                                final_segments.append({
-                                    "start": segments[i]["start"],
-                                    "end": segments[i]["end"],
-                                    "text": segments[i].get("text", ""),
-                                })
-                                i += 1
-
-                        write_srt(final_segments, srt_path)
-                        logger.info(
-                            f"Updated SRT with LLM-split segments: "
-                            f"{len(segments)} → {len(final_segments)} segments in {srt_path}"
+                    # Merge: keep non-shortened segments as-is,
+                    # replace shortened sentence groups with the split segments
+                    final_segments: list[dict] = []
+                    shortened_ranges: set[int] = set()
+                    for _text, _start, _end, seg_indices in synth_items:
+                        if not _text or not seg_indices:
+                            continue
+                        original_concat = " ".join(
+                            segments[j].get("text", "") for j in seg_indices if j < len(segments)
                         )
+                        if _text != original_concat:
+                            for j in seg_indices:
+                                if j < len(segments):
+                                    shortened_ranges.add(j)
+
+                    split_iter = iter(split_segments)
+                    i = 0
+                    while i < len(segments):
+                        if i in shortened_ranges:
+                            group_indices = []
+                            for _text, _start, _end, seg_indices in synth_items:
+                                if i in seg_indices:
+                                    group_indices = [j for j in seg_indices if j < len(segments)]
+                                    break
+                            try:
+                                group_splits = next(split_iter)
+                                final_segments.extend(group_splits)
+                            except StopIteration:
+                                for j in group_indices:
+                                    final_segments.append(segments[j])
+                            i = max(group_indices) + 1 if group_indices else i + 1
+                        else:
+                            final_segments.append({
+                                "start": segments[i]["start"],
+                                "end": segments[i]["end"],
+                                "text": segments[i].get("text", ""),
+                            })
+                            i += 1
+
+                    write_srt(final_segments, srt_path)
+                    logger.info(
+                        f"Updated SRT with split segments: "
+                        f"{len(segments)} → {len(final_segments)} segments in {srt_path}"
+                    )
 
         logger.info(f"Generated TTS track: {output_path}")
         return output_path
 
 
+def _naive_split_text(text: str, max_chars: int = 35) -> list[str]:
+    """Deterministic fallback splitter: break at punctuation, then word boundaries."""
+    text = text.strip()
+    if not text:
+        return []
+    if len(text) <= max_chars:
+        return [text]
+    parts = re.split(r"(?<=[,，.。!！?？;；:：])\s+", text)
+    parts = [p.strip() for p in parts if p.strip()]
+    out: list[str] = []
+    for p in parts:
+        if len(p) <= max_chars:
+            out.append(p)
+            continue
+        words = p.split()
+        cur = ""
+        for w in words:
+            if cur and len(cur) + 1 + len(w) > max_chars:
+                out.append(cur)
+                cur = w
+            else:
+                cur = f"{cur} {w}".strip()
+        if cur:
+            out.append(cur)
+    return out or [text]
+
+
+def _segments_from_chunks(
+    chunks: list[str], group_start: float, group_end: float
+) -> list[dict]:
+    """Distribute char-proportional timings across chunks."""
+    if not chunks:
+        return []
+    total_time = max(0.0, group_end - group_start)
+    total_chars = sum(len(t) for t in chunks) or 1
+    cursor = group_start
+    out: list[dict] = []
+    for k, seg_text in enumerate(chunks):
+        seg_time = total_time * (len(seg_text) / total_chars)
+        seg_start = round(cursor, 3)
+        seg_end = round(cursor + seg_time, 3) if k < len(chunks) - 1 else group_end
+        out.append({"start": seg_start, "end": seg_end, "text": seg_text})
+        cursor = seg_end
+    return out
+
+
+def _fallback_split_subtitles(
+    sentences: list[tuple[str, float, float]],
+) -> list[list[dict]]:
+    """Deterministic split used when the LLM call fails or returns garbage."""
+    return [
+        _segments_from_chunks(_naive_split_text(text) or [text], start, end)
+        for text, start, end in sentences
+    ]
+
+
 async def _llm_split_subtitles(
     translator,
     sentences: list[tuple[str, float, float]],
-) -> list[list[dict]] | None:
+) -> list[list[dict]]:
     """Ask LLM to split shortened sentences into subtitle-sized segments.
 
-    Args:
-        translator: LLMTranslator instance with _call_llm method.
-        sentences: List of (text, group_start, group_end) tuples.
-
-    Returns:
-        List of segment lists (one per sentence), where each segment is
-        {"start": float, "end": float, "text": str}. None on failure.
+    Always returns a list (one entry per input sentence). On LLM failure the
+    sentence is split deterministically at punctuation/word boundaries, so the
+    SRT can always be rewritten and stay in sync with the shortened audio.
     """
+    if not sentences:
+        return []
+
     lines = []
     for i, (text, start, end) in enumerate(sentences):
         lines.append(f"{i + 1}. [{start:.1f}s-{end:.1f}s] {text}")
@@ -590,23 +696,20 @@ async def _llm_split_subtitles(
 
     try:
         result = await translator._call_llm(system, user)
-        # Parse: sentences separated by blank lines, segments on individual lines
         blocks = [b.strip() for b in result.strip().split("\n\n") if b.strip()]
 
         if len(blocks) != len(sentences):
             logger.warning(
                 f"LLM split returned {len(blocks)} blocks for {len(sentences)} sentences, "
-                f"falling back"
+                f"using deterministic fallback"
             )
-            return None
+            return _fallback_split_subtitles(sentences)
 
         all_splits: list[list[dict]] = []
         for block, (text, group_start, group_end) in zip(blocks, sentences):
             seg_texts = [line.strip() for line in block.split("\n") if line.strip()]
-            # Remove any numbering prefixes like "1. " or "- "
-            cleaned = []
+            cleaned: list[str] = []
             for t in seg_texts:
-                import re
                 t = re.sub(r"^\d+[\.\)]\s*", "", t)
                 t = re.sub(r"^[-•]\s*", "", t)
                 t = t.strip()
@@ -614,20 +717,9 @@ async def _llm_split_subtitles(
                     cleaned.append(t)
 
             if not cleaned:
-                cleaned = [text]
+                cleaned = _naive_split_text(text) or [text]
 
-            # Distribute time proportionally by character count
-            total_time = group_end - group_start
-            total_chars = sum(len(t) for t in cleaned) or 1
-            cursor = group_start
-            group_segs: list[dict] = []
-            for k, seg_text in enumerate(cleaned):
-                seg_time = total_time * (len(seg_text) / total_chars)
-                seg_start = round(cursor, 3)
-                seg_end = round(cursor + seg_time, 3) if k < len(cleaned) - 1 else group_end
-                group_segs.append({"start": seg_start, "end": seg_end, "text": seg_text})
-                cursor = seg_end
-            all_splits.append(group_segs)
+            all_splits.append(_segments_from_chunks(cleaned, group_start, group_end))
 
         logger.info(
             f"LLM split {len(sentences)} sentences into "
@@ -636,8 +728,8 @@ async def _llm_split_subtitles(
         return all_splits
 
     except Exception as e:
-        logger.warning(f"LLM subtitle splitting failed: {e}")
-        return None
+        logger.warning(f"LLM subtitle splitting failed: {e} — using deterministic fallback")
+        return _fallback_split_subtitles(sentences)
 
 
 def _redistribute_slots(slots: list[SegmentSlot], video_duration: float) -> None:

@@ -347,6 +347,7 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
   }, [videoId]);
 
   // Export full video (auto-saves first, deletes old export)
+  const exportSseRef = useRef<EventSource | null>(null);
   const handleExport = useCallback(async () => {
     setIsExporting(true); setExportError(''); setExportDone(false);
     setExportProgress({ pct: 0, message: 'Starting...' });
@@ -355,13 +356,27 @@ export function SubtitleEditorPanel({ videoId, srtLanguages, defaultLang, ttsLis
       await deleteExport(videoId).catch(() => {});
       if (isDirty) { await handleSave(); }
       const { task_id } = await postExport(videoId, activeLang, selectedTtsFile, videoVol / 100, dubVol / 100);
-      subscribeSSE(task_id, (eventType, data) => {
+      exportSseRef.current?.close();
+      const es = subscribeSSE(task_id, (eventType, data) => {
         if (eventType === 'progress') setExportProgress({ pct: Math.round((data.progress as number) * 100), message: data.message as string });
-        else if (eventType === 'complete') { setIsExporting(false); setExportDone(true); setExportTimestamp(Date.now()); setExportProgress({ pct: 100, message: 'Export complete' }); onExportDone?.(); }
-        else if (eventType === 'error') { setIsExporting(false); setExportError(data.message as string); }
+        else if (eventType === 'complete') {
+          setIsExporting(false); setExportDone(true); setExportTimestamp(Date.now());
+          setExportProgress({ pct: 100, message: 'Export complete' });
+          onExportDone?.();
+          exportSseRef.current?.close();
+          exportSseRef.current = null;
+        }
+        else if (eventType === 'error') {
+          setIsExporting(false); setExportError(data.message as string);
+          exportSseRef.current?.close();
+          exportSseRef.current = null;
+        }
       });
+      exportSseRef.current = es;
     } catch (e) { setIsExporting(false); setExportError(e instanceof Error ? e.message : 'Export failed'); }
   }, [videoId, activeLang, selectedTtsFile, videoVol, dubVol, isDirty, handleSave, onExportDone]);
+
+  useEffect(() => () => { exportSseRef.current?.close(); }, []);
 
   useEffect(() => { return () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }; }, [previewUrl]);
 

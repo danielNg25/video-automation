@@ -294,8 +294,24 @@ class Pipeline:
 
             # --- Stage: Process — skipped, export via Video Studio ---
             if not state.is_stage_complete("process"):
+                # Persist blur preference so Video Studio export respects it
+                blur_enabled = options.get("blur_enabled", True)
+                style_path = Path("data/srt") / f"{video_id}_style.json"
+                if style_path.exists():
+                    import json as _json
+                    existing = _json.loads(style_path.read_text())
+                    existing["blur_enabled"] = blur_enabled
+                    style_path.write_text(_json.dumps(existing, indent=2))
+                else:
+                    import json as _json
+                    style_path.parent.mkdir(parents=True, exist_ok=True)
+                    style_path.write_text(_json.dumps({"blur_enabled": blur_enabled}, indent=2))
+
                 emit("process", 0.90, "Processing skipped — use Video Studio to export")
-                state.mark_stage_complete("process", {"note": "export via Video Studio"})
+                state.mark_stage_complete("process", {
+                    "note": "export via Video Studio",
+                    "blur_enabled": blur_enabled,
+                })
 
             # --- Stage: Upload — skipped, not yet implemented ---
             if not state.is_stage_complete("upload"):
