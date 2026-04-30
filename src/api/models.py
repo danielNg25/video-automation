@@ -59,6 +59,13 @@ class FullPipelineRequest(BaseModel):
     metadata: dict | None = None
     tts_profile: str | None = None  # e.g. "female-vi-natural" — if set, generates TTS dub
     blur_enabled: bool = True  # blur original subtitles before burn-in
+    # Per-request overrides for TTS/LLM, mirroring TTSRequest so the pipeline
+    # produces the same output as running TTS via the per-video flow.
+    tts_provider: str | None = None  # override profile's provider
+    tts_voice: str | None = None  # override voice id (e.g. ElevenLabs voice ID)
+    tts_api_key: str | None = None  # ElevenLabs/OpenAI/Google API key
+    llm_api_key: str | None = None  # for the TTS-shortening LLM
+    llm_backend: str | None = None  # deepseek, openai, anthropic
 
 
 class BatchPipelineRequest(BaseModel):
@@ -71,6 +78,11 @@ class BatchPipelineRequest(BaseModel):
     force: bool = False
     tts_profile: str | None = None  # e.g. "female-vi-natural" — if set, generates TTS dub
     blur_enabled: bool = True  # blur original subtitles before burn-in
+    tts_provider: str | None = None
+    tts_voice: str | None = None
+    tts_api_key: str | None = None
+    llm_api_key: str | None = None
+    llm_backend: str | None = None
 
 
 class PipelineHistoryEntry(BaseModel):
@@ -105,7 +117,10 @@ class ExportRequest(BaseModel):
     tts_file: str | None = None  # specific TTS filename to mix in
     video_volume: float = 1.0  # 0.0-2.0
     tts_volume: float = 1.0  # 0.0-2.0
-    resolution: str = "1080x1920"
+    # When None/empty, export at the source video's native resolution — no
+    # scale, no letterbox pad. Pass an explicit "WxH" to scale to that size
+    # (kept for callers that need a hard target like 1080x1920).
+    resolution: str | None = None
 
 
 class SaveSrtRequest(BaseModel):

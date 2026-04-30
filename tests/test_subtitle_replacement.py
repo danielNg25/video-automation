@@ -242,6 +242,81 @@ class TestSubtitleStyleMatcher:
         assert style["bold"] is True
         assert "font_size" in style
 
+    def test_horizontal_source_vertical_target_lands_in_video_area(self):
+        """Horizontal source (1024×576) exported at vertical (1080×1920):
+
+        Subtitle text must end up over the (letterboxed) source video, not in
+        the black padding bars. With force_original_aspect_ratio=decrease,
+        the source becomes 1080×608 inside the 1080×1920 canvas with
+        ~656px top/bottom black bars.
+        """
+        # Region at the bottom of the source video, exactly where subtitles live.
+        region = SubtitleRegion(x=54, y=404, width=655, height=152)
+        matcher = SubtitleStyleMatcher()
+        style = matcher.match_style(
+            region, video_width=1024, video_height=576,
+            output_width=1080, output_height=1920,
+        )
+
+        # Letterbox: scale = min(1080/1024, 1920/576) = 1.0546875
+        # scaled_h = 576 * 1.0546875 = 607.5 → 607
+        # pad_y = (1920 - 607) // 2 = 656
+        # video band lives in y ∈ [656, 1263]
+        # text bottom = ass_h - margin_v = 1920 - margin_v
+        # must be inside [656, 1263] for the text to land on the video.
+        text_bottom = 1920 - style["margin_v"]
+        assert 656 <= text_bottom <= 1263, (
+            f"Subtitle bottom y={text_bottom} not on video band [656, 1263]; "
+            f"would render in the black padding"
+        )
+        # Region is at the bottom of the source video: text uses bottom row
+        # alignment (1=left, 2=center, 3=right) — never the top row (7-9).
+        assert style["alignment"] in (1, 2, 3)
+
+    def test_match_style_at_source_resolution_is_identity(self):
+        """When output == source, scale=1 and pad=0; region stays in source
+        coords and the burned subtitle lands directly inside the OCR region.
+        Verifies the new default-to-source-resolution export path.
+        """
+        # Horizontal source — region at the bottom, slightly left of center.
+        region = SubtitleRegion(x=54, y=404, width=655, height=152)
+        matcher = SubtitleStyleMatcher()
+        style = matcher.match_style(
+            region, video_width=1024, video_height=576,
+            output_width=1024, output_height=576,
+        )
+
+        # Reconstruct the text bottom from the returned margin_v (alignment 1
+        # or 2 → bottom row → text_bottom = canvas_h - margin_v).
+        text_bottom = 576 - style["margin_v"]
+        # Must land inside the original subtitle region [404, 556].
+        assert 404 <= text_bottom <= 556, (
+            f"text_bottom={text_bottom} not inside region [404, 556]"
+        )
+        # Same for the vertical orientation.
+        region_v = SubtitleRegion(x=65, y=776, width=444, height=44)
+        style_v = matcher.match_style(
+            region_v, video_width=576, video_height=1024,
+            output_width=576, output_height=1024,
+        )
+        text_bottom_v = 1024 - style_v["margin_v"]
+        assert 776 <= text_bottom_v <= 820
+
+    def test_legacy_callers_unchanged(self):
+        """When output_width/height aren't supplied, falls back to the legacy
+        ASS_PLAY_RES_X/Y constants — preserves every old call site."""
+        region = SubtitleRegion(x=90, y=1550, width=900, height=80)
+        matcher = SubtitleStyleMatcher()
+
+        legacy = matcher.match_style(region, 1080, 1920)
+        explicit = matcher.match_style(
+            region, 1080, 1920, output_width=1080, output_height=1920,
+        )
+        # Same source dims as ASS canvas → identical output.
+        assert legacy["margin_v"] == explicit["margin_v"]
+        assert legacy["font_size"] == explicit["font_size"]
+        assert legacy["alignment"] == explicit["alignment"]
+
 
 # ── FFmpeg blur filter construction ───────────────────────────────
 
@@ -322,46 +397,44 @@ class TestBlurAndBurnCommand:
 
 
 class TestOCRMetadataPersistence:
-    def test_save_ocr_metadata_picks_largest_frame(self, tmp_path):
-        """Saves the largest single-frame bbox (no cross-frame union, no padding)."""
+    def test_save_ocr_metadata_unions_x_across_frames(self, tmp_path):
+        """X-extent is the union across frames so the longest subtitle line
+        is fully covered. y/height stays at the median (typical row)."""
         from src.transcriber.ocr import OCRTranscriber
 
         transcriber = OCRTranscriber()
-        # Three frames; frame 1 is the largest by area.
+        # Three frames at the same y/height but different widths:
+        # Frame 0: x ∈ [400, 600] (short subtitle)
+        # Frame 1: x ∈ [100, 980] (long subtitle — must be fully covered)
+        # Frame 2: x ∈ [300, 700] (medium subtitle)
         per_frame = [
-            # Frame 0 — short sub: 200×60 = 12_000
             [[[400, 1700], [600, 1700], [600, 1760], [400, 1760]]],
-            # Frame 1 — long sub: 880×60 = 52_800 (winner)
-            [[[100, 1560], [980, 1560], [980, 1620], [100, 1620]]],
-            # Frame 2 — medium: 400×60 = 24_000
-            [[[300, 1600], [700, 1600], [700, 1660], [300, 1660]]],
+            [[[100, 1700], [980, 1700], [980, 1760], [100, 1760]]],
+            [[[300, 1700], [700, 1700], [700, 1760], [300, 1760]]],
         ]
 
         srt_dir = tmp_path / "srt"
         transcriber._save_ocr_metadata(srt_dir, "test_vid", 1080, 1920, per_frame, 100)
 
-        meta = json.loads((srt_dir / "test_vid_ocr_meta.json").read_text())
-        assert meta["video_id"] == "test_vid"
-        assert meta["video_width"] == 1080
-        assert meta["video_height"] == 1920
-        # Frame 1 picked — bbox saved exactly, no padding.
-        assert meta["subtitle_region"] == {"x": 100, "y": 1560, "width": 880, "height": 60}
+        region = json.loads((srt_dir / "test_vid_ocr_meta.json").read_text())["subtitle_region"]
+        # Union x: 100..980 → x=100, w=880. Median y: 1700, median y_max: 1760 → h=60.
+        assert region == {"x": 100, "y": 1700, "width": 880, "height": 60}
 
-    def test_save_ocr_metadata_unions_within_frame(self, tmp_path):
-        """A frame with multi-line subs unions its own boxes (covers stacked text)."""
+    def test_save_ocr_metadata_median_y_skips_multi_line_outlier(self, tmp_path):
+        """A single multi-line wrap frame must not inflate the blur band's
+        height — median y_min / y_max ignores the outlier."""
         from src.transcriber.ocr import OCRTranscriber
 
         transcriber = OCRTranscriber()
-        # Frame 0 — single line, 880×60 = 52_800
-        # Frame 1 — TWO stacked lines (multi-line wrap):
-        #   line A: 600×60 at y=1500
-        #   line B: 700×60 at y=1580
-        #   union within frame: x∈[150,850], y∈[1500,1640] → 700×140 = 98_000 (winner)
+        # Frames 0..2: typical single-line subtitle at y ∈ [1700, 1760]
+        # Frame 3: multi-line wrap from y=1500 to y=1760 (much taller)
         per_frame = [
-            [[[100, 1560], [980, 1560], [980, 1620], [100, 1620]]],
+            [[[400, 1700], [800, 1700], [800, 1760], [400, 1760]]],
+            [[[400, 1700], [800, 1700], [800, 1760], [400, 1760]]],
+            [[[400, 1700], [800, 1700], [800, 1760], [400, 1760]]],
             [
-                [[200, 1500], [800, 1500], [800, 1560], [200, 1560]],
-                [[150, 1580], [850, 1580], [850, 1640], [150, 1640]],
+                [[400, 1500], [800, 1500], [800, 1560], [400, 1560]],
+                [[400, 1700], [800, 1700], [800, 1760], [400, 1760]],
             ],
         ]
 
@@ -369,8 +442,12 @@ class TestOCRMetadataPersistence:
         transcriber._save_ocr_metadata(srt_dir, "vid", 1080, 1920, per_frame, 50)
 
         region = json.loads((srt_dir / "vid_ocr_meta.json").read_text())["subtitle_region"]
-        # Within-frame union of frame 1 (the larger-area frame).
-        assert region == {"x": 150, "y": 1500, "width": 700, "height": 140}
+        # Median y_min over [1500, 1700, 1700, 1700] → 1700.
+        # Median y_max over [1560, 1760, 1760, 1760] → 1760.
+        # Height stays 60 (single-line) instead of being inflated by the
+        # multi-line frame.
+        assert region["y"] == 1700
+        assert region["height"] == 60
 
     def test_save_no_boxes(self, tmp_path):
         """Does not save metadata when there are no subtitle boxes."""

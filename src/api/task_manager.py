@@ -533,10 +533,13 @@ class TaskManager:
         llm_api_key: str | None = None,
         llm_backend: str | None = None,
     ):
-        """Execute a TTS generation task in the background."""
-        from src.processor.subtitle import parse_srt
-        from src.tts import get_tts_provider, load_voice_profiles
-        from src.tts.assembler import TTSAssembler
+        """Execute a TTS generation task in the background.
+
+        Thin wrapper around `src.tts.runner.run_tts_track`: this handles the
+        task-state transitions and SSE emits, but the actual TTS work is the
+        same shared function the full pipeline calls.
+        """
+        from src.tts.runner import run_tts_track
 
         task = self.tasks[task_id]
         task.status = "running"
@@ -549,156 +552,31 @@ class TaskManager:
             if not video_info:
                 raise ValueError(f"Video {video_id} not found")
 
-            # Load voice profiles
-            profiles_data = load_voice_profiles(config)
-            profiles = profiles_data.get("profiles", {})
-            if voice_profile_name not in profiles:
-                raise ValueError(
-                    f"Voice profile '{voice_profile_name}' not found. "
-                    f"Available: {list(profiles.keys())}"
-                )
-            voice_profile = profiles[voice_profile_name]
-
-            # Load SRT segments
-            srt_dir = Path("data/srt")
-            srt_path = srt_dir / f"{video_id}_{language}.srt"
-            if not srt_path.exists():
-                raise FileNotFoundError(
-                    f"SRT not found: {srt_path}. "
-                    f"Translate the video to '{language}' first."
-                )
-
-            segments = parse_srt(srt_path)
-            if not segments:
-                raise ValueError(f"SRT file is empty: {srt_path}")
-
-            # Get video duration
-            from src.utils.metadata import extract_metadata_from_file
-
-            video_path = Path(video_info.file_path)
-            file_meta = extract_metadata_from_file(video_path)
-            video_duration = video_info.duration or file_meta.get("duration", 0.0)
-
-            # Apply overrides
-            if voice_override:
-                voice_profile = {**voice_profile, "voice": voice_override}
-
-            # Create TTS provider — inject per-request API key if provided
-            provider_name = provider_override or voice_profile.get("provider", "edge")
-            effective_config = config
-            if api_key_override:
-                tts_section = dict(config.get("tts", {}))
-                if provider_name == "elevenlabs":
-                    tts_section["elevenlabs_api_key"] = api_key_override
-                elif provider_name == "openai":
-                    tts_section["openai_api_key"] = api_key_override
-                elif provider_name == "google":
-                    tts_section["google_api_key"] = api_key_override
-                effective_config = {**config, "tts": tts_section}
-            tts_provider = get_tts_provider(effective_config, provider=provider_name)
-
-            # Progress callback
-            total_segments = len(segments)
-
             def on_progress(current: int, total: int, message: str):
                 pct = current / total if total > 0 else 0.0
                 task.progress = pct
                 task.message = message
                 self._emit(task_id, "progress", {"progress": pct, "message": message})
 
-            task.message = f"Generating TTS ({total_segments} segments)..."
-            self._emit(
-                task_id, "progress",
-                {"progress": 0.05, "message": f"Generating TTS ({total_segments} segments)..."},
-            )
-
-            # Generate full track
-            tts_dir = Path("data/tts")
-            tts_dir.mkdir(parents=True, exist_ok=True)
-            # Include provider and profile in filename to keep multiple dubs
-            safe_profile = voice_profile_name.replace("/", "-").replace(" ", "-")
-            output_path = tts_dir / f"{video_id}_{language}_{provider_name}_{safe_profile}.wav"
-
-            # Build optional LLM translator for text shortening (Phase 2)
-            # Priority: per-request params > config > env vars
-            translator = None
-            try:
-                import os
-                from src.translator.llm import LLMTranslator
-                trans_cfg = config.get("translation", {})
-                logger.info(f"TTS shortening init: llm_api_key={'yes' if llm_api_key else 'no'}, llm_backend={llm_backend}, env_deepseek={'yes' if os.environ.get('DEEPSEEK_API_KEY') else 'no'}")
-                backend = llm_backend or trans_cfg.get("backend", "deepseek")
-                api_key = (
-                    llm_api_key
-                    or trans_cfg.get("api_key")
-                    or os.environ.get("DEEPSEEK_API_KEY")
-                    or os.environ.get("ANTHROPIC_API_KEY")
-                    or os.environ.get("OPENAI_API_KEY")
-                )
-                base_url = trans_cfg.get("base_url")
-                if backend == "deepseek" and not base_url:
-                    base_url = "https://api.deepseek.com/v1"
-                if api_key:
-                    # Use correct model for the backend — config model may be for a different provider
-                    default_models = {"deepseek": "deepseek-chat", "anthropic": "claude-sonnet-4-20250514", "openai": "gpt-4o-mini"}
-                    model = default_models.get(backend, trans_cfg.get("model"))
-                    translator = LLMTranslator(
-                        backend=backend,
-                        model=model,
-                        api_key=api_key,
-                        base_url=base_url,
-                        temperature=0.3,
-                    )
-                    logger.info(f"TTS text shortening enabled (backend={backend}, model={model}, base_url={base_url})")
-                else:
-                    logger.info("TTS text shortening disabled (no API key found)")
-            except Exception as e:
-                logger.warning(f"Could not init translator for TTS shortening: {e}")
-
-            # Build LLM caller for sentence boundary detection
-            llm_caller = None
-            if translator:
-                llm_caller = translator._call_llm
-
-            assembler = TTSAssembler(translator=translator)
-            await assembler.generate_full_track(
-                provider=tts_provider,
-                segments=segments,
-                voice_profile=voice_profile,
-                video_duration=video_duration,
-                output_path=output_path,
+            result = await run_tts_track(
+                video_id=video_id,
+                video_path=Path(video_info.file_path),
+                language=language,
+                voice_profile_name=voice_profile_name,
+                config=config,
+                canonical_duration=video_info.duration,
+                provider_override=provider_override,
+                voice_override=voice_override,
+                api_key_override=api_key_override,
+                llm_api_key=llm_api_key,
+                llm_backend=llm_backend,
                 on_progress=on_progress,
-                merge_sentences=True,
-                llm_caller=llm_caller,
-                srt_path=srt_path,
             )
-
-            # Get output duration
-            import json as _json
-            import subprocess
-
-            try:
-                probe = subprocess.run(
-                    ["ffprobe", "-v", "quiet", "-print_format", "json",
-                     "-show_format", str(output_path)],
-                    capture_output=True, text=True, timeout=10,
-                )
-                tts_duration = float(
-                    _json.loads(probe.stdout).get("format", {}).get("duration", 0)
-                )
-            except Exception:
-                tts_duration = 0.0
 
             task.status = "completed"
             task.progress = 1.0
             task.message = "TTS generation complete"
-            task.result = {
-                "video_id": video_id,
-                "language": language,
-                "audio_path": str(output_path),
-                "duration": tts_duration,
-                "segment_count": total_segments,
-            }
+            task.result = {"video_id": video_id, **result}
             self._emit(task_id, "complete", task.result)
 
         except Exception as e:

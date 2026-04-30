@@ -487,18 +487,27 @@ class OCRTranscriber(BaseTranscriber):
         subtitle_boxes_per_frame: list[list[list]],
         frames_analyzed: int,
     ) -> None:
-        """Save OCR metadata with the largest single-frame subtitle bbox.
+        """Save OCR metadata: x extent unions across frames; y/height is median.
 
-        For each analyzed frame, unions the subtitle boxes within that one
-        frame (covering multi-line subs). Among all frames, picks the bbox
-        with the largest area and saves it exactly — no padding, no
-        cross-frame union — so the blur covers exactly one real subtitle.
+        Two competing requirements:
+          - The blur must cover the *longest* subtitle line that ever appears
+            (otherwise the original Chinese leaks out the sides on long-text
+            frames). → use UNION of x-extents across frames.
+          - The blur must NOT be vertically inflated by occasional multi-line
+            wrap frames (otherwise the band is way taller than typical
+            subtitles and the new burned text looks wrong). → use MEDIAN of
+            y_min and y_max across frames.
+
+        Each frame contributes one bbox computed as the within-frame union of
+        all subtitle-classified text boxes (so multi-line subs are covered as
+        a single block on the frames that have them).
         """
         if not subtitle_boxes_per_frame:
             logger.info("No subtitle boxes collected — skipping OCR metadata save")
             return
 
-        best: tuple[int, int, int, int, int] | None = None  # (area, x, y, w, h)
+        # (x_min, x_max, y_min, y_max) per frame.
+        records: list[tuple[int, int, int, int]] = []
         for frame_bboxes in subtitle_boxes_per_frame:
             xs: list[float] = []
             ys: list[float] = []
@@ -510,21 +519,39 @@ class OCRTranscriber(BaseTranscriber):
                     ys.append(float(point[1]))
             if not xs or not ys:
                 continue
-            x = max(0, int(min(xs)))
-            y = max(0, int(min(ys)))
-            w = min(video_width, int(max(xs))) - x
-            h = min(video_height, int(max(ys))) - y
-            if w <= 0 or h <= 0:
+            x_min = max(0, int(min(xs)))
+            x_max = min(video_width, int(max(xs)))
+            y_min = max(0, int(min(ys)))
+            y_max = min(video_height, int(max(ys)))
+            if x_max <= x_min or y_max <= y_min:
                 continue
-            area = w * h
-            if best is None or area > best[0]:
-                best = (area, x, y, w, h)
+            records.append((x_min, x_max, y_min, y_max))
 
-        if best is None:
+        if not records:
             logger.info("No usable subtitle bboxes — skipping OCR metadata save")
             return
 
-        _, x, y, w, h = best
+        # Horizontal: union — span enough to cover every frame's subtitle.
+        union_x_min = min(r[0] for r in records)
+        union_x_max = max(r[1] for r in records)
+
+        # Vertical: median of each edge — tracks typical subtitle position
+        # without being dragged tall by multi-line frames.
+        sorted_y_min = sorted(r[2] for r in records)
+        sorted_y_max = sorted(r[3] for r in records)
+        median_y_min = sorted_y_min[len(sorted_y_min) // 2]
+        median_y_max = sorted_y_max[len(sorted_y_max) // 2]
+
+        x = union_x_min
+        y = median_y_min
+        w = union_x_max - union_x_min
+        h = median_y_max - median_y_min
+        if w <= 0 or h <= 0:
+            logger.info(
+                f"Aggregated region degenerate (w={w}, h={h}) — skipping save"
+            )
+            return
+
         region = {"x": x, "y": y, "width": w, "height": h}
 
         meta = {
@@ -541,9 +568,9 @@ class OCRTranscriber(BaseTranscriber):
             json.dump(meta, f, indent=2)
 
         logger.info(
-            f"Saved OCR metadata: largest-frame region x={region['x']}, "
-            f"y={region['y']}, w={region['width']}, h={region['height']} "
-            f"(picked from {len(subtitle_boxes_per_frame)} frames with subs) "
+            f"Saved OCR metadata: x={region['x']} y={region['y']} "
+            f"w={region['width']} h={region['height']} "
+            f"(union-x + median-y/h across {len(records)} frame bboxes) "
             f"→ {meta_path.name}"
         )
 

@@ -76,6 +76,11 @@ async def start_full_pipeline(request: FullPipelineRequest):
             config=config,
             tts_profile=request.tts_profile,
             blur_enabled=request.blur_enabled,
+            tts_provider=request.tts_provider,
+            tts_voice=request.tts_voice,
+            tts_api_key=request.tts_api_key,
+            llm_api_key=request.llm_api_key,
+            llm_backend=request.llm_backend,
         )
     )
     return TaskResponse(task_id=task.task_id, status=task.status)
@@ -93,6 +98,11 @@ async def _run_full_pipeline(
     translation_override: dict | None = None,
     tts_profile: str | None = None,
     blur_enabled: bool = True,
+    tts_provider: str | None = None,
+    tts_voice: str | None = None,
+    tts_api_key: str | None = None,
+    llm_api_key: str | None = None,
+    llm_backend: str | None = None,
 ):
     """Execute the full pipeline as a background task with SSE events."""
     from src.pipeline import Pipeline
@@ -125,6 +135,11 @@ async def _run_full_pipeline(
             "translate_profile": translate_profile,
             "tts_profile": tts_profile,
             "blur_enabled": blur_enabled,
+            "tts_provider": tts_provider,
+            "tts_voice": tts_voice,
+            "tts_api_key": tts_api_key,
+            "llm_api_key": llm_api_key,
+            "llm_backend": llm_backend,
         }
 
         result = await pipeline.process_single(url, platforms, options, emit)
@@ -252,6 +267,11 @@ async def start_batch_pipeline(request: BatchPipelineRequest):
             config=config,
             tts_profile=request.tts_profile,
             blur_enabled=request.blur_enabled,
+            tts_provider=request.tts_provider,
+            tts_voice=request.tts_voice,
+            tts_api_key=request.tts_api_key,
+            llm_api_key=request.llm_api_key,
+            llm_backend=request.llm_backend,
         )
     )
 
@@ -275,6 +295,11 @@ async def _run_batch_pipeline(
     config: dict,
     tts_profile: str | None = None,
     blur_enabled: bool = True,
+    tts_provider: str | None = None,
+    tts_voice: str | None = None,
+    tts_api_key: str | None = None,
+    llm_api_key: str | None = None,
+    llm_backend: str | None = None,
 ):
     """Execute batch pipeline with concurrency control."""
     from src.pipeline import Pipeline
@@ -302,6 +327,11 @@ async def _run_batch_pipeline(
                 config=config,
                 tts_profile=tts_profile,
                 blur_enabled=blur_enabled,
+                tts_provider=tts_provider,
+                tts_voice=tts_voice,
+                tts_api_key=tts_api_key,
+                llm_api_key=llm_api_key,
+                llm_backend=llm_backend,
             )
             child_task = tm.tasks.get(child_task_id)
             if child_task and child_task.status == "failed":

@@ -121,13 +121,24 @@ def break_long_lines(text: str, max_chars: int = 40) -> str:
     return "\n".join(result_lines)
 
 
-def srt_to_ass(srt_path: Path, style_config: dict, output_path: Path) -> Path:
+def srt_to_ass(
+    srt_path: Path,
+    style_config: dict,
+    output_path: Path,
+    play_res_x: int = 1080,
+    play_res_y: int = 1920,
+) -> Path:
     """Convert SRT to styled ASS format.
 
     Args:
         srt_path: Path to source SRT file.
         style_config: Style dict with font_name, font_size, primary_color, etc.
         output_path: Path for output ASS file.
+        play_res_x: ASS canvas width. Should match the FINAL OUTPUT width so
+            ffmpeg's `ass=` filter maps 1:1 to output pixels. Default 1080
+            preserves callers that haven't been updated.
+        play_res_y: ASS canvas height. Should match the FINAL OUTPUT height.
+            Default 1920 preserves callers that haven't been updated.
 
     Returns:
         Path to generated ASS file.
@@ -170,8 +181,8 @@ def srt_to_ass(srt_path: Path, style_config: dict, output_path: Path) -> Path:
     header = (
         "[Script Info]\n"
         "ScriptType: v4.00+\n"
-        "PlayResX: 1080\n"
-        "PlayResY: 1920\n"
+        f"PlayResX: {play_res_x}\n"
+        f"PlayResY: {play_res_y}\n"
         "WrapStyle: 0\n"
         "\n"
         "[V4+ Styles]\n"
@@ -249,8 +260,10 @@ def generate_subtitle_background_images(
     font_name = style_config.get("font_name", "Arial")
     bold = style_config.get("bold", True)
 
-    # Scale font from PlayRes (1920) to target
-    scaled_font = int(font_size * target_height / 1920)
+    # font_size and margin_v are now in OUTPUT-pixel coords (the ASS canvas
+    # equals the output via srt_to_ass(play_res_x/y) and SubtitleStyleMatcher).
+    # No additional scaling needed.
+    scaled_font = max(1, int(font_size))
     pad_x = max(6, int(scaled_font * 0.15))
     pad_y = max(6, int(scaled_font * 0.2))
 
@@ -297,12 +310,11 @@ def generate_subtitle_background_images(
         # Center horizontally
         x = (target_width - img_w) // 2
         # Vertical: center the PNG on the ASS text center.
-        # ASS alignment 2: text bottom = PlayResY - MarginV, center = bottom - fontSize/2
-        scaled_margin = int(margin_v * target_height / 1920)
+        # margin_v is in output-pixel coords (same as the ASS canvas).
         if alignment in (1, 2, 3):  # bottom
-            text_center_y = target_height - scaled_margin - scaled_font // 2
+            text_center_y = target_height - margin_v - scaled_font // 2
         elif alignment in (7, 8, 9):  # top
-            text_center_y = scaled_margin + scaled_font // 2
+            text_center_y = margin_v + scaled_font // 2
         else:  # middle
             text_center_y = target_height // 2
         y = text_center_y - img_h // 2

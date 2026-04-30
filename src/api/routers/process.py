@@ -13,6 +13,9 @@ from starlette.responses import FileResponse
 
 from src.api.deps import get_config, get_data_dir, get_task_manager
 from src.api.models import ExportRequest, ProcessRequest, ProcessResult, TaskResponse
+from src.utils.logger import setup_logger
+
+logger = setup_logger(__name__)
 
 router = APIRouter()
 
@@ -179,17 +182,40 @@ def _run_export_ffmpeg(
     tts_path: Path | None,
     output_path: Path,
     style: dict,
-    resolution: str,
+    resolution: str | None,
     video_volume: float,
     tts_volume: float,
     seek_seconds: float | None = None,
     duration_seconds: float | None = None,
     video_id: str | None = None,
 ) -> None:
-    """Run ffmpeg export with optional subtitles, blur, and TTS mixing."""
+    """Run ffmpeg export with optional subtitles, blur, and TTS mixing.
+
+    When `resolution` is None or empty, the output uses the source video's
+    native dimensions — no scale, no letterbox pad. Blur, burned subtitles,
+    and rounded-rect background PNGs all share the source coordinate space,
+    so positioning is exact. Pass an explicit "WxH" only when a caller needs
+    a hard target (e.g. a TikTok-mandated 1080×1920).
+    """
     from src.processor.ffmpeg import FFmpegProcessor
 
-    w, h = resolution.split("x")
+    proc = FFmpegProcessor()
+    info = proc.get_video_info(video_path)
+    src_w, src_h = info["width"], info["height"]
+
+    if not resolution:
+        w, h = src_w, src_h
+    elif "x" in resolution:
+        ws, hs = resolution.split("x", 1)
+        if not (ws.isdigit() and hs.isdigit()):
+            raise ValueError(
+                f"Invalid resolution {resolution!r}; both W and H must be integers"
+            )
+        w, h = int(ws), int(hs)
+    else:
+        raise ValueError(
+            f"Invalid resolution {resolution!r}; expected WxH e.g. 1080x1920"
+        )
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Auto-detect blur region from OCR metadata (respects saved blur_enabled flag)
@@ -203,28 +229,61 @@ def _run_export_ffmpeg(
             blur_strength = style.get("blur_strength", 15)
             blur_filter = FFmpegProcessor._build_blur_filter(region, blur_strength=blur_strength, blur_mode=blur_mode)
 
-            # Apply style matching from detected region
+            # Apply style matching. Pass output dims so the matcher applies
+            # the same scale + letterbox-pad math the video goes through. When
+            # output == source (the new default), scale=1 and pad=0, so the
+            # region passes through unchanged in source coords.
             from src.processor.style_matcher import SubtitleStyleMatcher
-            proc = FFmpegProcessor()
-            info = proc.get_video_info(video_path)
             matcher = SubtitleStyleMatcher()
-            matched = matcher.match_style(region, info["width"], info["height"], style)
+            matched = matcher.match_style(
+                region, src_w, src_h, style,
+                output_width=int(w), output_height=int(h),
+            )
             style = {**style, **matched}
 
-    # Build video filter
-    scale_pad = f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2"
+    # Build video filter. When output equals source we skip scale+pad entirely
+    # so blur, burned subtitle, and rounded-rect bg PNGs all share one coord
+    # space (the source). libx264/yuv420p needs even dims, so on the rare
+    # odd-source case we crop down to the nearest even pair.
+    if (w, h) == (src_w, src_h):
+        if w % 2 == 0 and h % 2 == 0:
+            scale_pad = "null"
+        else:
+            even_w, even_h = w - (w % 2), h - (h % 2)
+            scale_pad = f"crop={even_w}:{even_h}:0:0"
+            w, h = even_w, even_h
+    else:
+        scale_pad = (
+            f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
+            f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2"
+        )
 
     ass_path = None
     bg_images = None
     if subtitle_path and subtitle_path.exists():
         from src.processor.subtitle import srt_to_ass, generate_subtitle_background_images
         ass_path = subtitle_path.with_suffix(".export.ass")
-        srt_to_ass(subtitle_path, style, ass_path)
+        # Use the EXPORT resolution as the ASS canvas so ass=… maps 1:1 to
+        # output pixels. Combined with style_matcher's letterbox-aware coords
+        # this puts the burned subtitle directly over the blurred area.
+        srt_to_ass(subtitle_path, style, ass_path, play_res_x=int(w), play_res_y=int(h))
         # Generate rounded-rect background PNGs
         bg_dir = output_path.parent / "bg_tmp"
         bg_images = generate_subtitle_background_images(
             subtitle_path, style, bg_dir, int(w), int(h),
         )
+        # Treat an empty list the same as None — building an overlay chain
+        # with zero PNG inputs produces a malformed filter graph.
+        if not bg_images:
+            bg_images = None
+        else:
+            # Drop any entry whose PNG didn't actually land on disk; an empty
+            # `-i path` arg or a missing file will silently kill the whole
+            # filter chain (libx264 sees EOF before getting any frames).
+            bg_images = [
+                img for img in bg_images
+                if img.get("path") and Path(img["path"]).exists()
+            ] or None
     use_subs_filter = ass_path is not None
 
     has_tts = tts_path and tts_path.exists()
@@ -289,6 +348,15 @@ def _run_export_ffmpeg(
             str(intermediate),
         ]
 
+    logger.info(
+        "Export step 1 cmd: ffmpeg ... %d args, filter_complex/vf len=%d",
+        len(cmd1),
+        len(cmd1[cmd1.index("-filter_complex") + 1])
+        if "-filter_complex" in cmd1
+        else (
+            len(cmd1[cmd1.index("-vf") + 1]) if "-vf" in cmd1 else 0
+        ),
+    )
     result = subprocess.run(cmd1, capture_output=True, text=True, timeout=600)
 
     # Clean up background PNG temp dir
@@ -298,7 +366,14 @@ def _run_export_ffmpeg(
         shutil.rmtree(bg_dir, ignore_errors=True)
 
     if result.returncode != 0:
-        raise RuntimeError(f"Export failed: {result.stderr[-500:]}")
+        # Surface the full command + tail of stderr so the actual ffmpeg
+        # complaint is debuggable. Without this you only see the last 500
+        # chars of stderr with no context.
+        logger.error("ffmpeg export step 1 failed.\nCommand: %s\nStderr (tail):\n%s",
+                     " ".join(cmd1), result.stderr[-1500:])
+        raise RuntimeError(
+            f"Export failed (rc={result.returncode}): {result.stderr[-800:]}"
+        )
 
     # Step 2: Mix TTS audio if needed
     if has_tts:
@@ -327,7 +402,11 @@ def _run_export_ffmpeg(
         result = subprocess.run(cmd2, capture_output=True, text=True, timeout=600)
         intermediate.unlink(missing_ok=True)
         if result.returncode != 0:
-            raise RuntimeError(f"Audio mix failed: {result.stderr[-500:]}")
+            logger.error("ffmpeg audio-mix step 2 failed.\nCommand: %s\nStderr (tail):\n%s",
+                         " ".join(cmd2), result.stderr[-1500:])
+            raise RuntimeError(
+                f"Audio mix failed (rc={result.returncode}): {result.stderr[-800:]}"
+            )
 
 
 @router.post("/api/videos/{video_id}/export", response_model=TaskResponse)

@@ -314,6 +314,89 @@ class TestShortenTextsBatchFloor:
         assert out[0] == candidate
 
 
+# ── Shared TTS runner (pipeline ↔ per-video parity) ──
+
+
+class TestRunTtsTrack:
+    """Lock the contract that pipeline & per-video flows hit the same code path."""
+
+    def test_default_model_picks_backend_aware_default(self):
+        """Bug fix: pipeline previously hardcoded model='deepseek-chat' regardless
+        of backend, causing API calls to anthropic/openai to fail and the
+        translator to silently disappear."""
+        from src.tts.runner import _DEFAULT_LLM_MODELS, _build_llm_translator
+
+        captured = {}
+
+        class FakeTranslator:
+            def __init__(self, **kw):
+                captured.update(kw)
+
+        # Patch LLMTranslator inside the module so _build_llm_translator
+        # constructs our fake.
+        import src.tts.runner as runner_mod
+        original = __import__("src.translator.llm", fromlist=["LLMTranslator"]).LLMTranslator
+
+        # Use direct monkey-patch on the imported symbol the helper uses
+        with patch.object(runner_mod, "_build_llm_translator", wraps=runner_mod._build_llm_translator):
+            with patch("src.translator.llm.LLMTranslator", FakeTranslator):
+                t = runner_mod._build_llm_translator(
+                    {"translation": {}}, llm_api_key="k", llm_backend="anthropic"
+                )
+        assert t is not None
+        assert captured["backend"] == "anthropic"
+        assert captured["model"] == _DEFAULT_LLM_MODELS["anthropic"]
+        assert captured["api_key"] == "k"
+
+        # OpenAI gets gpt-4o-mini, deepseek gets deepseek-chat
+        captured.clear()
+        with patch("src.translator.llm.LLMTranslator", FakeTranslator):
+            runner_mod._build_llm_translator(
+                {"translation": {}}, llm_api_key="k", llm_backend="openai"
+            )
+        assert captured["model"] == _DEFAULT_LLM_MODELS["openai"]
+
+    def test_per_request_llm_key_overrides_env(self, monkeypatch):
+        """Per-request llm_api_key must win over env vars (and config)."""
+        import src.tts.runner as runner_mod
+
+        captured = {}
+
+        class FakeTranslator:
+            def __init__(self, **kw):
+                captured.update(kw)
+
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "from-env")
+        cfg = {"translation": {"api_key": "from-config", "backend": "deepseek"}}
+
+        with patch("src.translator.llm.LLMTranslator", FakeTranslator):
+            runner_mod._build_llm_translator(
+                cfg, llm_api_key="from-request", llm_backend=None
+            )
+        assert captured["api_key"] == "from-request"
+
+    def test_no_key_anywhere_returns_none(self, monkeypatch):
+        import src.tts.runner as runner_mod
+
+        for var in ("DEEPSEEK_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
+            monkeypatch.delenv(var, raising=False)
+        result = runner_mod._build_llm_translator(
+            {}, llm_api_key=None, llm_backend=None
+        )
+        assert result is None
+
+    def test_canonical_output_filename(self, tmp_path):
+        from src.tts.runner import tts_output_path
+
+        # Same convention as the per-video path uses.
+        p = tts_output_path(tmp_path, "vid123", "vi", "elevenlabs", "female-vi-natural")
+        assert p == tmp_path / "vid123_vi_elevenlabs_female-vi-natural.wav"
+
+        # Slashes/spaces in profile name are sanitized.
+        p2 = tts_output_path(tmp_path, "v", "en", "edge", "my profile/name")
+        assert p2.name == "v_en_edge_my-profile-name.wav"
+
+
 # ── FFmpeg audio mix command tests ──
 
 

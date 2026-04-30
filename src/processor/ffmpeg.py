@@ -547,6 +547,12 @@ class FFmpegProcessor:
           - pixelate: crop → scale down → scale up (nearest neighbor) → overlay
         """
         x, y, w, h = region.x, region.y, region.width, region.height
+        # Round crop dimensions DOWN to even numbers. yuv420p requires both
+        # width and height to be even because the chroma planes are subsampled
+        # 2x; an odd crop input produces "failed to configure input pad on
+        # Parsed_boxblur" / scale errors with no other useful diagnostic.
+        w_even = max(2, w - (w % 2))
+        h_even = max(2, h - (h % 2))
 
         if blur_mode == "fill":
             # drawbox directly on the video
@@ -559,19 +565,22 @@ class FFmpegProcessor:
             )
         elif blur_mode == "pixelate":
             # Crop region → scale down to ~10px wide → scale back up with neighbor → overlay
-            scale_down_w = max(2, w // 10)
-            scale_down_h = max(2, h // 10)
+            scale_down_w = max(2, w_even // 10)
+            scale_down_h = max(2, h_even // 10)
             return (
-                f"[0:v]crop={w}:{h}:{x}:{y},"
+                f"[0:v]crop={w_even}:{h_even}:{x}:{y},"
                 f"scale={scale_down_w}:{scale_down_h},"
-                f"scale={w}:{h}:flags=neighbor[blur];"
+                f"scale={w_even}:{h_even}:flags=neighbor[blur];"
                 f"[0:v][blur]overlay={x}:{y}[blurred]"
             )
         else:
-            # Default: boxblur
-            strength = max(1, blur_strength)
+            # Default: boxblur. Each axis radius must be < (dim/2) on its
+            # plane; chroma planes are dim/2 in yuv420p, so the safe cap is
+            # (min(w,h)/2) - 1 ≈ floor((min/4) - 1) to also satisfy chroma.
+            chroma_cap = max(1, (min(w_even, h_even) // 4) - 1)
+            strength = max(1, min(blur_strength, chroma_cap))
             return (
-                f"[0:v]crop={w}:{h}:{x}:{y},"
+                f"[0:v]crop={w_even}:{h_even}:{x}:{y},"
                 f"boxblur={strength}:{strength}[blur];"
                 f"[0:v][blur]overlay={x}:{y}[blurred]"
             )

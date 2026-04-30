@@ -216,6 +216,13 @@ export function postPipeline(
   translationOverride?: { backend: string; model: string; api_key?: string; base_url?: string },
   ttsProfile?: string,
   blurEnabled: boolean = true,
+  ttsOverrides?: {
+    tts_provider?: string;
+    tts_voice?: string;
+    tts_api_key?: string;
+    llm_api_key?: string;
+    llm_backend?: string;
+  },
 ): Promise<TaskResponse> {
   return request('/pipeline/full', {
     method: 'POST',
@@ -228,6 +235,11 @@ export function postPipeline(
       source_language: sourceLanguage,
       tts_profile: ttsProfile ?? null,
       blur_enabled: blurEnabled,
+      tts_provider: ttsOverrides?.tts_provider ?? null,
+      tts_voice: ttsOverrides?.tts_voice ?? null,
+      tts_api_key: ttsOverrides?.tts_api_key ?? null,
+      llm_api_key: ttsOverrides?.llm_api_key ?? null,
+      llm_backend: ttsOverrides?.llm_backend ?? null,
     }),
   });
 }

@@ -212,77 +212,48 @@ class Pipeline:
                 emit("tts", 0.60, "Starting TTS generation...")
                 state.mark_stage_start("tts")
 
-                from src.processor.subtitle import parse_srt
-                from src.tts import get_tts_provider, load_voice_profiles
-                from src.tts.assembler import TTSAssembler
+                # Delegate to the shared runner used by the per-video flow so
+                # both paths produce byte-identical output for identical inputs.
+                # All LLM / TTS-provider / voice / API-key plumbing lives there.
+                from src.tts import load_voice_profiles
+                from src.tts.runner import run_tts_track
                 from src.utils.metadata import extract_metadata_from_file
 
                 profiles_data = load_voice_profiles(self.config)
                 profiles = profiles_data.get("profiles", {})
                 voice_profile = profiles.get(tts_profile, {})
-
                 tts_lang = voice_profile.get("language", "vi")
-                srt_path = Path("data/srt") / f"{video_id}_{tts_lang}.srt"
-                segments = parse_srt(srt_path)
 
-                video_path = state.stage_results.get("download", {}).get(
-                    "file_path", f"data/raw/{video_id}.mp4"
-                )
-                file_meta = extract_metadata_from_file(Path(video_path))
-                video_duration = file_meta.get("duration", 0.0)
-
-                provider = get_tts_provider(self.config, voice_profile.get("provider"))
-
-                # Create LLM translator for sentence detection + shortening
-                translator = None
-                llm_caller = None
-                try:
-                    import os
-                    trans_cfg = self.config.get("translation", {})
-                    api_key = (
-                        trans_cfg.get("api_key")
-                        or os.environ.get("DEEPSEEK_API_KEY")
-                        or os.environ.get("ANTHROPIC_API_KEY")
-                        or os.environ.get("OPENAI_API_KEY")
+                video_path = Path(
+                    state.stage_results.get("download", {}).get(
+                        "file_path", f"data/raw/{video_id}.mp4"
                     )
-                    if api_key:
-                        from src.translator.llm import LLMTranslator
-                        backend = trans_cfg.get("backend", "deepseek")
-                        model = trans_cfg.get("model", "deepseek-chat")
-                        base_url = trans_cfg.get("base_url")
-                        translator = LLMTranslator(
-                            backend=backend, model=model,
-                            api_key=api_key, base_url=base_url,
-                            temperature=0.3,
-                        )
-                        llm_caller = translator._call_llm
-                        logger.info(f"TTS LLM enabled ({backend}/{model}) for sentence detection + shortening")
-                except Exception as e:
-                    logger.warning(f"Could not init LLM for TTS: {e}")
-
-                assembler = TTSAssembler(translator=translator)
-                tts_dir = Path("data/tts")
-                tts_dir.mkdir(parents=True, exist_ok=True)
-                output_path = tts_dir / f"{video_id}_{tts_lang}.wav"
+                )
+                # Trusted duration from file metadata if available.
+                file_meta = extract_metadata_from_file(video_path)
+                canonical_duration = file_meta.get("duration", 0.0)
 
                 def tts_progress(current, total, message):
                     pct = 0.60 + (current / max(total, 1)) * 0.10
                     emit("tts", pct, message)
 
-                await assembler.generate_full_track(
-                    provider=provider,
-                    segments=segments,
-                    voice_profile=voice_profile,
-                    video_duration=video_duration,
-                    output_path=output_path,
+                tts_result = await run_tts_track(
+                    video_id=video_id,
+                    video_path=video_path,
+                    language=tts_lang,
+                    voice_profile_name=tts_profile,
+                    config=self.config,
+                    canonical_duration=canonical_duration,
+                    provider_override=options.get("tts_provider"),
+                    voice_override=options.get("tts_voice"),
+                    api_key_override=options.get("tts_api_key"),
+                    llm_api_key=options.get("llm_api_key"),
+                    llm_backend=options.get("llm_backend"),
                     on_progress=tts_progress,
-                    merge_sentences=True,
-                    llm_caller=llm_caller,
-                    srt_path=srt_path,
                 )
 
                 state.mark_stage_complete("tts", {
-                    "audio_path": str(output_path),
+                    "audio_path": tts_result["audio_path"],
                     "language": tts_lang,
                 })
                 emit("tts", 0.70, "TTS generation complete")

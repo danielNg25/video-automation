@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
 import { postDownload, getVideos, subscribeSSE, deleteVideo, getProfiles, postPipeline, getTTSProviders, getTTSProfiles } from '../api/client';
 import type { VideoMetadata, TranslationProfileSummary, TTSProviderInfo, VoiceProfileConfig } from '../api/types';
-import { loadApiKeys, loadLLMPrefs, saveLLMPrefs } from '../utils/storage';
+import { loadApiKeys, loadLLMPrefs, saveLLMPrefs, storageGet } from '../utils/storage';
 
 const PIPELINE_TASK_KEY = 'pipeline_active_task';
 const POLL_INTERVAL = 2000; // 2 seconds
@@ -200,6 +200,25 @@ function PipelinePage() {
   const handlePipeline = async () => {
     if (parsedUrls.length === 0) return;
 
+    // Build TTS/LLM overrides from the same Settings store the per-video
+    // page reads from, so the pipeline produces output identical to the
+    // editor's "Generate TTS" button.
+    const apiKeys = loadApiKeys();
+    const ttsProfileCfg = ttsProfiles[selectedTtsProfile];
+    const ttsProviderName = ttsProfileCfg?.provider || selectedTtsProvider;
+    const ttsApiKey =
+      ttsProviderName === 'elevenlabs' ? apiKeys.elevenlabs :
+      ttsProviderName === 'openai' ? apiKeys.openai :
+      ttsProviderName === 'google' ? apiKeys.google : '';
+    const ttsVoiceId = (ttsProviderName === 'elevenlabs' ? (storageGet('tts_voice_id') || '') : '');
+    const ttsOverrides = {
+      tts_provider: ttsProviderName || undefined,
+      tts_voice: ttsVoiceId || undefined,
+      tts_api_key: ttsApiKey || undefined,
+      llm_api_key: llmApiKey || undefined,
+      llm_backend: llmBackend || undefined,
+    };
+
     // Batch mode
     if (isBatchMode) {
       setError(''); setIsPipeline(true); setPipelineStage('download'); setPipelineProgress(0);
@@ -217,6 +236,7 @@ function PipelinePage() {
             translation_override: selectedProfile ? { backend: llmBackend, model: llmModel, api_key: llmApiKey || undefined } : null,
             tts_profile: selectedTtsProfile || null,
             blur_enabled: blurEnabled,
+            ...ttsOverrides,
           }),
         });
         const data = await res.json();
@@ -232,7 +252,7 @@ function PipelinePage() {
     setError(''); setIsPipeline(true); setPipelineStage('download'); setPipelineProgress(0); setPipelineMessage('Starting download...');
     try {
       const translationOverride = selectedProfile ? { backend: llmBackend, model: llmModel, api_key: llmApiKey || undefined } : undefined;
-      const { task_id } = await postPipeline(url, selectedProfile || undefined, 'zh', translationOverride, selectedTtsProfile || undefined, blurEnabled);
+      const { task_id } = await postPipeline(url, selectedProfile || undefined, 'zh', translationOverride, selectedTtsProfile || undefined, blurEnabled, ttsOverrides);
       saveActiveTask(task_id, 'single');
       startPolling(task_id, 'single');
     } catch (e) { setIsPipeline(false); setError(e instanceof Error ? e.message : 'Pipeline failed'); }
