@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
 import { postDownload, getVideos, subscribeSSE, deleteVideo, getProfiles, postPipeline, getTTSProviders, getTTSProfiles } from '../api/client';
 import type { VideoMetadata, TranslationProfileSummary, TTSProviderInfo, VoiceProfileConfig } from '../api/types';
-import { loadApiKeys, loadLLMPrefs, saveLLMPrefs, storageGet } from '../utils/storage';
+import { loadApiKeys, loadLLMPrefs, saveLLMPrefs, storageGet, storageSet } from '../utils/storage';
 
 const PIPELINE_TASK_KEY = 'pipeline_active_task';
 const POLL_INTERVAL = 2000; // 2 seconds
@@ -35,6 +35,10 @@ function PipelinePage() {
   const [selectedTtsProvider, setSelectedTtsProvider] = useState('edge');
   const [ttsProfiles, setTtsProfiles] = useState<Record<string, VoiceProfileConfig>>({});
   const [selectedTtsProfile, setSelectedTtsProfile] = useState('female-vi-natural');
+  const [playbackSpeed, setPlaybackSpeed] = useState(() => {
+    const saved = parseFloat(storageGet('tts_playback_speed') || '');
+    return Number.isFinite(saved) && saved >= 1.0 && saved <= 2.0 ? saved : 1.5;
+  });
   const [blurEnabled, setBlurEnabled] = useState(true);
   const [savedPrefs] = useState(loadLLMPrefs);
   const [llmBackend, setLlmBackend] = useState(savedPrefs.backend);
@@ -217,6 +221,7 @@ function PipelinePage() {
       tts_api_key: ttsApiKey || undefined,
       llm_api_key: llmApiKey || undefined,
       llm_backend: llmBackend || undefined,
+      playback_speed: playbackSpeed,
     };
 
     // Batch mode
@@ -566,9 +571,29 @@ function PipelinePage() {
                               </select>
                             </div>
                           </div>
+                          <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-container">
+                            <span className="material-symbols-outlined text-sm text-on-surface-variant">speed</span>
+                            <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold flex-1">Dub Playback Speed</label>
+                            <input
+                              type="number"
+                              min={1.0}
+                              max={2.0}
+                              step={0.1}
+                              value={playbackSpeed}
+                              onChange={(e) => {
+                                const v = parseFloat(e.target.value);
+                                if (Number.isFinite(v) && v >= 1.0 && v <= 2.0) {
+                                  setPlaybackSpeed(v);
+                                  storageSet('tts_playback_speed', String(v));
+                                }
+                              }}
+                              className="w-16 px-2 py-1 text-xs font-mono text-on-surface bg-surface-container-low border border-outline-variant/30 rounded focus:outline-none focus:border-primary"
+                            />
+                            <span className="text-[10px] text-on-surface-variant font-mono">×</span>
+                          </div>
                           <p className="text-[10px] text-on-surface-variant flex items-center gap-1.5">
                             <span className="material-symbols-outlined text-xs text-primary">info</span>
-                            TTS generation runs in <strong className="text-primary">Video Studio</strong> after pipeline completes
+                            Every dub sentence plays at this speed. Pipeline and Video Studio share the same setting.
                           </p>
                         </div>
                       )}

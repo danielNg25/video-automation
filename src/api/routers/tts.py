@@ -43,6 +43,7 @@ async def start_tts(request: TTSRequest):
             api_key_override=request.api_key,
             llm_api_key=request.llm_api_key,
             llm_backend=request.llm_backend,
+            playback_speed=request.playback_speed,
         )
     )
     return TaskResponse(task_id=task.task_id, status=task.status)
@@ -247,4 +248,36 @@ async def preview_tts(request: TTSPreviewRequest):
         if "401" in msg or "Unauthorized" in msg or "Invalid API key" in msg:
             raise HTTPException(status_code=401, detail=msg)
         raise HTTPException(status_code=502, detail=msg)
+
+    # Apply the user's chosen playback speed so the preview sounds the same
+    # as the final dub will. Skip the trivial ~1.0 case to avoid a useless
+    # ffmpeg round-trip.
+    if request.playback_speed and abs(request.playback_speed - 1.0) > 0.01:
+        import subprocess
+        import tempfile
+        from src.tts.assembler import _build_atempo_filter
+
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as in_f:
+                in_f.write(audio_bytes)
+                in_path = in_f.name
+            out_path = in_path + ".out.mp3"
+            atempo = _build_atempo_filter(request.playback_speed)
+            result = subprocess.run(
+                ["ffmpeg", "-y", "-i", in_path, "-af", atempo,
+                 "-c:a", "libmp3lame", "-q:a", "4", out_path],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode == 0:
+                with open(out_path, "rb") as f:
+                    audio_bytes = f.read()
+            import os
+            os.unlink(in_path)
+            if os.path.exists(out_path):
+                os.unlink(out_path)
+        except Exception:
+            # Fall back to natural-speed audio if atempo fails — the preview
+            # still plays, just not at the requested speed.
+            pass
+
     return Response(content=audio_bytes, media_type="audio/mpeg")

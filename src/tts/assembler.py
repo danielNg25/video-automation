@@ -16,15 +16,17 @@ from src.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
-# Warn if TTS clip needs to be sped up beyond this ratio
+# Default fixed dub playback speed. Every sentence plays at exactly this
+# speed (uniform pacing). If natural synth would require a higher speed to
+# fit the slot, the LLM iterative shortening pulls text down until natural
+# fits at this rate. Callers override per-request via `playback_speed`.
+DEFAULT_DUB_PLAYBACK_SPEED = 1.5
+# How many LLM-shortening passes we'll attempt before giving up and flagging
+# the sentence as needing human review.
+SHORTENING_MAX_PASSES = 3
+# Warn (not cap) if a clip even approaches this — still useful as a logging
+# signal for genuinely difficult sentences.
 MAX_SAFE_SPEED_RATIO = 2.5
-# Hard cap on atempo speed in Stage 4: above this, audio overruns the slot
-# rather than being chipmunked into unintelligibility. Brief overlap with
-# the next sentence is mixed by amix and remains preferable to a silent gap.
-MAX_PLAYBACK_SPEED = 1.8
-# Trigger LLM text shortening above this ratio
-# 1.5x speedup still sounds natural; only shorten above that
-SHORTENING_TRIGGER = 1.5
 # Borrow up to this fraction of neighbor's unused time
 GAP_BORROW_FRACTION = 0.80
 # Punctuation that signals end of a sentence
@@ -267,17 +269,38 @@ class TTSAssembler:
         merge_sentences: bool = True,
         llm_caller: Callable | None = None,
         srt_path: Path | None = None,
-    ) -> Path:
+        playback_speed: float | None = None,
+    ) -> tuple[Path, list[dict]]:
         """Generate a full-length TTS audio track from subtitle segments.
 
         Pipeline:
         0. Merge segments into sentence groups (LLM or heuristic)
         1. Synthesize each sentence concurrently
         2. Anchor each dub at midpoint of its window, redistribute unused time
-        3. LLM-shorten text for sentences still needing > 1.25x speedup
-        4. Speed-adjust with atempo
-        5. Concatenate with silence padding
+        3. LLM-shorten text iteratively for sentences whose natural synth
+           would require a higher speed than `playback_speed` (up to
+           SHORTENING_MAX_PASSES attempts with progressively stricter
+           targets); flag sentences still over the cap as `needs_review`.
+        4. Speed-adjust with atempo: every sentence plays at exactly
+           `playback_speed` (fixed/uniform). If natural would require a
+           higher speed to fit, hard-cap at `playback_speed` (silent tail).
+        5. Concatenate with silence padding.
+
+        Args:
+            playback_speed: Fixed dub playback speed (atempo target). Defaults
+                to DEFAULT_DUB_PLAYBACK_SPEED (1.5×) when None. The same speed
+                is applied to every sentence — uniform pacing.
+
+        Returns:
+            (output_path, sentence_plan) — sentence_plan is a list of dicts
+            with keys: index, text, window_start, window_end, synth_duration,
+            speed_ratio, requested_ratio, needs_review, reason.
         """
+        effective_speed = (
+            playback_speed if playback_speed and playback_speed > 0
+            else DEFAULT_DUB_PLAYBACK_SPEED
+        )
+        logger.info(f"TTS dub playback_speed = {effective_speed}×")
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         voice = voice_profile["voice"]
@@ -286,6 +309,8 @@ class TTSAssembler:
             kwargs["speed"] = voice_profile["speed"]
         if "pitch" in voice_profile:
             kwargs["pitch"] = voice_profile["pitch"]
+
+        sentence_plan: list[dict] = []
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
@@ -372,73 +397,121 @@ class TTSAssembler:
             # === Stage 2: Redistribute — anchor at midpoint, expand into neighbors ===
             _redistribute_slots(slots, video_duration)
 
-            # === Stage 3: LLM shortening for sentences exceeding speedup threshold ===
+            # === Stage 3: Iterative LLM shortening with hard 1.5× target ===
             # Shorten the WHOLE sentence (not per-segment), then re-synthesize.
-            # Also update synth_items text so exported SRT stays in sync.
-            needs_shortening: list[tuple[SegmentSlot, str, float]] = []
-            for slot in slots:
-                if slot.clip_path is None or slot.clip_duration <= 0:
-                    continue
-                effective_window = slot.effective_end - slot.effective_start
-                if effective_window <= 0:
-                    continue
-                ratio = slot.clip_duration / effective_window
-                if ratio > SHORTENING_TRIGGER:
-                    text = synth_items[slot.index][0]
-                    if text:
-                        needs_shortening.append((slot, text, ratio))
+            # Loop up to SHORTENING_MAX_PASSES times: each pass targets only
+            # sentences still over MAX_DUB_SPEED, with a progressively more
+            # aggressive target_pct. Sentences that fit drop out of the loop.
+            # Sentences still over the cap after all passes proceed and get
+            # hard-capped + flagged in Stage 4.
 
-            if needs_shortening and not self._translator:
-                logger.warning(
-                    f"{len(needs_shortening)} sentences need >1.25x speedup but no LLM translator configured. "
-                    f"Set DEEPSEEK_API_KEY or ANTHROPIC_API_KEY env var to enable text shortening."
+            async def resynth(slot: SegmentSlot, original_text: str, shortened: str):
+                """Re-synthesise a slot with shortened text. Updates the slot
+                in-place if the new audio is actually shorter."""
+                if shortened == original_text or len(shortened) >= len(original_text):
+                    return
+                try:
+                    async with self._semaphore:
+                        new_bytes = await provider.synthesize(shortened, voice, **kwargs)
+                    new_path = tmp / f"short_{slot.index:04d}_p{slot._pass}.mp3"
+                    new_path.write_bytes(new_bytes)
+                    new_duration = _get_audio_duration(new_path)
+                    if new_duration > 0 and new_duration < slot.clip_duration:
+                        slot.clip_path = new_path
+                        slot.clip_duration = new_duration
+                        old = synth_items[slot.index]
+                        synth_items[slot.index] = (shortened, old[1], old[2], old[3])
+                        logger.info(
+                            f"Sentence {slot.index} (pass {slot._pass}): "
+                            f"shortened '{original_text[:40]}' → '{shortened[:40]}' "
+                            f"({new_duration:.2f}s)"
+                        )
+                except Exception as e:
+                    logger.warning(
+                        f"Sentence {slot.index} (pass {slot._pass}): "
+                        f"re-synthesis failed: {e}"
+                    )
+
+            if not self._translator:
+                # Quick sanity: if any sentence overflows we'll hit the hard
+                # cap in Stage 4. Log once so the user knows shortening is
+                # disabled.
+                any_overflow = any(
+                    slot.clip_path is not None
+                    and slot.clip_duration > 0
+                    and (slot.effective_end - slot.effective_start) > 0
+                    and slot.clip_duration / (slot.effective_end - slot.effective_start) > effective_speed
+                    for slot in slots
                 )
+                if any_overflow:
+                    logger.warning(
+                        f"Some sentences exceed {effective_speed}× but no LLM "
+                        f"translator is configured. Set DEEPSEEK_API_KEY/"
+                        f"ANTHROPIC_API_KEY/OPENAI_API_KEY to enable iterative "
+                        f"shortening."
+                    )
 
-            if needs_shortening and self._translator:
-                if on_progress:
-                    on_progress(0, total, f"Shortening {len(needs_shortening)} sentences via LLM...")
+            if self._translator:
+                for pass_idx in range(1, SHORTENING_MAX_PASSES + 1):
+                    # Re-pick the overflow set each pass — sentences that fit
+                    # after a prior pass drop out.
+                    overflow: list[tuple[SegmentSlot, str, float]] = []
+                    for slot in slots:
+                        if slot.clip_path is None or slot.clip_duration <= 0:
+                            continue
+                        effective_window = slot.effective_end - slot.effective_start
+                        if effective_window <= 0:
+                            continue
+                        ratio = slot.clip_duration / effective_window
+                        if ratio > effective_speed:
+                            text = synth_items[slot.index][0]
+                            if text:
+                                overflow.append((slot, text, ratio))
 
-                # Single batch LLM call — shorten whole sentences
-                batch_items = []
-                for slot, text, ratio in needs_shortening:
-                    effective_window = slot.effective_end - slot.effective_start
-                    batch_items.append({
-                        "text": text,
-                        "target_pct": max(30, int((effective_window / slot.clip_duration) * 100)),
-                        "current_duration": slot.clip_duration,
-                        "target_duration": effective_window,
-                        "speed_ratio": ratio,
-                    })
-
-                shortened_texts = await self._translator.shorten_texts_batch(batch_items)
-
-                # Re-synthesize shortened sentences and update synth_items
-                async def resynth(slot: SegmentSlot, original_text: str, shortened: str):
-                    if shortened == original_text or len(shortened) >= len(original_text):
-                        return
-                    try:
-                        async with self._semaphore:
-                            new_bytes = await provider.synthesize(shortened, voice, **kwargs)
-                        new_path = tmp / f"short_{slot.index:04d}.mp3"
-                        new_path.write_bytes(new_bytes)
-                        new_duration = _get_audio_duration(new_path)
-                        if new_duration > 0 and new_duration < slot.clip_duration:
-                            slot.clip_path = new_path
-                            slot.clip_duration = new_duration
-                            # Update synth_items so the text stays in sync
-                            old = synth_items[slot.index]
-                            synth_items[slot.index] = (shortened, old[1], old[2], old[3])
+                    if not overflow:
+                        if pass_idx == 1:
                             logger.info(
-                                f"Sentence {slot.index}: shortened '{original_text[:40]}' "
-                                f"→ '{shortened[:40]}'"
+                                f"No sentences exceed {effective_speed}× — skipping shortening"
                             )
-                    except Exception as e:
-                        logger.warning(f"Sentence {slot.index}: re-synthesis failed: {e}")
+                        break
 
-                resynth_tasks = []
-                for (slot, text, _ratio), shortened in zip(needs_shortening, shortened_texts):
-                    resynth_tasks.append(resynth(slot, text, shortened))
-                await asyncio.gather(*resynth_tasks, return_exceptions=True)
+                    if on_progress:
+                        on_progress(
+                            0, total,
+                            f"Shortening pass {pass_idx}/{SHORTENING_MAX_PASSES}: "
+                            f"{len(overflow)} sentences",
+                        )
+                    logger.info(
+                        f"Shortening pass {pass_idx}/{SHORTENING_MAX_PASSES}: "
+                        f"{len(overflow)} sentences over {effective_speed}×"
+                    )
+
+                    # Build the LLM batch. target_pct is calibrated so the
+                    # shortened text, at the same speech rate, would fit at
+                    # exactly `effective_speed`. Each subsequent pass tightens
+                    # by 5 percentage points to push the LLM harder.
+                    batch_items = []
+                    for slot, text, ratio in overflow:
+                        effective_window = slot.effective_end - slot.effective_start
+                        # Target proportion of original duration that fits at
+                        # `effective_speed`, in percent.
+                        natural_pct = (effective_window * effective_speed / slot.clip_duration) * 100
+                        target_pct = max(30, int(natural_pct) - 5 * (pass_idx - 1))
+                        batch_items.append({
+                            "text": text,
+                            "target_pct": target_pct,
+                            "current_duration": slot.clip_duration,
+                            "target_duration": effective_window,
+                            "speed_ratio": ratio,
+                        })
+
+                    shortened_texts = await self._translator.shorten_texts_batch(batch_items)
+
+                    resynth_tasks = []
+                    for (slot, text, _ratio), shortened in zip(overflow, shortened_texts):
+                        slot._pass = pass_idx  # for filename + logging
+                        resynth_tasks.append(resynth(slot, text, shortened))
+                    await asyncio.gather(*resynth_tasks, return_exceptions=True)
 
                 # Re-distribute with the post-shortening clip durations: donors
                 # that fed an overflowing slot get their time back if the slot
@@ -452,12 +525,14 @@ class TTSAssembler:
                 if on_progress:
                     on_progress(total, total, "Text shortening complete")
 
-            # === Stage 4: Speed adjustment ===
+            # === Stage 4: Apply uniform `effective_speed` to every slot ===
             fitted_clips: list[tuple[float, Path | None]] = []
 
             for slot in slots:
                 if on_progress:
                     on_progress(slot.index + 1, total, f"Fitting segment {slot.index + 1}/{total}")
+
+                slot_text = synth_items[slot.index][0] if slot.index < len(synth_items) else ""
 
                 if slot.clip_path is None or slot.clip_duration <= 0:
                     logger.warning(
@@ -465,52 +540,123 @@ class TTSAssembler:
                         f"(window {slot.window_start:.2f}–{slot.window_end:.2f}s)"
                     )
                     fitted_clips.append((slot.effective_start, None))
+                    sentence_plan.append({
+                        "index": slot.index,
+                        "text": slot_text,
+                        "window_start": round(slot.window_start, 3),
+                        "window_end": round(slot.window_end, 3),
+                        "synth_duration": round(slot.clip_duration, 3),
+                        "speed_ratio": 0.0,
+                        "needs_review": True,
+                        "reason": "no_audio_clip",
+                    })
                     continue
 
+                # Resolve a usable window. Three cases:
+                #   1. effective window already > 0 → use it.
+                #   2. effective collapsed but base window > 0 → fall back.
+                #   3. base window also ≤ 0 (zero-width SRT) → still apply
+                #      effective_speed (uniform pacing rule, "fixed" mode).
                 effective_window = slot.effective_end - slot.effective_start
+                output_start = slot.effective_start
+                reason: str | None = None
+                needs_review = False
+
                 if effective_window <= 0:
                     base_window = slot.window_end - slot.window_start
                     if base_window <= 0:
-                        # Truly degenerate (zero-width SRT segment); play at
-                        # natural speed from window_start. May overrun the next
-                        # slot, but the alternative is total silence.
+                        # Pathological zero-width SRT segment. Still apply the
+                        # chosen playback speed so the dub matches the rest
+                        # of the track. Audio plays from window_start; will
+                        # likely overrun the next slot, but it's at the
+                        # configured speed (no 1× outlier).
                         logger.warning(
-                            f"Sentence {slot.index}: zero-width window, "
-                            f"playing at natural speed"
+                            f"Sentence {slot.index}: zero-width SRT slot — "
+                            f"playing at chosen speed {effective_speed}x "
+                            f"from window_start ({slot.window_start:.2f}s)"
                         )
-                        fitted_clips.append((slot.window_start, slot.clip_path))
-                        continue
-                    logger.warning(
-                        f"Sentence {slot.index}: effective window collapsed "
-                        f"({effective_window:.2f}s), falling back to base "
-                        f"window ({base_window:.2f}s)"
-                    )
-                    slot.effective_start = slot.window_start
-                    slot.effective_end = slot.window_end
-                    effective_window = base_window
-
-                speed_ratio = slot.clip_duration / effective_window
-
-                if speed_ratio > MAX_PLAYBACK_SPEED:
-                    logger.warning(
-                        f"Sentence {slot.index}: would need {speed_ratio:.1f}x "
-                        f"speedup ({slot.clip_duration:.1f}s in "
-                        f"{effective_window:.1f}s); capping at "
-                        f"{MAX_PLAYBACK_SPEED}x and letting audio overrun"
-                    )
-                    speed_ratio = MAX_PLAYBACK_SPEED
-
-                if speed_ratio > 1.05:
-                    if speed_ratio > MAX_SAFE_SPEED_RATIO:
+                        output_start = slot.window_start
+                        # Use clip_duration as the denominator; requested ratio
+                        # is undefined for zero-width but we record it as 0.
+                        requested_ratio = 0.0
+                        needs_review = True
+                        reason = "zero_width_window"
+                        # Skip to the unified atempo block below.
+                        effective_window = slot.clip_duration  # for plan record only
+                    else:
                         logger.warning(
-                            f"Segment {slot.index}: TTS is {slot.clip_duration:.1f}s for "
-                            f"{effective_window:.1f}s available ({speed_ratio:.1f}x speedup)"
+                            f"Sentence {slot.index}: effective window collapsed "
+                            f"({effective_window:.2f}s), falling back to base "
+                            f"window ({base_window:.2f}s)"
                         )
+                        slot.effective_start = slot.window_start
+                        slot.effective_end = slot.window_end
+                        effective_window = base_window
+                        output_start = slot.effective_start
+
+                if reason is None:
+                    requested_ratio = slot.clip_duration / effective_window
+                    # Fixed/uniform pacing: every sentence plays at exactly
+                    # `effective_speed`. If natural needs more (Stage 3
+                    # couldn't shorten enough), the audio will be longer than
+                    # the slot — record it for review.
+                    if requested_ratio > effective_speed:
+                        logger.warning(
+                            f"Sentence {slot.index}: needs {requested_ratio:.2f}x "
+                            f"to fit ({slot.clip_duration:.2f}s in "
+                            f"{effective_window:.2f}s) — capping at "
+                            f"{effective_speed}x. Silent tail will follow; "
+                            f"flagged for review."
+                        )
+                        needs_review = True
+                        reason = "speed_cap_hit"
+
+                # ALWAYS apply effective_speed via atempo — uniform pacing
+                # across every clip, no exceptions for any branch above.
+                # Skip only the trivial ~1.0 case to avoid a useless re-encode.
+                speed_ratio = effective_speed
+                fitted_duration = slot.clip_duration
+                if abs(speed_ratio - 1.0) > 0.01:
                     fitted_path = tmp / f"fitted_{slot.index:04d}.mp3"
                     _speed_up_audio(slot.clip_path, fitted_path, speed_ratio)
-                    fitted_clips.append((slot.effective_start, fitted_path))
+                    # Verify atempo actually shortened the audio.
+                    fitted_duration = _get_audio_duration(fitted_path)
+                    expected = slot.clip_duration / speed_ratio
+                    if fitted_duration <= 0:
+                        logger.error(
+                            f"Sentence {slot.index}: atempo produced empty/invalid "
+                            f"output ({fitted_path.name}); falling back to "
+                            f"original clip at natural speed"
+                        )
+                        fitted_path = slot.clip_path
+                        fitted_duration = slot.clip_duration
+                        speed_ratio = 1.0
+                        needs_review = True
+                        reason = "atempo_failed"
+                    elif abs(fitted_duration - expected) / max(expected, 0.01) > 0.10:
+                        logger.warning(
+                            f"Sentence {slot.index}: atempo output duration "
+                            f"{fitted_duration:.2f}s vs expected "
+                            f"{expected:.2f}s — atempo may not have applied "
+                            f"correctly (input was {slot.clip_duration:.2f}s, "
+                            f"speed={speed_ratio})"
+                        )
+                    fitted_clips.append((output_start, fitted_path))
                 else:
-                    fitted_clips.append((slot.effective_start, slot.clip_path))
+                    fitted_clips.append((output_start, slot.clip_path))
+
+                sentence_plan.append({
+                    "index": slot.index,
+                    "text": slot_text,
+                    "window_start": round(slot.window_start, 3),
+                    "window_end": round(slot.window_end, 3),
+                    "synth_duration": round(slot.clip_duration, 3),
+                    "fitted_duration": round(fitted_duration, 3),
+                    "speed_ratio": round(speed_ratio, 3),
+                    "requested_ratio": round(requested_ratio, 3),
+                    "needs_review": needs_review,
+                    "reason": reason,
+                })
 
             if on_progress:
                 on_progress(total, total, "Concatenating audio track...")
@@ -599,8 +745,12 @@ class TTSAssembler:
                         f"{len(segments)} → {len(final_segments)} segments in {srt_path}"
                     )
 
-        logger.info(f"Generated TTS track: {output_path}")
-        return output_path
+        review_count = sum(1 for s in sentence_plan if s.get("needs_review"))
+        logger.info(
+            f"Generated TTS track: {output_path} — {len(sentence_plan)} "
+            f"sentences planned, {review_count} need review"
+        )
+        return output_path, sentence_plan
 
 
 def _naive_split_text(text: str, max_chars: int = 35) -> list[str]:

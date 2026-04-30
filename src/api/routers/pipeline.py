@@ -81,6 +81,7 @@ async def start_full_pipeline(request: FullPipelineRequest):
             tts_api_key=request.tts_api_key,
             llm_api_key=request.llm_api_key,
             llm_backend=request.llm_backend,
+            playback_speed=request.playback_speed,
         )
     )
     return TaskResponse(task_id=task.task_id, status=task.status)
@@ -103,6 +104,7 @@ async def _run_full_pipeline(
     tts_api_key: str | None = None,
     llm_api_key: str | None = None,
     llm_backend: str | None = None,
+    playback_speed: float | None = None,
 ):
     """Execute the full pipeline as a background task with SSE events."""
     from src.pipeline import Pipeline
@@ -140,6 +142,7 @@ async def _run_full_pipeline(
             "tts_api_key": tts_api_key,
             "llm_api_key": llm_api_key,
             "llm_backend": llm_backend,
+            "playback_speed": playback_speed,
         }
 
         result = await pipeline.process_single(url, platforms, options, emit)
@@ -272,6 +275,7 @@ async def start_batch_pipeline(request: BatchPipelineRequest):
             tts_api_key=request.tts_api_key,
             llm_api_key=request.llm_api_key,
             llm_backend=request.llm_backend,
+            playback_speed=request.playback_speed,
         )
     )
 
@@ -300,6 +304,7 @@ async def _run_batch_pipeline(
     tts_api_key: str | None = None,
     llm_api_key: str | None = None,
     llm_backend: str | None = None,
+    playback_speed: float | None = None,
 ):
     """Execute batch pipeline with concurrency control."""
     from src.pipeline import Pipeline
@@ -332,6 +337,7 @@ async def _run_batch_pipeline(
                 tts_api_key=tts_api_key,
                 llm_api_key=llm_api_key,
                 llm_backend=llm_backend,
+                playback_speed=playback_speed,
             )
             child_task = tm.tasks.get(child_task_id)
             if child_task and child_task.status == "failed":

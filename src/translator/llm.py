@@ -657,9 +657,13 @@ class LLMTranslator:
                 original = item["text"]
                 candidate = parsed[i] if i < len(parsed) else None
                 # Per-item floor: respect the target_pct we asked for, with an
-                # absolute minimum of 25% to still reject one-word garbage.
+                # absolute minimum of 40% to keep enough words to preserve
+                # meaning. The TTS assembler runs iterative shortening passes
+                # with progressively stricter target_pcts, so an
+                # over-aggressive single response (which the assembler
+                # rejects here) just gets a stricter target on the next pass.
                 target_pct = item.get("target_pct", 100)
-                floor_pct = max(25, target_pct - 10)
+                floor_pct = max(40, target_pct - 15)
                 floor_chars = max(1, int(len(original) * floor_pct / 100))
                 if candidate and len(candidate) < len(original):
                     if len(candidate) < floor_chars:

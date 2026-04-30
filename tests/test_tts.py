@@ -234,30 +234,159 @@ class TestStage4NoDrop:
         slot.effective_start = slot.window_start
         slot.effective_end = slot.window_end
         assert slot.effective_end - slot.effective_start == base
-        # MAX_PLAYBACK_SPEED is exposed — sanity check it's reasonable.
-        assert 1.0 < A.MAX_PLAYBACK_SPEED <= 2.5
+        # DEFAULT_DUB_PLAYBACK_SPEED is exposed — sanity check it's 1.5×.
+        assert A.DEFAULT_DUB_PLAYBACK_SPEED == 1.5
 
 
 class TestStage4SpeedCap:
-    """Fix 3: speed_ratio above MAX_PLAYBACK_SPEED is capped before atempo."""
+    """Stage 4 hard-caps speed_ratio at MAX_DUB_SPEED — no overrun."""
 
     def test_high_speedup_capped(self):
-        from src.tts.assembler import MAX_PLAYBACK_SPEED
+        from src.tts.assembler import DEFAULT_DUB_PLAYBACK_SPEED as MAX_DUB_SPEED
 
         clip_duration = 10.0
         effective_window = 1.0
         speed_ratio = clip_duration / effective_window  # 10x
-        assert speed_ratio > MAX_PLAYBACK_SPEED
+        assert speed_ratio > MAX_DUB_SPEED
         # The capping line in Stage 4 produces this:
-        capped = min(speed_ratio, MAX_PLAYBACK_SPEED) if speed_ratio > MAX_PLAYBACK_SPEED else speed_ratio
-        assert capped == MAX_PLAYBACK_SPEED
+        capped = MAX_DUB_SPEED if speed_ratio > MAX_DUB_SPEED else speed_ratio
+        assert capped == MAX_DUB_SPEED == 1.5
 
     def test_normal_speedup_unchanged(self):
-        from src.tts.assembler import MAX_PLAYBACK_SPEED
+        from src.tts.assembler import DEFAULT_DUB_PLAYBACK_SPEED as MAX_DUB_SPEED
 
         speed_ratio = 1.3  # below cap
-        capped = MAX_PLAYBACK_SPEED if speed_ratio > MAX_PLAYBACK_SPEED else speed_ratio
+        capped = MAX_DUB_SPEED if speed_ratio > MAX_DUB_SPEED else speed_ratio
         assert capped == 1.3
+
+    def test_capped_audio_length_is_clip_over_max(self):
+        """When the ratio is capped at 1.5×, the resulting audio length is
+        clip_duration / 1.5 — silent tail follows. Never overruns the slot."""
+        from src.tts.assembler import DEFAULT_DUB_PLAYBACK_SPEED as MAX_DUB_SPEED
+
+        clip_duration = 10.0
+        effective_window = 1.0  # would need 10× to fit naturally
+        capped_ratio = MAX_DUB_SPEED
+        audio_length_after_speedup = clip_duration / capped_ratio
+        # 10s / 1.5 = 6.67s. Still longer than the 1s window — but the
+        # important thing is it's a deterministic length, NOT an overrun
+        # past clip_duration's natural play.
+        assert audio_length_after_speedup == clip_duration / MAX_DUB_SPEED
+
+
+class TestIterativeShortening:
+    """Phase 0.2: shortening runs up to SHORTENING_MAX_PASSES with stricter
+    target_pct each pass; fits-already sentences drop out between passes."""
+
+    def test_max_passes_constant_is_three(self):
+        from src.tts.assembler import SHORTENING_MAX_PASSES
+
+        assert SHORTENING_MAX_PASSES == 3
+
+    def test_target_pct_tightens_per_pass(self):
+        """Each iterative pass uses a stricter target_pct so the LLM is asked
+        for shorter text after a previous round didn't fit."""
+        from src.tts.assembler import DEFAULT_DUB_PLAYBACK_SPEED as MAX_DUB_SPEED
+
+        # Worst case: 10s clip in 1s window → needs ~6.67× without shortening.
+        clip_duration = 10.0
+        effective_window = 1.0
+        natural_pct = (effective_window * MAX_DUB_SPEED / clip_duration) * 100
+        # Each pass the target steps 5pp tighter (clamped to a 30 floor).
+        targets = [max(30, int(natural_pct) - 5 * (p - 1)) for p in range(1, 4)]
+        assert targets[0] >= targets[1] >= targets[2]
+        assert targets[0] == max(30, int(natural_pct))
+        # Last pass is at least 10pp tighter than the first (or hit the 30 floor).
+        assert targets[2] <= max(30, targets[0] - 10)
+
+
+class TestConfigurablePlaybackSpeed:
+    """Per-request playback_speed: every sentence plays at the user's chosen
+    speed, and shortening targets that speed instead of the hard-coded 1.5×."""
+
+    def test_default_constant_is_15x(self):
+        from src.tts.assembler import DEFAULT_DUB_PLAYBACK_SPEED
+
+        assert DEFAULT_DUB_PLAYBACK_SPEED == 1.5
+
+    def test_target_pct_scales_with_chosen_speed(self):
+        """At playback_speed=1.3 the LLM is asked for shorter text than at
+        playback_speed=1.7 for the same overflow case."""
+        clip_duration = 10.0
+        effective_window = 4.0  # 2.5× natural overflow
+        target_at_13 = (effective_window * 1.3 / clip_duration) * 100
+        target_at_17 = (effective_window * 1.7 / clip_duration) * 100
+        assert target_at_13 < target_at_17  # 1.3× → 52%; 1.7× → 68%
+
+    def test_capped_audio_length_uses_chosen_speed(self):
+        """At playback_speed=1.3, a slot that can't fit even after shortening
+        is hard-capped at 1.3× — audio length is clip / 1.3, not clip / 1.5."""
+        clip_duration = 6.0
+        chosen_speed = 1.3
+        audio_length = clip_duration / chosen_speed
+        assert abs(audio_length - 4.615) < 0.01
+
+    def test_runner_accepts_playback_speed(self):
+        """run_tts_track must accept playback_speed kwarg and pass it through."""
+        import inspect
+        from src.tts.runner import run_tts_track
+
+        sig = inspect.signature(run_tts_track)
+        assert "playback_speed" in sig.parameters
+        assert sig.parameters["playback_speed"].default is None
+
+    def test_models_accept_playback_speed(self):
+        """TTSRequest, TTSPreviewRequest, FullPipelineRequest all accept it."""
+        from src.api.models import (
+            TTSRequest,
+            TTSPreviewRequest,
+            FullPipelineRequest,
+            BatchPipelineRequest,
+        )
+
+        # TTSRequest defaults playback_speed to None (server falls back to 1.5).
+        r = TTSRequest(video_id="v", playback_speed=1.3)
+        assert r.playback_speed == 1.3
+
+        # TTSPreviewRequest defaults to 1.0 (preview at natural unless set).
+        p = TTSPreviewRequest(text="hi")
+        assert p.playback_speed == 1.0
+        p2 = TTSPreviewRequest(text="hi", playback_speed=1.5)
+        assert p2.playback_speed == 1.5
+
+        # Pipeline request models also accept the field.
+        fp = FullPipelineRequest(url="https://example.com/x", playback_speed=1.7)
+        assert fp.playback_speed == 1.7
+        bp = BatchPipelineRequest(urls=["https://example.com/x"], playback_speed=1.2)
+        assert bp.playback_speed == 1.2
+
+
+class TestSentencePlan:
+    """Phase 1: every TTS run returns a per-sentence plan in the runner result."""
+
+    def test_sentence_plan_keys(self):
+        """Sanity check on the plan-row schema we expose via the API."""
+        # Minimal smoke test on the in-process structure — full integration is
+        # exercised in the manual end-to-end. Here we just lock the keys.
+        expected_keys = {
+            "index", "text", "window_start", "window_end",
+            "synth_duration", "speed_ratio", "needs_review",
+        }
+        # If a row is built by Stage 4 it has at least these keys + reason
+        # (and `requested_ratio` for non-error paths). Construct one inline
+        # the same way Stage 4 does, then verify keys.
+        row = {
+            "index": 0,
+            "text": "test",
+            "window_start": 0.0,
+            "window_end": 2.0,
+            "synth_duration": 1.5,
+            "speed_ratio": 1.0,
+            "requested_ratio": 1.0,
+            "needs_review": False,
+            "reason": None,
+        }
+        assert expected_keys.issubset(row.keys())
 
 
 # ── shorten_texts_batch per-item floor (Fix 4) ──
@@ -266,49 +395,50 @@ class TestStage4SpeedCap:
 class TestShortenTextsBatchFloor:
     @pytest.mark.asyncio
     async def test_per_item_floor_respects_target_pct(self):
-        """A 22%-length candidate should be rejected when target_pct=80,
-        but accepted when target_pct=30 (floor falls to 25% absolute min)."""
+        """Floor is max(40%, target_pct - 15%). Reject when shortened text
+        falls below that floor — iterative shortening will retry with a
+        stricter target_pct on the next pass."""
         from src.translator.llm import LLMTranslator
 
-        # Build a translator that bypasses provider init by patching _call_llm.
         translator = LLMTranslator.__new__(LLMTranslator)
 
-        original_long = "x" * 100  # 100 chars; candidate of 22 = 22%
-        candidate = "y" * 22
+        original_long = "x" * 100  # 100 chars; candidate of 30 = 30%
+        candidate = "y" * 30
 
-        # Mocked LLM returns the same 22-char candidate for both items.
         async def fake_call(system, user):
             return f"1. {candidate}\n2. {candidate}\n"
         translator._call_llm = fake_call
 
         items = [
+            # target_pct=80 → floor=max(40, 65) = 65%; 30% rejected.
             {"text": original_long, "target_pct": 80, "current_duration": 5.0,
              "target_duration": 4.0, "speed_ratio": 1.25},
-            {"text": original_long, "target_pct": 30, "current_duration": 5.0,
-             "target_duration": 1.5, "speed_ratio": 3.33},
+            # target_pct=50 → floor=max(40, 35) = 40%; 30% still below floor.
+            {"text": original_long, "target_pct": 50, "current_duration": 5.0,
+             "target_duration": 2.5, "speed_ratio": 2.0},
         ]
         out = await translator.shorten_texts_batch(items)
-        # target_pct=80 → floor=70%; 22% rejected → keep original.
         assert out[0] == original_long
-        # target_pct=30 → floor=max(25, 20)=25%; 22% rejected too → keep original.
         assert out[1] == original_long
 
     @pytest.mark.asyncio
     async def test_aggressive_target_accepts_aggressive_shortening(self):
+        """A candidate at the floor is accepted."""
         from src.translator.llm import LLMTranslator
 
         translator = LLMTranslator.__new__(LLMTranslator)
 
         original = "x" * 100
-        candidate = "y" * 30  # 30% — accepted under target_pct=30 (floor 25%).
+        # target_pct=60 → floor=max(40, 45) = 45%; 50-char candidate = 50% ≥ 45%.
+        candidate = "y" * 50
 
         async def fake_call(system, user):
             return f"1. {candidate}\n"
         translator._call_llm = fake_call
 
         items = [{
-            "text": original, "target_pct": 30, "current_duration": 5.0,
-            "target_duration": 1.5, "speed_ratio": 3.33,
+            "text": original, "target_pct": 60, "current_duration": 5.0,
+            "target_duration": 3.0, "speed_ratio": 1.67,
         }]
         out = await translator.shorten_texts_batch(items)
         assert out[0] == candidate

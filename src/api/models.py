@@ -66,6 +66,7 @@ class FullPipelineRequest(BaseModel):
     tts_api_key: str | None = None  # ElevenLabs/OpenAI/Google API key
     llm_api_key: str | None = None  # for the TTS-shortening LLM
     llm_backend: str | None = None  # deepseek, openai, anthropic
+    playback_speed: float | None = None  # fixed dub playback speed
 
 
 class BatchPipelineRequest(BaseModel):
@@ -83,6 +84,7 @@ class BatchPipelineRequest(BaseModel):
     tts_api_key: str | None = None
     llm_api_key: str | None = None
     llm_backend: str | None = None
+    playback_speed: float | None = None
 
 
 class PipelineHistoryEntry(BaseModel):
@@ -216,12 +218,19 @@ class TTSRequest(BaseModel):
     api_key: str | None = None  # per-request API key for paid providers
     llm_api_key: str | None = None  # API key for LLM text shortening
     llm_backend: str | None = None  # deepseek, openai, anthropic
+    # Fixed dub playback speed (atempo target). Every sentence plays at
+    # exactly this speed (uniform pacing). When None, the assembler default
+    # (1.5×) is used.
+    playback_speed: float | None = None
 
 
 class TTSPreviewRequest(BaseModel):
     text: str
     voice: str = "vi-VN-HoaiMyNeural"
     provider: str = "edge"
+    # Apply atempo at this speed to the previewed sample so the user can
+    # hear what the dub will sound like at their chosen playback speed.
+    playback_speed: float = 1.0
     speed: str = "+0%"
     pitch: str = "+0Hz"
     api_key: str | None = None  # per-request API key for paid providers

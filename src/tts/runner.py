@@ -113,6 +113,7 @@ async def run_tts_track(
     api_key_override: str | None = None,
     llm_api_key: str | None = None,
     llm_backend: str | None = None,
+    playback_speed: float | None = None,
     on_progress: Callable[[int, int, str], None] | None = None,
 ) -> dict:
     """Generate the TTS track for a video and return result metadata.
@@ -205,7 +206,7 @@ async def run_tts_track(
 
     # ── Assemble ────────────────────────────────────────────────────
     assembler = TTSAssembler(translator=translator)
-    await assembler.generate_full_track(
+    _, sentence_plan = await assembler.generate_full_track(
         provider=tts_provider,
         segments=segments,
         voice_profile=voice_profile,
@@ -215,6 +216,7 @@ async def run_tts_track(
         merge_sentences=True,
         llm_caller=llm_caller,
         srt_path=srt_path,
+        playback_speed=playback_speed,
     )
 
     # ── Output duration via ffprobe (informational) ────────────────
@@ -234,9 +236,66 @@ async def run_tts_track(
     except Exception:  # noqa: BLE001 — informational only
         out_duration = 0.0
 
+    review_count = sum(1 for s in sentence_plan if s.get("needs_review"))
+
+    # Write a per-sentence plan log alongside the WAV so the user can review
+    # final speed_ratio, shortened text, and which sentences hit the cap.
+    # JSON for machine use; TSV for quick eyeballing in a terminal.
+    plan_log_path = output_path.with_suffix(".plan.json")
+    plan_tsv_path = output_path.with_suffix(".plan.tsv")
+    try:
+        import json as _json
+
+        plan_payload = {
+            "video_id": video_id,
+            "language": language,
+            "provider": provider_name,
+            "voice_profile": voice_profile_name,
+            "voice": voice_profile.get("voice"),
+            "playback_speed_requested": playback_speed,
+            "audio_path": str(output_path),
+            "audio_duration": out_duration,
+            "video_duration": video_duration,
+            "total_sentences": len(sentence_plan),
+            "review_count": review_count,
+            "sentences": sentence_plan,
+        }
+        plan_log_path.write_text(_json.dumps(plan_payload, ensure_ascii=False, indent=2))
+
+        # Tab-separated text view for quick review (sortable, greppable).
+        # Includes `fitted_duration` (the actual length of audio mixed into
+        # the WAV after atempo) so any mismatch between requested speedup
+        # and actual sped-up duration is visible.
+        lines = [
+            "idx\twindow_start\twindow_end\twindow_size\tsynth_dur\tfitted_dur\trequested\tapplied\tneeds_review\treason\ttext"
+        ]
+        for s in sentence_plan:
+            ws = s.get("window_start", 0.0)
+            we = s.get("window_end", 0.0)
+            text = (s.get("text") or "").replace("\t", " ").replace("\n", " ")[:120]
+            lines.append(
+                f"{s.get('index', '')}\t"
+                f"{ws:.2f}\t{we:.2f}\t{we - ws:.2f}\t"
+                f"{s.get('synth_duration', 0.0):.2f}\t"
+                f"{s.get('fitted_duration', 0.0):.2f}\t"
+                f"{s.get('requested_ratio', 0.0):.3f}\t"
+                f"{s.get('speed_ratio', 0.0):.3f}\t"
+                f"{'YES' if s.get('needs_review') else ''}\t"
+                f"{s.get('reason') or ''}\t"
+                f"{text}"
+            )
+        plan_tsv_path.write_text("\n".join(lines) + "\n")
+        logger.info(f"Wrote dub plan logs: {plan_log_path.name}, {plan_tsv_path.name}")
+    except Exception as e:  # noqa: BLE001 — log file is informational only
+        logger.warning(f"Could not write dub plan log: {e}")
+
     return {
         "audio_path": str(output_path),
         "duration": out_duration,
         "segment_count": len(segments),
         "language": language,
+        "sentence_plan": sentence_plan,
+        "review_count": review_count,
+        "plan_log_path": str(plan_log_path),
+        "plan_tsv_path": str(plan_tsv_path),
     }

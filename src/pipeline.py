@@ -249,6 +249,7 @@ class Pipeline:
                     api_key_override=options.get("tts_api_key"),
                     llm_api_key=options.get("llm_api_key"),
                     llm_backend=options.get("llm_backend"),
+                    playback_speed=options.get("playback_speed"),
                     on_progress=tts_progress,
                 )
 

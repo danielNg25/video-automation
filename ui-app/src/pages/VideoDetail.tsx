@@ -64,6 +64,10 @@ function VideoDetailPage() {
   const [voiceIdSaved, setVoiceIdSaved] = useState(false);
   const [ttsApiKey, setTtsApiKey] = useState('');
   const [ttsLanguage, setTtsLanguage] = useState('vi');
+  const [playbackSpeed, setPlaybackSpeed] = useState(() => {
+    const saved = parseFloat(storageGet('tts_playback_speed') || '');
+    return Number.isFinite(saved) && saved >= 1.0 && saved <= 2.0 ? saved : 1.5;
+  });
   const [useDirectVoice, setUseDirectVoice] = useState(false);
   const [isGeneratingTts, setIsGeneratingTts] = useState(false);
   const [ttsProgress, setTtsProgress] = useState({ pct: 0, message: '' });
@@ -305,6 +309,7 @@ function VideoDetailPage() {
         ttsApiKey || undefined,
         llmApiKey || undefined,
         llmBackend || undefined,
+        playbackSpeed,
       );
       const es = subscribeSSE(task_id, (eventType, data) => {
         if (eventType === 'progress') {
@@ -730,6 +735,32 @@ function VideoDetailPage() {
                     </div>
                   )}
 
+                  {/* Dub playback speed — applied uniformly to every sentence,
+                      and also applied to the preview below so the user can hear
+                      the chosen speed before generating. */}
+                  <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-container-highest">
+                    <span className="material-symbols-outlined text-sm text-on-surface-variant">speed</span>
+                    <label className="text-xs text-on-surface-variant flex-1">
+                      Dub playback speed
+                    </label>
+                    <input
+                      type="number"
+                      min={1.0}
+                      max={2.0}
+                      step={0.1}
+                      value={playbackSpeed}
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value);
+                        if (Number.isFinite(v) && v >= 1.0 && v <= 2.0) {
+                          setPlaybackSpeed(v);
+                          storageSet('tts_playback_speed', String(v));
+                        }
+                      }}
+                      className="w-16 px-2 py-1 text-xs font-mono text-on-surface bg-surface-container-low border border-outline-variant/30 rounded focus:outline-none focus:border-primary"
+                    />
+                    <span className="text-[10px] text-on-surface-variant font-mono">×</span>
+                  </div>
+
                   {/* Voice Preview */}
                   {(() => {
                     const previewVoice = selectedVoiceId;
@@ -742,6 +773,7 @@ function VideoDetailPage() {
                           speed="+0%"
                           pitch="+0Hz"
                           apiKey={ttsApiKey || undefined}
+                          playbackSpeed={playbackSpeed}
                           sampleText={
                             ttsLanguage === 'vi'
                               ? 'Xin chào các bạn, hôm nay chúng ta sẽ nói về một chủ đề rất thú vị.'

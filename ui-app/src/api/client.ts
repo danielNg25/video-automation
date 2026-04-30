@@ -222,6 +222,7 @@ export function postPipeline(
     tts_api_key?: string;
     llm_api_key?: string;
     llm_backend?: string;
+    playback_speed?: number;
   },
 ): Promise<TaskResponse> {
   return request('/pipeline/full', {
@@ -240,6 +241,7 @@ export function postPipeline(
       tts_api_key: ttsOverrides?.tts_api_key ?? null,
       llm_api_key: ttsOverrides?.llm_api_key ?? null,
       llm_backend: ttsOverrides?.llm_backend ?? null,
+      playback_speed: ttsOverrides?.playback_speed ?? null,
     }),
   });
 }
@@ -269,6 +271,7 @@ export function postTTS(
   apiKey?: string,
   llmApiKey?: string,
   llmBackend?: string,
+  playbackSpeed?: number,
 ): Promise<TaskResponse> {
   return request('/tts', {
     method: 'POST',
@@ -282,6 +285,7 @@ export function postTTS(
       api_key: apiKey ?? null,
       llm_api_key: llmApiKey ?? null,
       llm_backend: llmBackend ?? null,
+      playback_speed: playbackSpeed ?? null,
     }),
   });
 }
@@ -346,11 +350,12 @@ export async function postTTSPreview(
   speed: string = '+0%',
   pitch: string = '+0Hz',
   apiKey?: string,
+  playbackSpeed: number = 1.0,
 ): Promise<Blob> {
   const res = await fetch(`${BASE}/tts/preview`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, voice, provider, speed, pitch, api_key: apiKey ?? null }),
+    body: JSON.stringify({ text, voice, provider, speed, pitch, api_key: apiKey ?? null, playback_speed: playbackSpeed }),
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
