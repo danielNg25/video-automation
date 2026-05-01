@@ -1,6 +1,6 @@
 # Douyin Download API
 douyin:
-    api_base: 'http://localhost:8081'
+    api_base: '${DOUYIN_API_BASE:-http://localhost:8081}'
     cookie_file: 'config/douyin_cookie.txt'
     download_timeout: 120
 
@@ -9,37 +9,6 @@ ffmpeg:
     default_crf: 23
     preset: 'medium'             # ultrafast, fast, medium, slow
     audio_bitrate: '128k'
-
-# Upload Platforms
-platforms:
-    youtube:
-        enabled: true
-        credentials_file: 'config/youtube_client_secrets.json'
-        token_file: 'config/youtube_token.json'
-        default_privacy: 'private'
-        default_category: '22'   # People & Blogs
-
-    tiktok:
-        enabled: true
-        client_key: '${TIKTOK_CLIENT_KEY}'
-        client_secret: '${TIKTOK_CLIENT_SECRET}'
-        token_file: 'config/tiktok_token.json'
-        post_mode: 'upload'      # "direct" (publish) or "upload" (draft)
-
-    facebook:
-        enabled: true
-        app_id: '${FB_APP_ID}'
-        app_secret: '${FB_APP_SECRET}'
-        page_id: '${FB_PAGE_ID}'
-        token_file: 'config/facebook_token.json'
-        post_type: 'reels'       # "reels" or "feed"
-
-    x:
-        enabled: false           # Requires paid Basic plan ($100/mo)
-        api_key: '${X_API_KEY}'
-        api_secret: '${X_API_SECRET}'
-        access_token: '${X_ACCESS_TOKEN}'
-        access_secret: '${X_ACCESS_SECRET}'
 
 # LLM Translation
 translation:

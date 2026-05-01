@@ -7,3 +7,25 @@ services:
     restart: unless-stopped
     volumes:
       - ./config/douyin_web_config.yaml:/app/crawlers/douyin/web/config.yaml:ro
+
+  app:
+    build: .
+    image: douyin-automation-app:latest
+    container_name: douyin-app
+    # Apple Silicon: comment the line below to try native arm64. paddlepaddle aarch64
+    # wheels can be flaky; amd64 via Rosetta is slower but reliable.
+    platform: linux/amd64
+    ports:
+      - "8000:8000"
+    environment:
+      DOUYIN_API_BASE: http://douyin-api:80
+    depends_on:
+      - douyin-api
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+      - paddleocr_cache:/root/.paddleocr
+    restart: unless-stopped
+
+volumes:
+  paddleocr_cache:

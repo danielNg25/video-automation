@@ -157,19 +157,6 @@ def transcribe(video_path, lang, translate_profile, model):
 
 
 @main.command()
-@click.argument("video_path")
-@click.option("--platforms", "-p", default="youtube,tiktok", help="Comma-separated platforms")
-@click.option("--title", default=None, help="Video title")
-@click.option("--description", default=None, help="Video description")
-@click.option("--tags", default=None, help="Comma-separated tags")
-def upload(video_path, platforms, title, description, tags):
-    """Upload a processed video to platforms."""
-    console.print(f"[yellow]Upload not yet implemented (Phase 6)[/yellow]")
-    console.print(f"  Video: {video_path}")
-    console.print(f"  Platforms: {platforms}")
-
-
-@main.command()
 @click.argument("url_file")
 @click.option("--platforms", "-p", default="youtube,tiktok", help="Comma-separated platforms")
 @click.option("--concurrency", default=3, help="Max concurrent downloads")

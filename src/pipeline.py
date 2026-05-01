@@ -1,4 +1,4 @@
-"""Pipeline orchestrator: chains download → transcribe → translate → TTS → process → upload.
+"""Pipeline orchestrator: chains download → transcribe → translate → TTS → process.
 
 Supports crash recovery via PipelineState and duplicate detection via processed_videos registry.
 """
@@ -279,17 +279,11 @@ class Pipeline:
                     style_path.parent.mkdir(parents=True, exist_ok=True)
                     style_path.write_text(_json.dumps({"blur_enabled": blur_enabled}, indent=2))
 
-                emit("process", 0.90, "Processing skipped — use Video Studio to export")
+                emit("process", 1.0, "Pipeline complete — use Video Studio to export")
                 state.mark_stage_complete("process", {
                     "note": "export via Video Studio",
                     "blur_enabled": blur_enabled,
                 })
-
-            # --- Stage: Upload — skipped, not yet implemented ---
-            if not state.is_stage_complete("upload"):
-                emit("upload", 0.95, "Upload skipped — not yet implemented")
-                state.mark_stage_complete("upload", {"note": "uploaders pending"})
-                emit("upload", 1.0, "Pipeline complete")
 
             # --- Done ---
             state.mark_done()

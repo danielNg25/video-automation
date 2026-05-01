@@ -6,14 +6,17 @@ import yaml
 
 
 def _interpolate_env_vars(value: str) -> str:
-    """Replace ${VAR} patterns with environment variable values."""
+    """Replace ${VAR} or ${VAR:-default} patterns with environment variable values."""
 
     def replacer(match: re.Match) -> str:
         var_name = match.group(1)
-        env_value = os.environ.get(var_name, "")
+        default = match.group(2) or ""
+        env_value = os.environ.get(var_name)
+        if env_value is None or env_value == "":
+            return default
         return env_value
 
-    return re.sub(r"\$\{(\w+)\}", replacer, value)
+    return re.sub(r"\$\{(\w+)(?::-([^}]*))?\}", replacer, value)
 
 
 def _walk_and_interpolate(obj):

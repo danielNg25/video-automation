@@ -1,18 +1,18 @@
 # Douyin Video Repurposing Pipeline
 
-Automated pipeline to download videos from Douyin, generate AI subtitles (Chinese transcription + English translation), burn subtitles into the video, and upload to YouTube, TikTok, Facebook, and X (Twitter).
+Automated pipeline to download videos from Douyin, generate AI subtitles (Chinese transcription + English/Vietnamese translation), dub with TTS, and produce per-platform reformatted exports (YouTube, TikTok, Facebook, X aspect ratios and subtitle languages). Auto-posting is intentionally out of scope — exports are downloaded and uploaded manually.
 
 ## Architecture
 
 ```
-┌──────────┐   ┌───────────┐   ┌───────────┐   ┌─────┐   ┌─────────┐   ┌────────┐
-│ Download │──▶│Transcribe │──▶│ Translate  │──▶│ TTS │──▶│ Process │──▶│ Upload │
-│ Douyin + │   │ OCR/SRT   │   │ LLM       │   │ Dub │   │ ffmpeg  │   │ APIs   │
-│ yt-dlp   │   │ PaddleOCR │   │ Anthropic/ │   │     │   │ burn-in │   │        │
-└──────────┘   └───────────┘   │ OpenAI    │   └─────┘   │+reformat│   └────────┘
-     │              │          └───────────┘      │       └─────────┘       │
-     ▼              ▼               ▼             ▼            ▼            ▼
- /data/raw/    /data/srt/     /data/srt/     /data/tts/  /data/output/  /data/logs/
+┌──────────┐   ┌───────────┐   ┌───────────┐   ┌─────┐   ┌─────────┐
+│ Download │──▶│Transcribe │──▶│ Translate │──▶│ TTS │──▶│ Process │
+│ Douyin + │   │ OCR/SRT   │   │ LLM       │   │ Dub │   │ ffmpeg  │
+│ yt-dlp   │   │ PaddleOCR │   │ Anthropic/│   │     │   │ burn-in │
+└──────────┘   └───────────┘   │ DeepSeek  │   └─────┘   │+reformat│
+     │              │          └───────────┘      │       └─────────┘
+     ▼              ▼               ▼             ▼            ▼
+ /data/raw/    /data/srt/     /data/srt/     /data/tts/  /data/output/
  {id}.mp4      {id}_zh.srt    {id}_vi.srt    {id}.wav    {id}_{plat}.mp4 {id}_state.json
 ```
 
@@ -118,9 +118,6 @@ python -m src download "https://v.douyin.com/xxxxx"
 
 # Transcribe a local video
 python -m src transcribe data/raw/video.mp4 --lang zh --translate en
-
-# Upload a processed video
-python -m src upload data/output/video_youtube.mp4 --platforms youtube
 ```
 
 ### Batch Processing
@@ -170,12 +167,6 @@ douyin-automation/
 │   ├── processor/
 │   │   ├── subtitle.py         # SRT/ASS parsing, merging, styling
 │   │   └── ffmpeg.py          # Subtitle burn-in + video reformat
-│   ├── uploader/
-│   │   ├── base.py             # Abstract uploader interface
-│   │   ├── youtube.py          # YouTube Data API v3
-│   │   ├── tiktok.py          # TikTok Content Posting API
-│   │   ├── facebook.py        # Facebook Graph API
-│   │   └── x.py               # X/Twitter API v2
 │   ├── translator/
 │   │   ├── llm.py             # LLM translator (Anthropic/OpenAI)
 │   │   └── profiles.py        # Translation profile system
@@ -410,7 +401,7 @@ douyin-automation/
 **Verification (CLI):**
 - [ ] V5.1 — `python -m src --help` displays all commands
 - [ ] V5.2 — `python -m src process --help` shows all options
-- [ ] V5.3 — Full pipeline: URL → subtitled video → uploaded to all platforms
+- [ ] V5.3 — Full pipeline: URL → subtitled, dubbed, per-platform reformatted videos
 - [ ] V5.4 — Crash recovery: interrupted pipeline resumes from last stage
 - [ ] V5.5 — Duplicate detection: same URL skipped on second run
 - [ ] V5.6 — Batch processing: multiple URLs with concurrency limit
@@ -466,52 +457,13 @@ douyin-automation/
 
 ---
 
-### Phase 7 — Platform Upload Integrations (Week 7-8)
-
-> Detailed plan: [`plans/phase7-platform-uploads.md`](plans/phase7-platform-uploads.md)
-
-- [ ] **7.1** Base uploader interface — `src/uploader/base.py`
-- [ ] **7.2** OAuth setup script — `scripts/setup_oauth.py`
-- [ ] **7.3** YouTube uploader — `src/uploader/youtube.py`
-- [ ] **7.4** TikTok uploader — `src/uploader/tiktok.py`
-- [ ] **7.5** Facebook uploader — `src/uploader/facebook.py`
-- [ ] **7.6** X/Twitter uploader *(stretch goal)* — `src/uploader/x.py`
-- [ ] **7.7** Uploader factory — `src/uploader/__init__.py`
-- [ ] **7.8** Phase 7 tests — `tests/test_uploader.py`
-- [ ] **7.9** Auth router — `server/routers/auth.py`
-- [ ] **7.10** Upload router + service — `server/routers/upload.py`
-- [ ] **7.11** Upload page — `web/src/pages/UploadPage.tsx`
-
-**Verification (Backend):**
-- [ ] V7.1 — YouTube OAuth setup saves token with refresh_token
-- [ ] V7.2 — YouTube upload (private) succeeds, video visible in Studio
-- [ ] V7.3 — TikTok upload (draft) succeeds, video in inbox
-- [ ] V7.4 — Facebook upload succeeds, video on Page
-- [ ] V7.5 — X upload succeeds *(if enabled)*
-- [ ] V7.6 — Uploader factory returns correct types, only enabled platforms
-- [ ] V7.7 — Error handling returns `UploadResult(success=False)`, no crash
-- [ ] V7.8 — Unit tests pass
-
-**Verification (Web UI):**
-- [ ] V7.9 — Auth status API returns per-platform connection status
-- [ ] V7.10 — OAuth flow via API (start → authorize → callback → connected)
-- [ ] V7.11 — Upload via API with per-platform progress
-- [ ] V7.12 — Upload page: connect accounts → select video → upload → see result URLs
-- [ ] V7.13 — Retry failed upload without re-uploading successful platforms
-
----
-
 ### One-Time Setup Checklist
 
 - [ ] Docker installed, Douyin API container running
-- [ ] Python venv created, dependencies installed
+- [ ] Python venv created, dependencies installed (or use Docker)
 - [ ] ffmpeg installed + Noto CJK fonts available
 - [ ] Whisper model downloaded (~3GB for large-v3)
-- [ ] Google Cloud: project created → YouTube Data API v3 enabled → OAuth credentials
-- [ ] TikTok Developer: app registered → Content Posting API → **audit submitted early**
-- [ ] Facebook Developer: app created → permissions requested → long-lived Page token
-- [ ] X Developer *(optional)*: Basic plan ($100/mo) → API keys generated
-- [ ] OAuth flows completed: `scripts/setup_oauth.py {platform}` for each platform
+- [ ] Translation API key (Anthropic / DeepSeek / OpenAI) entered in the Settings UI
 
 ## Development
 
@@ -526,9 +478,31 @@ make lint                                    # ruff check
 make format                                  # ruff format
 make check                                   # lint + test
 
-# Docker (Douyin API)
-make docker-up                               # start API container
-make docker-down                             # stop API container
+# Docker (full stack: Douyin API + app)
+make docker-up                               # build + start everything
+make docker-down                             # stop everything
+make docker-logs                             # tail app container logs
+make docker-rebuild                          # no-cache rebuild of app
+```
+
+## Docker Quickstart
+
+The full stack — Douyin API helper + FastAPI backend + React UI — runs as two containers via `docker compose`. Works on macOS, Linux, and Windows (Docker Desktop or Docker Engine). See [DOCKER.md](DOCKER.md) for the full operations guide (troubleshooting, persistence, upgrades, clean slate).
+
+```bash
+git clone <repo> && cd douyin-automation
+cp config/config.example.yaml config/config.yaml      # app config (tweakable later in the UI)
+# Create config/douyin_web_config.yaml with your Douyin cookie — see DOCKER.md §2.2
+docker compose up -d --build
+open http://localhost:8000
+```
+
+Then open **Settings** in the UI to enter your translation API key (Anthropic / DeepSeek / OpenAI) and your Douyin user cookie. Keys live in your browser only and are sent with each translate / TTS request.
+
+Health check:
+
+```bash
+curl -fsS http://localhost:8000/api/health   # {"status":"ok"}
 ```
 
 ## License

@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Cross-platform Docker packaging. New multi-stage `Dockerfile` (Node 20 builds the React UI, Python 3.11-slim runs uvicorn with ffmpeg/libass/Noto-CJK + PaddlePaddle/PaddleOCR/llama-cpp-python preinstalled) and an `app` service in `docker-compose.yml` that runs alongside the existing `douyin-api` helper. FastAPI now serves the built UI from `ui-app/dist/` at `/` (with SPA fallback) when present, exposes a `/api/health` endpoint, and reads the Douyin API URL from `DOUYIN_API_BASE` (compose sets it to `http://douyin-api:80`). Config interpolation extended to support `${VAR:-default}` so `config/config.example.yaml` works for both Docker and bare-metal `make api`. PaddleOCR model files persist in a named volume; `data/` and `config/` are bind-mounted. New Make targets: `docker-build`, `docker-rebuild`, `docker-logs`. New `DOCKER.md` operations guide and a slimmer "Docker Quickstart" section in the README.
+
+### Removed
+- Social-platform posting (YouTube, TikTok, Facebook, X) was scoped out of the product. Deleted the empty `src/uploader/` package, the unimplemented `upload` CLI command, the stubbed upload stage in `Pipeline.process_single`, the `Upload.tsx` "Coming Soon" page and its route, and `plans/phase7-platform-uploads.md`. Dropped four unused dependencies — `tweepy`, `google-api-python-client`, `google-auth-oauthlib`, `authlib` (zero imports across the codebase). Removed the `platforms:` credentials block from `config/config.example.yaml` and the matching `TIKTOK_*` / `FB_*` / `X_*` env vars from `.env.example`. Per-platform **video formatting** (resolution / subtitle language via `config/platforms.yaml` and the `platforms: list[str]` parameter on pipeline endpoints) is unchanged — only auto-posting is gone.
+
+### Changed
+- `.env` is no longer required for normal Docker use. API keys (Anthropic / DeepSeek / OpenAI / ElevenLabs / Google) are entered in the Settings UI and stored in `localStorage`; they're sent per-request and never persisted on the server. `docker-compose.yml` no longer references `env_file: .env`. `.env.example` slimmed down to a single optional `DOUYIN_API_BASE` override.
+
+### Fixed
+- PaddleOCR crashed under Paddle 3.x on x86_64 (Linux native + Rosetta) with `(Unimplemented) ConvertPirAttribute2RuntimeAttribute not support [pir::ArrayAttribute<pir::DoubleAttribute>]` raised inside the PIR new-executor's OneDNN instruction lowering. Setting `FLAGS_use_mkldnn` / `FLAGS_enable_pir_in_executor` via env had no effect — PaddleOCR builds its inference programs before those are read. The reliable kill-switch is `paddle.set_flags({"FLAGS_use_mkldnn": False})` plus `enable_mkldnn=False` on the `PaddleOCR(...)` constructor; both applied in `OCRTranscriber._get_ocr()` with a `TypeError` fallback for older paddleocr versions that don't accept the kwarg.
+
 ### Fixed
 - Some dubbed sentences played at natural 1× speed instead of the configured `playback_speed`. Stage 4 had two early-return branches that appended raw clips to `fitted_clips` without going through `_speed_up_audio`: the zero-width-SRT-segment branch and the no-clip branch. Refactored Stage 4 so every non-None clip goes through one unified atempo-application block — no branch can bypass it. Audio is now uniformly at the chosen speed regardless of how the slot's window resolved.
 

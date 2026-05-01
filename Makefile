@@ -1,4 +1,4 @@
-.PHONY: install install-linux test lint format check clean docker-up docker-down api ui
+.PHONY: install install-linux test lint format check clean docker-up docker-down docker-build docker-rebuild docker-logs api ui
 
 # Development (macOS)
 install:
@@ -29,12 +29,21 @@ format:
 
 check: lint test
 
-# Docker (Douyin API)
+# Docker (full stack: douyin-api + app)
 docker-up:
-	docker compose up -d
+	docker compose up -d --build
 
 docker-down:
 	docker compose down
+
+docker-build:
+	docker compose build app
+
+docker-rebuild:
+	docker compose build --no-cache app
+
+docker-logs:
+	docker compose logs -f app
 
 # API server
 api:

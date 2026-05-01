@@ -5,17 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "douyin-repurpose"
 version = "0.1.0"
-description = "Automated pipeline to download Douyin videos, generate subtitles, and upload to multiple platforms"
+description = "Automated pipeline to download Douyin videos, generate AI subtitles, dub, and produce per-platform reformatted exports"
 requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.27.0",
     "pyyaml>=6.0",
     "click>=8.1.0",
     "yt-dlp>=2024.1.0",
-    "google-api-python-client>=2.100.0",
-    "google-auth-oauthlib>=1.1.0",
-    "authlib>=1.3.0",
-    "tweepy>=4.14.0",
     "tenacity>=8.2.0",
     "rich>=13.0.0",
     "fastapi>=0.115.0",
