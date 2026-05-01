@@ -50,13 +50,31 @@ class OCRTranscriber(BaseTranscriber):
     def _get_ocr(self, lang: str = "ch"):
         """Lazy-init PaddleOCR engine."""
         if self._ocr_engine is None:
+            # Paddle 3.x's PIR new-executor crashes when lowering certain
+            # ops via OneDNN: "ConvertPirAttribute2RuntimeAttribute not
+            # support [pir::ArrayAttribute<pir::DoubleAttribute>]" — both
+            # FLAGS_use_mkldnn=0 (env) and FLAGS_enable_pir_in_executor=0
+            # are ignored once PaddleOCR builds its inference programs.
+            # The reliable kill-switch is set_flags() before construction.
+            try:
+                import paddle
+
+                paddle.set_flags({"FLAGS_use_mkldnn": False})
+            except Exception:
+                pass
+
             from paddleocr import PaddleOCR
 
-            self._ocr_engine = PaddleOCR(
+            kwargs = dict(
                 lang=lang,
                 use_doc_orientation_classify=False,
                 use_doc_unwarping=False,
             )
+            try:
+                self._ocr_engine = PaddleOCR(enable_mkldnn=False, **kwargs)
+            except TypeError:
+                # Older paddleocr (<3.x) doesn't accept enable_mkldnn.
+                self._ocr_engine = PaddleOCR(**kwargs)
         return self._ocr_engine
 
     def transcribe(
