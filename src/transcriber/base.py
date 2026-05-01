@@ -7,7 +7,7 @@ logger = setup_logger(__name__)
 
 
 class BaseTranscriber(ABC):
-    """Abstract base class for Whisper transcription backends."""
+    """Abstract base class for subtitle extraction backends."""
 
     @abstractmethod
     def transcribe(

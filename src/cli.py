@@ -133,9 +133,8 @@ def download(url, output_dir):
 @click.argument("video_path")
 @click.option("--lang", default="zh", help="Source language")
 @click.option("--translate", "translate_profile", default=None, help="Translation profile")
-@click.option("--model", default=None, help="Whisper model size")
-def transcribe(video_path, lang, translate_profile, model):
-    """Transcribe a local video file."""
+def transcribe(video_path, lang, translate_profile):
+    """Extract burned-in subtitles from a local video file via PaddleOCR."""
     from src.transcriber import get_transcriber
 
     config = _load_config()

@@ -162,7 +162,7 @@ class SubtitleRegionDetector:
 def load_subtitle_region(srt_dir: Path, video_id: str) -> SubtitleRegion | None:
     """Convenience: load subtitle region from OCR metadata file.
 
-    Returns None if no OCR metadata exists (e.g. video was Whisper-transcribed).
+    Returns None if no OCR metadata exists (e.g. transcription hasn't run yet).
     """
     meta_path = srt_dir / f"{video_id}_ocr_meta.json"
     detector = SubtitleRegionDetector()

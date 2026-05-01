@@ -27,4 +27,4 @@ Parses/styles subtitles and burns them into video via ffmpeg, reformatting per p
 ## Connects To
 
 - **Input**: MP4 from `data/raw/`, SRT from `data/srt/`
-- **Output**: Platform-specific MP4s in `data/output/{id}_{platform}.mp4` → consumed by `uploader`
+- **Output**: Platform-specific MP4s in `data/output/{id}_{platform}.mp4` (downloaded/uploaded manually — auto-posting is out of scope)

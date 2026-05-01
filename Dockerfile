@@ -35,7 +35,7 @@ WORKDIR /app
 COPY pyproject.toml ./
 RUN mkdir -p src && touch src/__init__.py
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install -e ".[linux]" "faster-whisper>=1.1.0"
+    pip install -e ".[linux]"
 
 COPY src/ ./src/
 COPY scripts/ ./scripts/

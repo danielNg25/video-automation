@@ -162,8 +162,7 @@ douyin-automation/
 │   │   └── ytdlp.py           # yt-dlp fallback
 │   ├── transcriber/
 │   │   ├── base.py             # Common interface + SRT generator
-│   │   ├── faster.py           # faster-whisper (Linux/CUDA)
-│   │   └── mlx.py             # mlx-whisper (macOS)
+│   │   └── ocr.py              # PaddleOCR (extracts burned-in subtitles)
 │   ├── processor/
 │   │   ├── subtitle.py         # SRT/ASS parsing, merging, styling
 │   │   └── ffmpeg.py          # Subtitle burn-in + video reformat
@@ -225,9 +224,8 @@ douyin-automation/
 - [x] **1.9** yt-dlp fallback — `src/downloader/ytdlp.py`
 - [x] **1.10** Downloader factory — `src/downloader/__init__.py`
 - [x] **1.11** Base transcriber — `src/transcriber/base.py`
-- [x] **1.12** faster-whisper backend — `src/transcriber/faster.py`
-- [x] **1.13** mlx-whisper backend — `src/transcriber/mlx.py`
-- [x] **1.14** Transcriber factory — `src/transcriber/__init__.py`
+- [x] **1.12** PaddleOCR transcriber — `src/transcriber/ocr.py`
+- [x] **1.13** Transcriber factory — `src/transcriber/__init__.py`
 - [x] **1.15** Translation support — `src/processor/subtitle.py`
 - [x] **1.16** Cookie refresh script — `scripts/refresh_douyin_cookie.py`
 - [x] **1.17** Phase 1 tests — `tests/test_downloader.py`, `tests/test_transcriber.py`
@@ -335,8 +333,7 @@ douyin-automation/
 - [x] V3.2 — Frame extraction produces correct frame count
 - [x] V3.3 — Auto-detection filters watermarks (username/logo NOT in SRT, subtitles ARE)
 - [x] V3.4 — OCR transcription produces SRT with Chinese text from burned-in subtitles
-- [x] V3.5 — Whisper still works (backward compat, no `method` field defaults to audio)
-- [x] V3.6 — Manual region override works when provided
+- [x] V3.5 — Manual region override works when provided
 - [x] V3.7 — UI: toggle to OCR → click Transcribe → auto-detect → SRT preview
 - [x] V3.8 — Unit tests pass
 
@@ -462,7 +459,7 @@ douyin-automation/
 - [ ] Docker installed, Douyin API container running
 - [ ] Python venv created, dependencies installed (or use Docker)
 - [ ] ffmpeg installed + Noto CJK fonts available
-- [ ] Whisper model downloaded (~3GB for large-v3)
+- [ ] PaddleOCR models downloaded (~1 GB, fetched on first OCR run)
 - [ ] Translation API key (Anthropic / DeepSeek / OpenAI) entered in the Settings UI
 
 ## Development

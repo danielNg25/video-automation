@@ -12,7 +12,6 @@ import { loadApiKeys, saveApiKey } from '../utils/storage';
 
 function SettingsPage() {
   const [activeSection, setActiveSection] = useState('douyin');
-  const [vadFilter, setVadFilter] = useState(true);
   const [skipExisting, setSkipExisting] = useState(true);
 
   // Cookie management state
@@ -28,10 +27,6 @@ function SettingsPage() {
   const [apiKeySaveMsg, setApiKeySaveMsg] = useState('');
 
   // Server config state
-  const [whisperModelSize, setWhisperModelSize] = useState('large-v3');
-  const [whisperDevice, setWhisperDevice] = useState('auto');
-  const [whisperComputeType, setWhisperComputeType] = useState('float16');
-  const [whisperLanguage, setWhisperLanguage] = useState('');
   const [ocrFps, setOcrFps] = useState('2.0');
   const [ocrConfidence, setOcrConfidence] = useState('0.7');
   const [ocrSimilarity, setOcrSimilarity] = useState('0.85');
@@ -64,15 +59,9 @@ function SettingsPage() {
     getCookieStatus().then(setCookie).catch(() => {});
     // Load server config
     getConfig().then((cfg) => {
-      const w = (cfg.whisper || {}) as Record<string, unknown>;
       const o = (cfg.ocr || {}) as Record<string, unknown>;
       const sr = (o.subtitle_region || {}) as Record<string, unknown>;
       const f = (cfg.ffmpeg || {}) as Record<string, unknown>;
-      if (w.model_size) setWhisperModelSize(String(w.model_size));
-      if (w.device) setWhisperDevice(String(w.device));
-      if (w.compute_type) setWhisperComputeType(String(w.compute_type));
-      if (w.default_language) setWhisperLanguage(String(w.default_language));
-      if (w.vad_filter !== undefined) setVadFilter(Boolean(w.vad_filter));
       const fpsMatch = matchOption(o.fps, ['1.0', '2.0', '3.0', '5.0']);
       if (fpsMatch) setOcrFps(fpsMatch);
       const cropMatch = matchOption(o.crop_bottom_pct, ['0', '0.20', '0.25', '0.30', '0.35', '0.40', '0.50']);
@@ -114,7 +103,6 @@ function SettingsPage() {
   const sidebarItems = [
     { id: 'douyin', icon: 'api', label: 'Douyin API' },
     { id: 'apikeys', icon: 'key', label: 'API Keys' },
-    { id: 'transcription', icon: 'description', label: 'Transcription' },
     { id: 'ocr', icon: 'document_scanner', label: 'OCR Subtitles' },
     { id: 'video', icon: 'movie_filter', label: 'Video Processing' },
     { id: 'platforms', icon: 'hub', label: 'Platforms' },
@@ -327,63 +315,6 @@ function SettingsPage() {
                     {apiKeySaveMsg}
                   </div>
                 )}
-              </div>
-            </section>
-
-            {/* Transcription */}
-            <section className="space-y-6" id="transcription">
-              <div className="border-b border-zinc-800/30 pb-4">
-                <h2 className="text-xl font-semibold text-on-surface">Transcription</h2>
-                <p className="text-xs text-on-surface-variant font-mono mt-1 opacity-70">Whisper engine and VAD parameters.</p>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Model Size</label>
-                  <select className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm" value={whisperModelSize} onChange={(e) => setWhisperModelSize(e.target.value)}>
-                    <option value="tiny">tiny</option>
-                    <option value="base">base</option>
-                    <option value="small">small</option>
-                    <option value="medium">medium</option>
-                    <option value="large-v3">large-v3</option>
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Device</label>
-                  <select className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono" value={whisperDevice} onChange={(e) => setWhisperDevice(e.target.value)}>
-                    <option value="auto">auto</option>
-                    <option value="cpu">cpu</option>
-                    <option value="cuda:0">cuda:0</option>
-                    <option value="cuda:1">cuda:1</option>
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Compute Type</label>
-                  <select className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono" value={whisperComputeType} onChange={(e) => setWhisperComputeType(e.target.value)}>
-                    <option value="float16">float16</option>
-                    <option value="int8_float16">int8_float16</option>
-                    <option value="int8">int8</option>
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Language</label>
-                  <input className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm" placeholder="Auto (detect)" type="text" value={whisperLanguage} onChange={(e) => setWhisperLanguage(e.target.value)} />
-                </div>
-                <div className="flex items-center justify-between p-3 bg-surface-container-low rounded">
-                  <span className="text-xs font-bold uppercase tracking-widest text-zinc-400">VAD Filter</span>
-                  <div className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      checked={vadFilter}
-                      onChange={(e) => setVadFilter(e.target.checked)}
-                      className="sr-only peer"
-                      type="checkbox"
-                    />
-                    <div className="w-9 h-5 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-surface-container-low rounded">
-                  <span className="text-xs font-bold uppercase tracking-widest text-zinc-400">Models</span>
-                  <span className="text-[10px] font-mono bg-emerald-900/30 text-emerald-400 px-2 py-0.5 rounded">DOWNLOADED</span>
-                </div>
               </div>
             </section>
 
@@ -685,15 +616,9 @@ function SettingsPage() {
           <button
             onClick={() => {
               getConfig().then((cfg) => {
-                const w = (cfg.whisper || {}) as Record<string, unknown>;
                 const o = (cfg.ocr || {}) as Record<string, unknown>;
                 const sr = (o.subtitle_region || {}) as Record<string, unknown>;
                 const f = (cfg.ffmpeg || {}) as Record<string, unknown>;
-                setWhisperModelSize(String(w.model_size || 'large-v3'));
-                setWhisperDevice(String(w.device || 'auto'));
-                setWhisperComputeType(String(w.compute_type || 'float16'));
-                setWhisperLanguage(String(w.default_language || ''));
-                setVadFilter(w.vad_filter !== false);
                 setOcrFps(String(o.fps || '2.0'));
                 setOcrCropBottom(String(o.crop_bottom_pct || '0'));
                 setOcrConfidence(String(o.confidence_threshold || '0.7'));
@@ -723,13 +648,6 @@ function SettingsPage() {
               setIsSaving(true);
               try {
                 await putConfig({
-                  whisper: {
-                    model_size: whisperModelSize,
-                    device: whisperDevice,
-                    compute_type: whisperComputeType,
-                    default_language: whisperLanguage || 'zh',
-                    vad_filter: vadFilter,
-                  },
                   ocr: {
                     fps: Number(ocrFps),
                     crop_bottom_pct: Number(ocrCropBottom),

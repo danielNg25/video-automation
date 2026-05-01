@@ -18,14 +18,13 @@ Automated pipeline to download Douyin videos, generate AI subtitles (Chinese + E
 
 ## Architecture
 
-Six-stage pipeline: **Download → Transcribe → Translate → TTS → Process → Upload**
+Five-stage pipeline: **Download → Transcribe → Translate → TTS → Process**
 
-- **Download**: Douyin API (self-hosted Evil0ctal container on :8080) with yt-dlp fallback
-- **Transcribe**: mlx-whisper on macOS, faster-whisper on Linux (auto-selected via `sys.platform`), or PaddleOCR for burned-in subtitle extraction
-- **Translate**: LLM-based translation (Anthropic/OpenAI) with configurable style profiles in `config/translation_profiles/`
+- **Download**: Douyin API (self-hosted Evil0ctal container on :8081) with yt-dlp fallback
+- **Transcribe**: PaddleOCR extracts burned-in Chinese subtitles from video frames (the audio-Whisper backends were removed — OCR is the only path)
+- **Translate**: LLM-based translation (Anthropic / DeepSeek / OpenAI) with configurable style profiles in `config/translation_profiles/`
 - **TTS**: Multi-provider dubbing (Edge TTS free default, OpenAI, Google, ElevenLabs, Piper) with segment assembly and audio mixing
-- **Process**: ffmpeg subtitle burn-in + per-platform video reformatting
-- **Upload**: Platform-specific uploaders behind a common `BaseUploader` ABC
+- **Process**: ffmpeg subtitle burn-in + per-platform video reformatting (1080×1920, language per platform). Auto-posting is not in scope; users export and upload manually.
 
 Data flows through: `data/raw/` → `data/srt/` → `data/tts/` → `data/output/` → `data/logs/`
 
@@ -100,7 +99,7 @@ python scripts/setup_oauth.py youtube
 
 ## Key Design Decisions
 
-- **Whisper backend abstraction**: `src/transcriber/base.py` defines the interface; `faster.py` and `mlx.py` implement it. Factory in `__init__.py` auto-selects by platform.
+- **Transcriber abstraction**: `src/transcriber/base.py` defines the interface; `ocr.py` (PaddleOCR) is the only implementation. The factory in `__init__.py` returns `OCRTranscriber` unconditionally.
 - **Download fallback chain**: Douyin API is primary but breaks often due to anti-scraping changes. yt-dlp is the automatic fallback. Both return the same `VideoMetadata` dataclass.
 - **Subtitle language per platform**: Vietnamese for TikTok/Facebook, English for YouTube/X. Configured in `config/platforms.yaml`.
 - **Stage-level state persistence**: Pipeline saves progress after each stage so interrupted runs resume from the last completed stage, not from scratch. File locking with `fcntl.flock()` for multi-instance safety.
@@ -134,7 +133,7 @@ python scripts/setup_oauth.py youtube
 Environment: copy `.env.example` to `.env` and `config/config.example.yaml` to `config/config.yaml`, then edit with your API keys.
 
 YAML files in `config/`:
-- `config.yaml` — API endpoints, Whisper model settings, platform credentials (supports `${ENV_VAR}` interpolation)
+- `config.yaml` — API endpoints, OCR / TTS / pipeline settings, ffmpeg knobs (supports `${VAR:-default}` interpolation)
 - `platforms.yaml` — Per-platform subtitle language and video specifications
 - `subtitle_styles.yaml` — ASS subtitle styling (font, color, position) with per-platform overrides
 - `tts_voices.yaml` — Voice profiles, per-platform defaults, volume mix settings
