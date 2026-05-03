@@ -8,19 +8,10 @@ build/
 .venv/
 .pytest_cache/
 
-# Data (runtime — only keep .gitkeep)
-data/raw/*.mp4
-data/raw/*.json
-data/raw/*.jpg
-data/srt/*.srt
-data/srt/*_style.json
-data/output/*.mp4
-data/proxy/*.mp4
-data/tts/*.mp3
-data/tts/*.wav
-data/tts/piper_models/
-data/logs/*.log
-data/logs/*.json
+# Data (runtime). Entire directory ignored. The .gitkeep files already in
+# the index stay tracked (git ignore rules don't apply to already-tracked
+# files), so fresh clones still get the directory structure.
+data/
 
 # Secrets & credentials
 .env
