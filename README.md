@@ -71,12 +71,12 @@ pip install -e ".[linux]"
 
 ## Configuration
 
-Copy and edit the config files:
+Copy the config file:
 
 ```bash
 cp config/config.example.yaml config/config.yaml
-cp .env.example .env
-# Edit both files with your API keys and preferences
+# Edit for your preferences. API keys are NOT in here — open the web UI
+# and enter them under Settings → API Keys (stored in your browser only).
 ```
 
 Key configuration sections:

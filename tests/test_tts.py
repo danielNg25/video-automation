@@ -127,39 +127,7 @@ class TestVoiceProfiles:
 # ── Assembler duration fitting tests ──
 
 
-class TestAssemblerHelpers:
-    def test_build_atempo_filter_simple(self):
-        from src.tts.assembler import _build_atempo_filter
-
-        assert _build_atempo_filter(1.5) == "atempo=1.5000"
-
-    def test_build_atempo_filter_double(self):
-        from src.tts.assembler import _build_atempo_filter
-
-        result = _build_atempo_filter(2.5)
-        assert result == "atempo=2.0,atempo=1.2500"
-
-    def test_build_atempo_filter_triple(self):
-        from src.tts.assembler import _build_atempo_filter
-
-        result = _build_atempo_filter(5.0)
-        # 5.0 / 2.0 = 2.5 → 2.5 / 2.0 = 1.25
-        assert result == "atempo=2.0,atempo=2.0,atempo=1.2500"
-
-    def test_build_atempo_filter_exact_two(self):
-        from src.tts.assembler import _build_atempo_filter
-
-        result = _build_atempo_filter(2.0)
-        assert result == "atempo=2.0000"
-
-    def test_build_atempo_filter_one(self):
-        from src.tts.assembler import _build_atempo_filter
-
-        result = _build_atempo_filter(1.0)
-        assert result == "atempo=1.0"
-
-
-# ── Redistribute / Stage 4 fitting tests ──
+# ── Slot construction / sentence merger tests ──
 
 
 def _make_slot(index, window_start, window_end, clip_duration, clip_path=None):
@@ -170,223 +138,151 @@ def _make_slot(index, window_start, window_end, clip_duration, clip_path=None):
         clip_duration=clip_duration,
         window_start=window_start,
         window_end=window_end,
-        anchor=(window_start + window_end) / 2.0,
-        effective_start=window_start,
-        effective_end=window_end,
     )
 
 
-class TestRedistributeAfterShortening:
-    """Fix 1: re-running redistribute after Stage 3 must restore donor windows."""
+class TestSentenceMergerGapSplit:
+    """Sentence merger may not span silent gaps > MAX_MERGE_GAP_SECONDS.
 
-    def test_donor_window_restored_when_offender_shortened(self):
-        from src.tts.assembler import _redistribute_slots
+    Regression for the symptom where the LLM grouped segments across a 5s
+    pause based on text continuity (the prompt is timestamp-blind), then the
+    merged clip played continuously across the gap and the post-Stage-3 SRT
+    split-back stretched timestamps across the same span — both eating the
+    natural pause. The post-split here makes that impossible.
+    """
 
-        # Slot 0: donor, 1s clip in 5s window (4s spare).
-        # Slot 1: offender, 10s clip in 4s window (overflows by 6s).
-        # Slot 2: donor, 1s clip in 5s window (4s spare).
-        slots = [
-            _make_slot(0, 0.0, 5.0, 1.0, clip_path=Path("/tmp/a.mp3")),
-            _make_slot(1, 5.0, 9.0, 10.0, clip_path=Path("/tmp/b.mp3")),
-            _make_slot(2, 9.0, 14.0, 1.0, clip_path=Path("/tmp/c.mp3")),
+    def test_split_at_long_gap(self):
+        from src.tts.assembler import _split_group_on_gaps
+        segments = [
+            {"start": 0.0, "end": 1.0, "text": "A"},
+            {"start": 1.0, "end": 3.0, "text": "B"},
+            {"start": 8.0, "end": 9.0, "text": "C"},
+            {"start": 9.0, "end": 11.0, "text": "D"},
+        ]
+        # The user's reference scenario: 5s gap between B and C.
+        sub = _split_group_on_gaps([0, 1, 2, 3], segments, max_gap=1.5)
+        assert sub == [[0, 1], [2, 3]]
+
+    def test_no_split_when_gaps_short(self):
+        from src.tts.assembler import _split_group_on_gaps
+        segments = [
+            {"start": 0.0, "end": 2.0, "text": "a"},
+            {"start": 2.5, "end": 4.0, "text": "b"},
+            {"start": 4.2, "end": 6.0, "text": "c"},
+        ]
+        # Internal gaps 0.5s and 0.2s — both ≤ 1.5s threshold.
+        assert _split_group_on_gaps([0, 1, 2], segments, max_gap=1.5) == [[0, 1, 2]]
+
+    def test_singleton_group_returned_as_is(self):
+        from src.tts.assembler import _split_group_on_gaps
+        segments = [{"start": 0.0, "end": 1.0, "text": "x"}]
+        assert _split_group_on_gaps([0], segments, max_gap=1.5) == [[0]]
+
+    @pytest.mark.asyncio
+    async def test_merge_into_sentences_splits_llm_output(self):
+        """LLM groups all four segments into one sentence; result is two
+        SentenceGroups, both using raw joined text (the LLM's punctuated
+        text covered the whole merged sentence and would be wrong on any
+        single sub-group)."""
+        from src.tts.assembler import _merge_into_sentences
+
+        segments = [
+            {"start": 0.0, "end": 1.0, "text": "你有病吧?"},
+            {"start": 1.0, "end": 3.0, "text": "谁家好鸟这样叫？"},
+            {"start": 8.0, "end": 9.0, "text": "从叫声不难看出"},
+            {"start": 9.0, "end": 11.0, "text": "你肯定不是什么好鸟"},
         ]
 
-        # First pass: offender squeezes both donors.
-        _redistribute_slots(slots, 14.0)
-        assert slots[0].effective_end < slots[0].window_end
-        assert slots[2].effective_start > slots[2].window_start
+        async def fake_llm(system, user, max_tokens):
+            return "[1,2,3,4] some merged punctuated sentence."
 
-        # Stage 3 shortens slot 1's clip from 10s → 3s; reset and re-run.
-        slots[1].clip_duration = 3.0
-        for s in slots:
-            s.effective_start = s.window_start
-            s.effective_end = s.window_end
-        _redistribute_slots(slots, 14.0)
-
-        # Donors no longer needed to give time; their windows are intact.
-        assert slots[0].effective_start == 0.0
-        assert slots[0].effective_end == 5.0
-        assert slots[2].effective_start == 9.0
-        assert slots[2].effective_end == 14.0
+        groups = await _merge_into_sentences(segments, llm_caller=fake_llm)
+        assert len(groups) == 2
+        assert groups[0].segment_indices == [0, 1]
+        assert (groups[0].start, groups[0].end) == (0.0, 3.0)
+        assert groups[1].segment_indices == [2, 3]
+        assert (groups[1].start, groups[1].end) == (8.0, 11.0)
+        assert groups[0].text == "你有病吧? 谁家好鸟这样叫？"
+        assert groups[1].text == "从叫声不难看出 你肯定不是什么好鸟"
 
 
-class TestStage4NoDrop:
-    """Fix 2: a slot must always emit audio — never (start, None) — when a clip exists."""
+class TestNaturalSpeedAnchoring:
+    """Sanity: SegmentSlot is built from the source-aligned window only;
+    no atempo/effective_*/anchor fields exist on it anymore."""
 
-    def test_collapsed_window_falls_back_to_base_window(self, tmp_path, monkeypatch):
-        # Simulate the collapsed-window branch by directly constructing a slot
-        # whose effective window is inverted but whose base window is healthy.
-        from src.tts import assembler as A
+    def test_segment_slot_has_only_natural_fields(self):
+        import dataclasses
+        from src.tts.assembler import SegmentSlot
+        names = {f.name for f in dataclasses.fields(SegmentSlot)}
+        assert names == {"index", "clip_path", "clip_duration", "window_start", "window_end"}
 
-        clip = tmp_path / "clip.mp3"
-        clip.write_bytes(b"\x00" * 16)
-        slot = _make_slot(7, 5.0, 8.0, 2.0, clip_path=clip)
-        slot.effective_start = 7.5
-        slot.effective_end = 6.5  # collapsed (negative)
+    def test_redistribute_and_split_back_helpers_are_gone(self):
+        """Borrow/redistribute and SRT-split-back helpers are deleted. The
+        atempo helpers (_speed_up_audio / _build_atempo_filter) stay
+        because Stage 2 applies playback_speed; SHORTENING_MAX_PASSES
+        stays because Stage 1.5's LLM shortening uses it."""
+        import src.tts.assembler as A
+        for name in (
+            "_redistribute_slots", "GAP_BORROW_FRACTION",
+            "_llm_split_subtitles", "_naive_split_text",
+            "_fallback_split_subtitles", "_segments_from_chunks",
+            "DEFAULT_DUB_PLAYBACK_SPEED",
+            "MAX_SAFE_SPEED_RATIO",
+        ):
+            assert not hasattr(A, name), f"{name!r} should be removed"
+        # Surfaces that stay (used downstream).
+        assert hasattr(A, "_speed_up_audio")
+        assert hasattr(A, "_build_atempo_filter")
+        assert hasattr(A, "SHORTENING_MAX_PASSES")
 
-        # Drive only the Stage 4 logic via the public assembler is overkill;
-        # instead verify the branch via inline assertion of the new contract:
-        # if effective <=0 and base > 0, we must use the base window.
-        eff = slot.effective_end - slot.effective_start
-        base = slot.window_end - slot.window_start
-        assert eff <= 0 and base > 0
-        # Reproduce the fallback the assembler now performs:
-        slot.effective_start = slot.window_start
-        slot.effective_end = slot.window_end
-        assert slot.effective_end - slot.effective_start == base
-        # DEFAULT_DUB_PLAYBACK_SPEED is exposed — sanity check it's 1.5×.
-        assert A.DEFAULT_DUB_PLAYBACK_SPEED == 1.5
-
-
-class TestStage4SpeedCap:
-    """Stage 4 hard-caps speed_ratio at MAX_DUB_SPEED — no overrun."""
-
-    def test_high_speedup_capped(self):
-        from src.tts.assembler import DEFAULT_DUB_PLAYBACK_SPEED as MAX_DUB_SPEED
-
-        clip_duration = 10.0
-        effective_window = 1.0
-        speed_ratio = clip_duration / effective_window  # 10x
-        assert speed_ratio > MAX_DUB_SPEED
-        # The capping line in Stage 4 produces this:
-        capped = MAX_DUB_SPEED if speed_ratio > MAX_DUB_SPEED else speed_ratio
-        assert capped == MAX_DUB_SPEED == 1.5
-
-    def test_normal_speedup_unchanged(self):
-        from src.tts.assembler import DEFAULT_DUB_PLAYBACK_SPEED as MAX_DUB_SPEED
-
-        speed_ratio = 1.3  # below cap
-        capped = MAX_DUB_SPEED if speed_ratio > MAX_DUB_SPEED else speed_ratio
-        assert capped == 1.3
-
-    def test_capped_audio_length_is_clip_over_max(self):
-        """When the ratio is capped at 1.5×, the resulting audio length is
-        clip_duration / 1.5 — silent tail follows. Never overruns the slot."""
-        from src.tts.assembler import DEFAULT_DUB_PLAYBACK_SPEED as MAX_DUB_SPEED
-
-        clip_duration = 10.0
-        effective_window = 1.0  # would need 10× to fit naturally
-        capped_ratio = MAX_DUB_SPEED
-        audio_length_after_speedup = clip_duration / capped_ratio
-        # 10s / 1.5 = 6.67s. Still longer than the 1s window — but the
-        # important thing is it's a deterministic length, NOT an overrun
-        # past clip_duration's natural play.
-        assert audio_length_after_speedup == clip_duration / MAX_DUB_SPEED
+    def test_atempo_filter_chain(self):
+        """Sanity: atempo chain handles ratios in (0, ∞) — chains for >2×."""
+        from src.tts.assembler import _build_atempo_filter
+        assert _build_atempo_filter(1.0) == "atempo=1.0"
+        assert _build_atempo_filter(1.5) == "atempo=1.5000"
+        # Above 2.0 chains: 2.5 → atempo=2.0,atempo=1.25
+        assert _build_atempo_filter(2.5) == "atempo=2.0,atempo=1.2500"
 
 
-class TestIterativeShortening:
-    """Phase 0.2: shortening runs up to SHORTENING_MAX_PASSES with stricter
-    target_pct each pass; fits-already sentences drop out between passes."""
+class TestSentenceShortening:
+    """Stage 1.5: when a clip would overrun its source span at the chosen
+    playback_speed, the LLM is asked to shorten the text. Up to
+    SHORTENING_MAX_PASSES passes; each tightens target_pct by 5pp; floor 30%."""
 
-    def test_max_passes_constant_is_three(self):
+    def test_max_passes_constant(self):
         from src.tts.assembler import SHORTENING_MAX_PASSES
-
         assert SHORTENING_MAX_PASSES == 3
 
+    def test_target_pct_calibrates_to_fit_at_playback_speed(self):
+        """target_pct = source_span * speed / clip_duration * 100.
+        The shortened text, played at `speed`, should land inside source_span."""
+        clip, span, speed = 6.0, 3.0, 1.5
+        natural_pct = (span * speed / clip) * 100
+        assert natural_pct == 75.0
+
     def test_target_pct_tightens_per_pass(self):
-        """Each iterative pass uses a stricter target_pct so the LLM is asked
-        for shorter text after a previous round didn't fit."""
-        from src.tts.assembler import DEFAULT_DUB_PLAYBACK_SPEED as MAX_DUB_SPEED
-
-        # Worst case: 10s clip in 1s window → needs ~6.67× without shortening.
-        clip_duration = 10.0
-        effective_window = 1.0
-        natural_pct = (effective_window * MAX_DUB_SPEED / clip_duration) * 100
-        # Each pass the target steps 5pp tighter (clamped to a 30 floor).
+        """Each subsequent pass drops 5 percentage points."""
+        clip, span, speed = 6.0, 3.0, 1.5
+        natural_pct = (span * speed / clip) * 100
         targets = [max(30, int(natural_pct) - 5 * (p - 1)) for p in range(1, 4)]
-        assert targets[0] >= targets[1] >= targets[2]
-        assert targets[0] == max(30, int(natural_pct))
-        # Last pass is at least 10pp tighter than the first (or hit the 30 floor).
-        assert targets[2] <= max(30, targets[0] - 10)
+        assert targets == [75, 70, 65]
 
+    def test_floor_clamp_at_30(self):
+        """Aggressive overflow (10s clip in 1s span at 1.5x) clamps every
+        pass at 30%; we never ask the LLM for impossibly tight cuts."""
+        clip, span, speed = 10.0, 1.0, 1.5
+        natural_pct = max(30, int((span * speed / clip) * 100))
+        targets = [max(30, natural_pct - 5 * (p - 1)) for p in range(1, 4)]
+        assert all(t == 30 for t in targets)
 
-class TestConfigurablePlaybackSpeed:
-    """Per-request playback_speed: every sentence plays at the user's chosen
-    speed, and shortening targets that speed instead of the hard-coded 1.5×."""
-
-    def test_default_constant_is_15x(self):
-        from src.tts.assembler import DEFAULT_DUB_PLAYBACK_SPEED
-
-        assert DEFAULT_DUB_PLAYBACK_SPEED == 1.5
-
-    def test_target_pct_scales_with_chosen_speed(self):
-        """At playback_speed=1.3 the LLM is asked for shorter text than at
-        playback_speed=1.7 for the same overflow case."""
-        clip_duration = 10.0
-        effective_window = 4.0  # 2.5× natural overflow
-        target_at_13 = (effective_window * 1.3 / clip_duration) * 100
-        target_at_17 = (effective_window * 1.7 / clip_duration) * 100
-        assert target_at_13 < target_at_17  # 1.3× → 52%; 1.7× → 68%
-
-    def test_capped_audio_length_uses_chosen_speed(self):
-        """At playback_speed=1.3, a slot that can't fit even after shortening
-        is hard-capped at 1.3× — audio length is clip / 1.3, not clip / 1.5."""
-        clip_duration = 6.0
-        chosen_speed = 1.3
-        audio_length = clip_duration / chosen_speed
-        assert abs(audio_length - 4.615) < 0.01
-
-    def test_runner_accepts_playback_speed(self):
-        """run_tts_track must accept playback_speed kwarg and pass it through."""
-        import inspect
-        from src.tts.runner import run_tts_track
-
-        sig = inspect.signature(run_tts_track)
-        assert "playback_speed" in sig.parameters
-        assert sig.parameters["playback_speed"].default is None
-
-    def test_models_accept_playback_speed(self):
-        """TTSRequest, TTSPreviewRequest, FullPipelineRequest all accept it."""
-        from src.api.models import (
-            TTSRequest,
-            TTSPreviewRequest,
-            FullPipelineRequest,
-            BatchPipelineRequest,
-        )
-
-        # TTSRequest defaults playback_speed to None (server falls back to 1.5).
-        r = TTSRequest(video_id="v", playback_speed=1.3)
-        assert r.playback_speed == 1.3
-
-        # TTSPreviewRequest defaults to 1.0 (preview at natural unless set).
-        p = TTSPreviewRequest(text="hi")
-        assert p.playback_speed == 1.0
-        p2 = TTSPreviewRequest(text="hi", playback_speed=1.5)
-        assert p2.playback_speed == 1.5
-
-        # Pipeline request models also accept the field.
-        fp = FullPipelineRequest(url="https://example.com/x", playback_speed=1.7)
-        assert fp.playback_speed == 1.7
-        bp = BatchPipelineRequest(urls=["https://example.com/x"], playback_speed=1.2)
-        assert bp.playback_speed == 1.2
-
-
-class TestSentencePlan:
-    """Phase 1: every TTS run returns a per-sentence plan in the runner result."""
-
-    def test_sentence_plan_keys(self):
-        """Sanity check on the plan-row schema we expose via the API."""
-        # Minimal smoke test on the in-process structure — full integration is
-        # exercised in the manual end-to-end. Here we just lock the keys.
-        expected_keys = {
-            "index", "text", "window_start", "window_end",
-            "synth_duration", "speed_ratio", "needs_review",
-        }
-        # If a row is built by Stage 4 it has at least these keys + reason
-        # (and `requested_ratio` for non-error paths). Construct one inline
-        # the same way Stage 4 does, then verify keys.
-        row = {
-            "index": 0,
-            "text": "test",
-            "window_start": 0.0,
-            "window_end": 2.0,
-            "synth_duration": 1.5,
-            "speed_ratio": 1.0,
-            "requested_ratio": 1.0,
-            "needs_review": False,
-            "reason": None,
-        }
-        assert expected_keys.issubset(row.keys())
+    def test_overflow_trigger_uses_fitted_duration(self):
+        """A clip is only flagged when fitted_duration > source_span,
+        so atempo-friendly clips skip shortening even with a long natural."""
+        # 4s natural at 1.5x = 2.67s fitted → fits 3s span → no shortening.
+        clip, span, speed = 4.0, 3.0, 1.5
+        assert clip / speed <= span
+        # 6s natural at 1.5x = 4s fitted → exceeds 3s span → shorten.
+        assert 6.0 / speed > span
 
 
 # ── shorten_texts_batch per-item floor (Fix 4) ──

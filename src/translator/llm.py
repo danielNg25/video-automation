@@ -385,6 +385,18 @@ class LLMTranslator:
         return response["choices"][0]["message"]["content"]
 
     async def _call_llm(self, system: str, user: str, max_tokens: int = 4096) -> str:
+        # Backend-aware API-key precheck. The OpenAI SDK is reused for the
+        # `deepseek` backend; without this guard, its own error message would
+        # talk about `OPENAI_API_KEY` regardless of which backend the user
+        # actually picked. Keys live exclusively on the FE (Settings → API
+        # Keys, persisted to localStorage and sent with each request).
+        if self.backend in ("anthropic", "openai", "deepseek") and not self.api_key:
+            raise RuntimeError(
+                f"{self.backend} API key is missing. Open Settings → API "
+                f"Keys in the web UI and save your {self.backend} key, then "
+                f"retry — the UI sends it with every request."
+            )
+
         if self.backend == "anthropic":
             return await self._call_anthropic(system, user, max_tokens)
         elif self.backend == "openai":

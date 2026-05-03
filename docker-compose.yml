@@ -24,7 +24,10 @@ services:
     volumes:
       - ./data:/app/data
       - ./config:/app/config
-      - paddleocr_cache:/root/.paddleocr
+      # PaddleOCR 3.x downloads its inference models into ~/.paddlex/official_models,
+      # NOT ~/.paddleocr. Mount the named volume there so models survive container
+      # recreates instead of redownloading ~1 GB each time.
+      - paddleocr_cache:/root/.paddlex
     restart: unless-stopped
 
 volumes:

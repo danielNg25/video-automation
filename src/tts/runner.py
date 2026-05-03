@@ -10,7 +10,6 @@ produce byte-identical output for identical inputs.
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable
 from pathlib import Path
 
@@ -36,8 +35,9 @@ def _build_llm_translator(
 ):
     """Resolve the LLM translator used for sentence detection + text shortening.
 
-    Priority for each parameter: per-request override → config → environment.
-    Returns the constructed LLMTranslator or None if no key is available.
+    Keys come from the request body (Settings UI sends them per request) — the
+    server never reads API keys from environment variables or YAML config.
+    Returns the constructed LLMTranslator or None if no key is provided.
     """
     try:
         from src.translator.llm import LLMTranslator
@@ -47,21 +47,14 @@ def _build_llm_translator(
 
     trans_cfg = config.get("translation", {})
     backend = llm_backend or trans_cfg.get("backend", "deepseek")
-    api_key = (
-        llm_api_key
-        or trans_cfg.get("api_key")
-        or os.environ.get("DEEPSEEK_API_KEY")
-        or os.environ.get("ANTHROPIC_API_KEY")
-        or os.environ.get("OPENAI_API_KEY")
-    )
+    api_key = llm_api_key
     base_url = trans_cfg.get("base_url")
     if backend == "deepseek" and not base_url:
         base_url = "https://api.deepseek.com/v1"
 
     logger.info(
         f"TTS shortening init: llm_api_key={'yes' if llm_api_key else 'no'}, "
-        f"llm_backend={llm_backend}, "
-        f"env_deepseek={'yes' if os.environ.get('DEEPSEEK_API_KEY') else 'no'}"
+        f"llm_backend={llm_backend}"
     )
 
     if not api_key:

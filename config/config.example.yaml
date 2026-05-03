@@ -11,10 +11,11 @@ ffmpeg:
     audio_bitrate: '128k'
 
 # LLM Translation
+# API key is NOT in this file — keys are entered in Settings → API Keys in
+# the web UI, persisted to browser localStorage, and sent with each request.
 translation:
-    backend: 'anthropic'                    # "anthropic" | "openai"
+    backend: 'anthropic'                    # "anthropic" | "openai" | "deepseek"
     model: 'claude-sonnet-4-20250514'       # model ID
-    api_key: '${ANTHROPIC_API_KEY}'
     full_document_threshold: 100         # single LLM call up to this many segments
     chunk_size: 50                       # segments per chunk when exceeding threshold
     temperature: 0.7
