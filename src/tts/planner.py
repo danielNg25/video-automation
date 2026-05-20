@@ -77,6 +77,84 @@ class Planner:
                 total_drift_end=0.0,
                 drift_cap_hits=0,
             )
-        # Phases A/B/C land in later tasks. For now, raise so any test
-        # using non-empty input fails loudly.
-        raise NotImplementedError("Phase A not yet implemented")
+        if len(natural_synth_durations) != len(sentences):
+            raise ValueError(
+                f"natural_synth_durations length {len(natural_synth_durations)} "
+                f"does not match sentences length {len(sentences)}"
+            )
+
+        out: list[SentencePlan] = []
+        reset_points: list[int] = []
+        drift = 0.0
+        N = len(sentences)
+
+        for i in range(N):
+            s = sentences[i]
+            natural = natural_synth_durations[i]
+            desired = natural / playback_speed if playback_speed > 0 else natural
+            orig_start = float(s["start"])
+            orig_end = float(s["end"])
+            slot_size = max(0.0, orig_end - orig_start)
+            next_start = (
+                float(sentences[i + 1]["start"]) if i + 1 < N else video_duration
+            )
+            raw_gap_after = max(0.0, next_start - orig_end)
+
+            final_start = orig_start + drift
+            reclaimed = 0.0
+            push_amount = 0.0
+
+            if desired <= slot_size:
+                final_duration = desired
+                # If we entered with drift, try to recover via the gap after us.
+                if drift > 0 and raw_gap_after >= RECLAIM_MIN_GAP:
+                    reclaim = min(drift, raw_gap_after - RECLAIM_RESERVE)
+                    if reclaim > 0:
+                        drift -= reclaim
+                        reclaimed = reclaim
+            else:
+                overrun = desired - slot_size
+                # First absorb what the gap will let us
+                if raw_gap_after >= RECLAIM_MIN_GAP:
+                    absorb = min(overrun, raw_gap_after - RECLAIM_RESERVE)
+                    if absorb > 0:
+                        overrun -= absorb
+                        reclaimed = absorb
+                final_duration = desired
+                if overrun > 0:
+                    drift += overrun
+                    push_amount = overrun
+
+            drift_out = drift
+
+            out.append(SentencePlan(
+                index=i,
+                segment_indices=list(s.get("segment_indices", [i])),
+                original_text=s.get("text", ""),
+                target_text=s.get("text", ""),
+                natural_synth_duration=natural,
+                original_start=orig_start,
+                original_end=orig_end,
+                final_start=final_start,
+                final_duration=final_duration,
+                drift_in=final_start - orig_start,
+                drift_out=drift_out,
+                shorten_pct=1.0,
+                push_amount=push_amount,
+                reclaimed_silence=reclaimed,
+                needs_review=False,
+                reason=None,
+            ))
+
+            if raw_gap_after >= RESET_GAP_THRESHOLD:
+                reset_points.append(i)
+                drift = 0.0
+
+        return DubPlan(
+            sentences=out,
+            playback_speed=playback_speed,
+            underlay_db=underlay_db,
+            total_drift_end=drift,
+            drift_cap_hits=0,
+            reset_points=reset_points,
+        )

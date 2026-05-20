@@ -7,6 +7,8 @@ No ffmpeg, no LLM, no network — all tests run in milliseconds.
 """
 from __future__ import annotations
 
+import pytest
+
 from src.tts.planner import (
     DRIFT_CAP,
     PLAYBACK_SPEED_DEFAULT,
@@ -94,3 +96,70 @@ class TestPlannerEmpty:
         assert plan.total_drift_end == 0.0
         assert plan.drift_cap_hits == 0
         assert plan.reset_points == []
+
+
+class TestPhaseANoOverflow:
+    """Phase A: everything fits at playback_speed; no shortening needed."""
+
+    def test_all_sentences_fit_no_drift(self):
+        # 3 sentences, each 2s slot, 2.0s natural synth → 1.33s played at 1.5×
+        sents = [
+            _sentence(0, 0.0, 2.0), _sentence(1, 2.0, 4.0), _sentence(2, 4.0, 6.0),
+        ]
+        plan = Planner.build_plan(
+            sentences=sents,
+            natural_synth_durations=[2.0, 2.0, 2.0],
+            playback_speed=1.5,
+            video_duration=6.0,
+            underlay_db=-12.0,
+        )
+        assert len(plan.sentences) == 3
+        for sp in plan.sentences:
+            assert sp.shorten_pct == 1.0
+            assert sp.push_amount == 0.0
+            assert sp.drift_in == 0.0
+            assert sp.drift_out == 0.0
+            assert sp.needs_review is False
+            assert abs(sp.final_duration - 2.0 / 1.5) < 1e-6
+            assert sp.final_start == sp.original_start
+
+    def test_reclaim_recovers_drift_in_qualifying_gap(self):
+        # Sentence 0 overruns its 1s slot by 0.6s (synth 2.4s @ 1.5× = 1.6s played)
+        # Sentence 1 starts at t=2.0 → gap before it is 1.0s (qualifies, ≥ RECLAIM_MIN_GAP)
+        # Sentence 1 is short and creates a 1.2s gap after itself (also qualifies)
+        sents = [
+            _sentence(0, 0.0, 1.0),
+            _sentence(1, 2.0, 2.5),
+            _sentence(2, 3.7, 5.0),
+        ]
+        plan = Planner.build_plan(
+            sentences=sents,
+            natural_synth_durations=[2.4, 0.6, 1.5],
+            playback_speed=1.5,
+            video_duration=5.0,
+            underlay_db=-12.0,
+        )
+        # Sentence 0 overruns by 0.6s; gap after = 1.0s → can absorb 1.0-0.2=0.8s
+        # So sentence 0 absorbs all 0.6s; drift_out = 0
+        assert plan.sentences[0].reclaimed_silence == pytest.approx(0.6, abs=1e-6)
+        assert plan.sentences[0].push_amount == 0.0
+        assert plan.sentences[0].drift_out == 0.0
+
+    def test_drift_resets_at_long_pause(self):
+        # Force drift via overrun, then a long pause (≥ RESET_GAP_THRESHOLD)
+        sents = [
+            _sentence(0, 0.0, 1.0),
+            _sentence(1, 1.2, 1.5),   # tight gap, no reclaim
+            _sentence(2, 5.0, 6.0),   # 3.5s gap before — should reset drift
+        ]
+        plan = Planner.build_plan(
+            sentences=sents,
+            natural_synth_durations=[3.0, 0.5, 1.0],   # s0 overruns by 1.0s played
+            playback_speed=1.5,
+            video_duration=6.0,
+            underlay_db=-12.0,
+        )
+        # After sentence 1, drift > 0. Sentence 2 follows a 3.5s gap → reset.
+        assert plan.sentences[2].drift_in == 0.0
+        assert plan.sentences[2].final_start == pytest.approx(5.0, abs=1e-6)
+        assert 1 in plan.reset_points  # reset happened after sentence 1
