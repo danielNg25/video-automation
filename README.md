@@ -361,6 +361,9 @@ douyin-automation/
 - [x] **4.16** TTS API client
 - [x] **4.17** TTS section on Process page
 - [x] **4.18** TTS preview component
+- [x] **4.19** Dubbing redesign spec — `docs/superpowers/specs/2026-05-20-tts-dubbing-redesign.md` (plan-then-emit, Chinese underlay, no silent skips, dubsync.srt)
+- [ ] **4.20** Dubbing redesign implementation (per spec §Algorithm and §Stage 5)
+- [ ] **4.21** Dubbing redesign tests — planner unit tests + assembler integration tests + muting regression test
 
 **Verification:**
 - [x] V4.1 — Edge TTS installed and importable
