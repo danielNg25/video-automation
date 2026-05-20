@@ -61,6 +61,10 @@ class TestDataclassShape:
         )
         assert p.index == 0
         assert p.target_text == "x"
+        assert p.drift_in == 0.0
+        assert p.drift_out == 0.0
+        assert p.needs_review is False
+        assert p.reason is None
 
     def test_dub_plan_required_fields(self):
         plan = DubPlan(
@@ -73,6 +77,8 @@ class TestDataclassShape:
         )
         assert plan.playback_speed == 1.5
         assert plan.underlay_db == -12.0
+        assert plan.drift_cap_hits == 0
+        assert plan.reset_points == []
 
 
 class TestPlannerEmpty:
@@ -86,3 +92,5 @@ class TestPlannerEmpty:
         )
         assert plan.sentences == []
         assert plan.total_drift_end == 0.0
+        assert plan.drift_cap_hits == 0
+        assert plan.reset_points == []
