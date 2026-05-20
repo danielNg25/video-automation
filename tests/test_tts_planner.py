@@ -11,9 +11,11 @@ from src.tts.planner import (
     DRIFT_CAP,
     PLAYBACK_SPEED_DEFAULT,
     RECLAIM_MIN_GAP,
+    RECLAIM_RESERVE,
     RESET_GAP_THRESHOLD,
     SHORTEN_FLOOR,
     SHORTEN_TARGETS,
+    SHORTEN_UNDERSHOOT_OK,
     UNDERLAY_DB_DEFAULT,
     DubPlan,
     Planner,
@@ -39,8 +41,10 @@ class TestPlannerConstants:
         assert SHORTEN_TARGETS == (0.85, 0.75, 0.65)
         assert SHORTEN_FLOOR == 0.60
         assert RECLAIM_MIN_GAP == 1.0
+        assert RECLAIM_RESERVE == 0.2
         assert RESET_GAP_THRESHOLD == 3.0
         assert DRIFT_CAP == 3.0
+        assert SHORTEN_UNDERSHOOT_OK == 0.10
 
 
 class TestDataclassShape:
