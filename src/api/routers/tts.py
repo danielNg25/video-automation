@@ -51,7 +51,7 @@ async def start_tts(request: TTSRequest):
 
 
 @router.get("/api/tts/voices", response_model=list[VoiceInfo])
-async def list_voices(language: str | None = None, provider: str = "edge", api_key: str | None = None):
+async def list_voices(language: str | None = None, provider: str = "google", api_key: str | None = None):  # noqa: E501
     """List available TTS voices, optionally filtered by language."""
     config = get_config()
 
@@ -73,12 +73,9 @@ async def list_voices(language: str | None = None, provider: str = "edge", api_k
 async def list_providers():
     """List available TTS providers."""
     return [
-        {"id": "edge", "name": "Edge TTS", "free": True, "requires_key": False},
-        {"id": "gtts", "name": "Google Translate TTS", "free": True, "requires_key": False},
-        {"id": "piper", "name": "Piper (Local)", "free": True, "requires_key": False},
+        {"id": "google", "name": "Google Cloud TTS", "free": False, "requires_key": True},
         {"id": "elevenlabs", "name": "ElevenLabs", "free": False, "requires_key": True},
         {"id": "openai", "name": "OpenAI TTS", "free": False, "requires_key": True},
-        {"id": "google", "name": "Google Cloud TTS", "free": False, "requires_key": True},
     ]
 
 

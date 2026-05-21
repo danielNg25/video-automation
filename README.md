@@ -31,7 +31,7 @@ Automated pipeline to download videos from Douyin, generate AI subtitles (Chines
 | Facebook      | Facebook Graph API (Page token)                |
 | X/Twitter     | X API v2 (OAuth 1.0a) — *stretch goal*         |
 | Translation   | Anthropic/OpenAI LLM (profile-guided)          |
-| TTS Dubbing   | Edge TTS (free), OpenAI, Google, ElevenLabs     |
+| TTS Dubbing   | Google Cloud TTS, OpenAI, ElevenLabs            |
 | CLI           | Click + Rich                                   |
 | Web UI        | React 19 + Tailwind CSS + Vite                 |
 | API           | FastAPI + SSE for real-time progress             |
@@ -170,9 +170,8 @@ douyin-automation/
 │   │   ├── llm.py             # LLM translator (Anthropic/OpenAI)
 │   │   └── profiles.py        # Translation profile system
 │   ├── tts/
-│   │   ├── edge.py            # Edge TTS (free, default)
+│   │   ├── google_tts.py      # Google Cloud TTS (default)
 │   │   ├── openai_tts.py      # OpenAI TTS
-│   │   ├── google_tts.py      # Google Cloud TTS
 │   │   ├── elevenlabs.py      # ElevenLabs TTS
 │   │   └── assembler.py       # Multi-segment TTS assembler
 │   └── utils/
@@ -344,7 +343,7 @@ douyin-automation/
 > Detailed plan: [`plans/phase4-tts-dubbing.md`](plans/phase4-tts-dubbing.md)
 
 - [x] **4.1** TTS base class — `src/tts/base.py`
-- [x] **4.2** Edge TTS provider — `src/tts/edge.py` (free, default)
+- [x] **4.2** ~~Edge TTS provider — `src/tts/edge.py` (free, default)~~ (removed — replaced by Google Cloud TTS as default)
 - [x] **4.3** OpenAI TTS provider — `src/tts/openai_tts.py`
 - [x] **4.4** Google Cloud TTS provider — `src/tts/google_tts.py`
 - [x] **4.5** TTS factory — `src/tts/__init__.py`
@@ -366,7 +365,7 @@ douyin-automation/
 - [x] **4.21** Dubbing redesign tests — planner unit tests + assembler integration tests + muting regression test
 
 **Verification:**
-- [x] V4.1 — Edge TTS installed and importable
+- [x] V4.1 — ~~Edge TTS installed and importable~~ (Edge TTS removed; Google Cloud TTS is default)
 - [ ] V4.2 — Voice list API returns Vietnamese voices
 - [ ] V4.3 — Voice preview returns playable audio
 - [ ] V4.4 — TTS generation produces WAV matching video duration (±0.5s)

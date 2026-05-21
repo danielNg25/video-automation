@@ -61,19 +61,19 @@ class TestBaseTTSProvider:
 
 
 class TestTTSFactory:
-    def test_get_edge_provider(self):
+    def test_default_provider_is_google(self):
         from src.tts import get_tts_provider
-        from src.tts.edge import EdgeTTSProvider
-
-        provider = get_tts_provider({}, provider="edge")
-        assert isinstance(provider, EdgeTTSProvider)
-
-    def test_default_provider_is_edge(self):
-        from src.tts import get_tts_provider
-        from src.tts.edge import EdgeTTSProvider
+        from src.tts.google_tts import GoogleTTSProvider
 
         provider = get_tts_provider({})
-        assert isinstance(provider, EdgeTTSProvider)
+        assert isinstance(provider, GoogleTTSProvider)
+
+    def test_explicit_google_provider(self):
+        from src.tts import get_tts_provider
+        from src.tts.google_tts import GoogleTTSProvider
+
+        provider = get_tts_provider({}, provider="google")
+        assert isinstance(provider, GoogleTTSProvider)
 
     def test_unknown_provider_raises(self):
         from src.tts import get_tts_provider
@@ -81,13 +81,19 @@ class TestTTSFactory:
         with pytest.raises(ValueError, match="Unknown TTS provider"):
             get_tts_provider({}, provider="nonexistent")
 
+    def test_removed_edge_provider_raises(self):
+        from src.tts import get_tts_provider
+
+        with pytest.raises(ValueError, match="Unknown TTS provider"):
+            get_tts_provider({}, provider="edge")
+
     def test_config_default_provider(self):
         from src.tts import get_tts_provider
-        from src.tts.edge import EdgeTTSProvider
+        from src.tts.google_tts import GoogleTTSProvider
 
-        config = {"tts": {"default_provider": "edge"}}
+        config = {"tts": {"default_provider": "google"}}
         provider = get_tts_provider(config)
-        assert isinstance(provider, EdgeTTSProvider)
+        assert isinstance(provider, GoogleTTSProvider)
 
 
 # ── Voice profiles tests ──
@@ -107,7 +113,7 @@ class TestVoiceProfiles:
 
         config = {"tts": {"voices_config": str(tmp_path / "nonexistent.yaml")}}
         profiles = load_voice_profiles(config)
-        assert profiles["default_provider"] == "edge"
+        assert profiles["default_provider"] == "google"
         assert profiles["profiles"] == {}
 
     def test_save_and_load_profiles(self, tmp_path):
@@ -115,13 +121,13 @@ class TestVoiceProfiles:
 
         config = {"tts": {"voices_config": str(tmp_path / "test_voices.yaml")}}
         data = {
-            "default_provider": "edge",
-            "profiles": {"test-voice": {"provider": "edge", "voice": "en-US-Test", "language": "en"}},
+            "default_provider": "google",
+            "profiles": {"test-voice": {"provider": "google", "voice": "en-US-Neural2-A", "language": "en"}},
             "platforms": {},
         }
         save_voice_profiles(data, config)
         loaded = load_voice_profiles(config)
-        assert loaded["profiles"]["test-voice"]["voice"] == "en-US-Test"
+        assert loaded["profiles"]["test-voice"]["voice"] == "en-US-Neural2-A"
 
 
 # ── Assembler duration fitting tests ──
