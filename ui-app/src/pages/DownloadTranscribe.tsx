@@ -39,6 +39,10 @@ function PipelinePage() {
     const saved = parseFloat(storageGet('tts_playback_speed') || '');
     return Number.isFinite(saved) && saved >= 1.0 && saved <= 2.0 ? saved : 1.5;
   });
+  const [underlayDb, setUnderlayDb] = useState(() => {
+    const saved = parseFloat(storageGet('tts_underlay_db') || '');
+    return Number.isFinite(saved) && saved >= -24 && saved <= 0 ? saved : -12;
+  });
   const [blurEnabled, setBlurEnabled] = useState(true);
   const [savedPrefs] = useState(loadLLMPrefs);
   const [llmBackend, setLlmBackend] = useState(savedPrefs.backend);
@@ -222,6 +226,7 @@ function PipelinePage() {
       llm_api_key: llmApiKey || undefined,
       llm_backend: llmBackend || undefined,
       playback_speed: playbackSpeed,
+      underlay_db: underlayDb,
     };
 
     // Batch mode
@@ -590,6 +595,26 @@ function PipelinePage() {
                               className="w-16 px-2 py-1 text-xs font-mono text-on-surface bg-surface-container-low border border-outline-variant/30 rounded focus:outline-none focus:border-primary"
                             />
                             <span className="text-[10px] text-on-surface-variant font-mono">×</span>
+                          </div>
+                          <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-container">
+                            <span className="material-symbols-outlined text-sm text-on-surface-variant">graphic_eq</span>
+                            <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold flex-1">Original Underlay</label>
+                            <select
+                              value={String(underlayDb)}
+                              onChange={(e) => {
+                                const v = parseFloat(e.target.value);
+                                setUnderlayDb(v);
+                                storageSet('tts_underlay_db', String(v));
+                              }}
+                              className="px-2 py-1 text-xs font-mono text-on-surface bg-surface-container-low border border-outline-variant/30 rounded focus:outline-none focus:border-primary"
+                            >
+                              <option value="0">Off</option>
+                              <option value="-24">-24</option>
+                              <option value="-18">-18</option>
+                              <option value="-12">-12</option>
+                              <option value="-6">-6</option>
+                            </select>
+                            <span className="text-[10px] text-on-surface-variant font-mono">dB</span>
                           </div>
                           <p className="text-[10px] text-on-surface-variant flex items-center gap-1.5">
                             <span className="material-symbols-outlined text-xs text-primary">info</span>

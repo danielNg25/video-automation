@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Pipeline launcher (DownloadTranscribe): per-run underlay select alongside the playback-speed input. Both share `tts_underlay_db` / `tts_playback_speed` localStorage keys with Settings and VideoDetail.
 - VideoDetail TTS panel: per-run "Original underlay" select beside the playback-speed input. Default reads from localStorage; selection persists and is forwarded on the TTS POST.
 - Settings → TTS Dubbing: new sidebar entry and section with `Dub playback speed` and `Original-language underlay` controls. Both persist to localStorage (`tts_playback_speed`, `tts_underlay_db`) and are shared with VideoDetail and DownloadTranscribe.
 - TTS dubbing redesign implementation plan (`docs/superpowers/plans/2026-05-20-tts-dubbing-redesign.md`). 18 task-by-task TDD steps derived from the spec, sequenced as: planner unit tests (Tasks 1–5) → assembler integration (Tasks 6–10) → API wiring (Tasks 11–13) → UI (Tasks 14–17) → QA + finalize (Task 18).
