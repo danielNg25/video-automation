@@ -23,6 +23,23 @@ const PLATFORM_INFO: Record<string, { label: string; subLangLabel: string; const
   x: { label: 'X / Twitter', subLangLabel: 'English', constraint: '9:16 / 2:20 / 512MB' },
 };
 
+/**
+ * One-time migration: the old shared `tts_voice_id` localStorage key holds a
+ * value from before per-provider keys existed. Move it to whichever provider-
+ * specific key matches the user's last-selected provider. Delete the old key.
+ *
+ * Runs at most once per browser. Safe to call on every mount.
+ */
+function migrateLegacyVoiceId(currentProvider: string): void {
+  const legacy = localStorage.getItem('tts_voice_id');
+  if (!legacy) return;
+  const targetKey = `tts_voice_id_${currentProvider}`;
+  if (!localStorage.getItem(targetKey)) {
+    localStorage.setItem(targetKey, legacy);
+  }
+  localStorage.removeItem('tts_voice_id');
+}
+
 function VideoDetailPage() {
   const { videoId } = useParams<{ videoId: string }>();
   const navigate = useNavigate();
@@ -59,8 +76,14 @@ function VideoDetailPage() {
   const [ttsProfiles, setTtsProfiles] = useState<Record<string, VoiceProfileConfig>>({});
   const [selectedTtsProfile, setSelectedTtsProfile] = useState('female-vi-natural');
   const [ttsVoices, setTtsVoices] = useState<VoiceInfo[]>([]);
-  const [selectedVoiceId, setSelectedVoiceId] = useState(() => storageGet('tts_voice_id') || '');
-  const [voiceIdInput, setVoiceIdInput] = useState(() => storageGet('tts_voice_id') || '');
+  const [selectedVoiceId, setSelectedVoiceId] = useState(() => {
+    const provider = storageGet('tts_selected_provider') || 'elevenlabs';
+    return storageGet(`tts_voice_id_${provider}`) || storageGet('tts_voice_id') || '';
+  });
+  const [voiceIdInput, setVoiceIdInput] = useState(() => {
+    const provider = storageGet('tts_selected_provider') || 'elevenlabs';
+    return storageGet(`tts_voice_id_${provider}`) || storageGet('tts_voice_id') || '';
+  });
   const [voiceIdSaved, setVoiceIdSaved] = useState(false);
   const [ttsApiKey, setTtsApiKey] = useState('');
   const [ttsLanguage, setTtsLanguage] = useState('vi');
@@ -155,12 +178,28 @@ function VideoDetailPage() {
       const voices = await getTTSVoices(language || ttsLanguage, provider, apiKey);
       setTtsVoices(voices);
       if (voices.length > 0) {
-        setSelectedVoiceId(voices[0].name);
+        // Honor the saved voice ID if it's still valid for this provider; else
+        // fall back to the first voice in the list.
+        const saved = storageGet(`tts_voice_id_${provider}`) || '';
+        const isValid = !!saved && voices.some(v => v.name === saved);
+        const picked = isValid ? saved : voices[0].name;
+        setSelectedVoiceId(picked);
+        if (!isValid && saved) {
+          // Saved value was stale — clear it so the dropdown is authoritative.
+          storageSet(`tts_voice_id_${provider}`, '');
+        }
       }
     } catch {
       setTtsVoices([]);
     }
-  }, []);
+  }, [ttsLanguage]);
+
+  // One-time migration of legacy tts_voice_id key to per-provider keys.
+  useEffect(() => {
+    migrateLegacyVoiceId(selectedTtsProvider);
+    // Persist the current selection so future mounts can resolve per-provider keys.
+    storageSet('tts_selected_provider', selectedTtsProvider);
+  }, []); // run once on mount
 
   // Load video + supporting data on mount
   useEffect(() => {
@@ -353,24 +392,25 @@ function VideoDetailPage() {
 
   const handleTtsProviderChange = (provider: string) => {
     setSelectedTtsProvider(provider);
+    storageSet('tts_selected_provider', provider);
     setTtsVoices([]);
     setTtsGenerated(false);
+    const savedId = storageGet(`tts_voice_id_${provider}`) || '';
     if (provider === 'elevenlabs') {
-      // Load saved voice ID for ElevenLabs — no voice list fetch needed
-      const savedId = storageGet('tts_voice_id') || '';
+      // Free-text input: trust the saved value (user pastes IDs manually).
       setSelectedVoiceId(savedId);
       setVoiceIdInput(savedId);
     } else {
-      setSelectedVoiceId('');
+      // Dropdown providers: load voice list, then validate saved ID against it.
+      setSelectedVoiceId(savedId);
       setVoiceIdInput('');
-      // Auto-fetch voice list for non-ElevenLabs providers
       const info = ttsProviders.find(p => p.id === provider);
+      const keys = loadApiKeys();
+      const key = keys[provider] || '';
       if (info && !info.requires_key) {
         loadVoicesForProvider(provider);
-      } else {
-        const keys = loadApiKeys();
-        const key = keys[provider] || '';
-        if (key) loadVoicesForProvider(provider, key);
+      } else if (key) {
+        loadVoicesForProvider(provider, key);
       }
     }
   };
@@ -707,7 +747,7 @@ function VideoDetailPage() {
                         <button
                           onClick={() => {
                             setSelectedVoiceId(voiceIdInput);
-                            storageSet('tts_voice_id', voiceIdInput);
+                            storageSet(`tts_voice_id_${selectedTtsProvider}`, voiceIdInput);
                             setVoiceIdSaved(true);
                             setTtsGenerated(false);
                             setTimeout(() => setVoiceIdSaved(false), 2000);
@@ -727,7 +767,11 @@ function VideoDetailPage() {
                       <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block">Voice</label>
                       <select
                         value={selectedVoiceId}
-                        onChange={(e) => { setSelectedVoiceId(e.target.value); setTtsGenerated(false); }}
+                        onChange={(e) => {
+                          setSelectedVoiceId(e.target.value);
+                          storageSet(`tts_voice_id_${selectedTtsProvider}`, e.target.value);
+                          setTtsGenerated(false);
+                        }}
                         className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
                       >
                         {ttsVoices.length === 0 && <option value="">Loading voices...</option>}
