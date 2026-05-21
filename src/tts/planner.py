@@ -27,7 +27,13 @@ SHORTEN_UNDERSHOOT_OK = 0.10            # accept clip up to 10% over planned
 
 
 def _required_shorten_pct(desired: float, available: float) -> float:
-    """How much shorter (as a fraction of desired) the sentence needs to be to fit `available`.
+    """Return the maximum shorten ratio that fits `desired` into `available`.
+
+    The return value is `available / desired` clamped to [0.0, ∞): if the
+    sentence is shortened to this fraction (e.g. 0.75 = 75% of original
+    length) its played duration will equal `available`. Larger fractions
+    overrun; smaller fractions leave silence. Caller still has to pick a
+    discrete target from `SHORTEN_TARGETS` via `_pick_shorten_target`.
 
     Returns 1.0 when desired <= 0 (no shortening computable / needed).
     """
@@ -39,8 +45,17 @@ def _required_shorten_pct(desired: float, available: float) -> float:
 def _pick_shorten_target(required: float) -> float:
     """Pick the loosest target in SHORTEN_TARGETS that's ≤ required.
 
-    Returns 1.0 if no shortening is needed (required >= 1.0).
-    Returns SHORTEN_FLOOR if no target in SHORTEN_TARGETS fits.
+    `required` is the fraction (from `_required_shorten_pct`) below which
+    the sentence fits its available time. Returns 1.0 when no shortening
+    is needed (required >= 1.0). Otherwise iterates SHORTEN_TARGETS
+    loosest-first and returns the first target ≤ required.
+
+    When `required` is below the smallest target in SHORTEN_TARGETS
+    (currently 0.65), returns SHORTEN_FLOOR (0.60) — note this is a
+    hard lower bound, not a guarantee that the sentence will fit. If
+    `required < SHORTEN_FLOOR`, even shortening to the floor will
+    still overrun and the planner's Phase A walk will add the
+    remainder to drift.
     """
     if required >= 1.0:
         return 1.0

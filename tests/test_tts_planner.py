@@ -233,3 +233,42 @@ class TestPhaseBShortenTargets:
         )
         assert plan.sentences[0].shorten_pct == 1.0
         assert plan.sentences[0].reclaimed_silence > 0
+
+
+class TestPickShortenTarget:
+    """Direct unit tests for the _pick_shorten_target helper.
+
+    These tests pin the contract independently of Planner.build_plan so
+    the helper's boundaries are unambiguous to anyone reading or
+    reordering SHORTEN_TARGETS.
+    """
+
+    def test_returns_one_when_no_shortening_needed(self):
+        from src.tts.planner import _pick_shorten_target
+        assert _pick_shorten_target(1.0) == 1.0
+        assert _pick_shorten_target(1.5) == 1.0
+
+    def test_returns_85_at_exact_boundary(self):
+        from src.tts.planner import _pick_shorten_target
+        # required == 0.85 exactly → 0.85 ≤ 0.85 → returns 0.85
+        assert _pick_shorten_target(0.85) == 0.85
+
+    def test_returns_75_just_below_85(self):
+        from src.tts.planner import _pick_shorten_target
+        # required = 0.849 → 0.85 doesn't fit (0.85 > 0.849); 0.75 does
+        assert _pick_shorten_target(0.849) == 0.75
+
+    def test_returns_floor_when_required_below_lowest_target(self):
+        from src.tts.planner import _pick_shorten_target
+        # required = 0.40 → no target ≤ 0.40 → floor (0.60)
+        assert _pick_shorten_target(0.40) == SHORTEN_FLOOR
+        # required = 0 (extreme) → floor
+        assert _pick_shorten_target(0.0) == SHORTEN_FLOOR
+
+    def test_floor_returned_does_not_guarantee_fit(self):
+        from src.tts.planner import _pick_shorten_target
+        # Documenting via test: a required value below the floor still
+        # returns the floor — the caller must handle the residual overrun.
+        # 0.50 < SHORTEN_FLOOR (0.60), but the function returns 0.60
+        # because that's the hard lower bound.
+        assert _pick_shorten_target(0.50) == SHORTEN_FLOOR
