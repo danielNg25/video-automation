@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
+import { TTSPreview } from '../components/TTSPreview';
 import { postDownload, getVideos, subscribeSSE, deleteVideo, getProfiles, postPipeline, getTTSProviders, getTTSProfiles, getTTSVoices } from '../api/client';
 import type { VideoMetadata, TranslationProfileSummary, TTSProviderInfo, VoiceProfileConfig, VoiceInfo } from '../api/types';
 import { loadApiKeys, loadLLMPrefs, saveLLMPrefs, storageGet, storageSet } from '../utils/storage';
@@ -666,6 +667,27 @@ function PipelinePage() {
                             </div>
                           )}
 
+                          {selectedTtsProvider === 'elevenlabs' && selectedVoiceId && (
+                            <div className="flex items-center gap-3">
+                              <TTSPreview
+                                voice={selectedVoiceId}
+                                provider={selectedTtsProvider}
+                                speed="+0%"
+                                pitch="+0Hz"
+                                apiKey={ttsApiKey || undefined}
+                                playbackSpeed={playbackSpeed}
+                                sampleText={
+                                  ttsProfiles[selectedTtsProfile]?.language === 'en'
+                                    ? 'Hello everyone, today we will talk about a very interesting topic.'
+                                    : 'Xin chào các bạn, hôm nay chúng ta sẽ nói về một chủ đề rất thú vị.'
+                                }
+                              />
+                              <span className="font-mono text-[9px] text-on-surface-variant truncate">
+                                {selectedVoiceId}
+                              </span>
+                            </div>
+                          )}
+
                           {/* Google / OpenAI: voice dropdown */}
                           {selectedTtsProvider !== 'elevenlabs' && (
                             <div className="space-y-1">
@@ -685,6 +707,27 @@ function PipelinePage() {
                                   </option>
                                 ))}
                               </select>
+                            </div>
+                          )}
+
+                          {selectedTtsProvider !== 'elevenlabs' && selectedVoiceId && (
+                            <div className="flex items-center gap-3">
+                              <TTSPreview
+                                voice={selectedVoiceId}
+                                provider={selectedTtsProvider}
+                                speed="+0%"
+                                pitch="+0Hz"
+                                apiKey={ttsApiKey || undefined}
+                                playbackSpeed={playbackSpeed}
+                                sampleText={
+                                  ttsProfiles[selectedTtsProfile]?.language === 'en'
+                                    ? 'Hello everyone, today we will talk about a very interesting topic.'
+                                    : 'Xin chào các bạn, hôm nay chúng ta sẽ nói về một chủ đề rất thú vị.'
+                                }
+                              />
+                              <span className="font-mono text-[9px] text-on-surface-variant truncate">
+                                {selectedVoiceId}
+                              </span>
                             </div>
                           )}
 
