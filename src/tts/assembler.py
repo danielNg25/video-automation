@@ -42,10 +42,6 @@ logger = setup_logger(__name__)
 # natural pause and shift downstream timestamps.
 MAX_MERGE_GAP_SECONDS = 1.5
 
-# Maximum LLM-driven shortening passes per TTS run. Each subsequent pass
-# tightens the target_pct by 5 percentage points (clamped at 30%).
-SHORTENING_MAX_PASSES = 3
-
 # Punctuation that signals end of a sentence (used by the heuristic merger).
 _SENTENCE_END_CHARS = set('.!?。！？…)）"」』')
 

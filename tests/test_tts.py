@@ -219,8 +219,7 @@ class TestNaturalSpeedAnchoring:
     def test_redistribute_and_split_back_helpers_are_gone(self):
         """Borrow/redistribute and SRT-split-back helpers are deleted. The
         atempo helpers (_speed_up_audio / _build_atempo_filter) stay
-        because Stage 2 applies playback_speed; SHORTENING_MAX_PASSES
-        stays because Stage 1.5's LLM shortening uses it."""
+        because Stage 2 applies playback_speed."""
         import src.tts.assembler as A
         for name in (
             "_redistribute_slots", "GAP_BORROW_FRACTION",
@@ -228,12 +227,12 @@ class TestNaturalSpeedAnchoring:
             "_fallback_split_subtitles", "_segments_from_chunks",
             "DEFAULT_DUB_PLAYBACK_SPEED",
             "MAX_SAFE_SPEED_RATIO",
+            "SHORTENING_MAX_PASSES",
         ):
             assert not hasattr(A, name), f"{name!r} should be removed"
         # Surfaces that stay (used downstream).
         assert hasattr(A, "_speed_up_audio")
         assert hasattr(A, "_build_atempo_filter")
-        assert hasattr(A, "SHORTENING_MAX_PASSES")
 
     def test_atempo_filter_chain(self):
         """Sanity: atempo chain handles ratios in (0, ∞) — chains for >2×."""
@@ -242,47 +241,6 @@ class TestNaturalSpeedAnchoring:
         assert _build_atempo_filter(1.5) == "atempo=1.5000"
         # Above 2.0 chains: 2.5 → atempo=2.0,atempo=1.25
         assert _build_atempo_filter(2.5) == "atempo=2.0,atempo=1.2500"
-
-
-class TestSentenceShortening:
-    """Stage 1.5: when a clip would overrun its source span at the chosen
-    playback_speed, the LLM is asked to shorten the text. Up to
-    SHORTENING_MAX_PASSES passes; each tightens target_pct by 5pp; floor 30%."""
-
-    def test_max_passes_constant(self):
-        from src.tts.assembler import SHORTENING_MAX_PASSES
-        assert SHORTENING_MAX_PASSES == 3
-
-    def test_target_pct_calibrates_to_fit_at_playback_speed(self):
-        """target_pct = source_span * speed / clip_duration * 100.
-        The shortened text, played at `speed`, should land inside source_span."""
-        clip, span, speed = 6.0, 3.0, 1.5
-        natural_pct = (span * speed / clip) * 100
-        assert natural_pct == 75.0
-
-    def test_target_pct_tightens_per_pass(self):
-        """Each subsequent pass drops 5 percentage points."""
-        clip, span, speed = 6.0, 3.0, 1.5
-        natural_pct = (span * speed / clip) * 100
-        targets = [max(30, int(natural_pct) - 5 * (p - 1)) for p in range(1, 4)]
-        assert targets == [75, 70, 65]
-
-    def test_floor_clamp_at_30(self):
-        """Aggressive overflow (10s clip in 1s span at 1.5x) clamps every
-        pass at 30%; we never ask the LLM for impossibly tight cuts."""
-        clip, span, speed = 10.0, 1.0, 1.5
-        natural_pct = max(30, int((span * speed / clip) * 100))
-        targets = [max(30, natural_pct - 5 * (p - 1)) for p in range(1, 4)]
-        assert all(t == 30 for t in targets)
-
-    def test_overflow_trigger_uses_fitted_duration(self):
-        """A clip is only flagged when fitted_duration > source_span,
-        so atempo-friendly clips skip shortening even with a long natural."""
-        # 4s natural at 1.5x = 2.67s fitted → fits 3s span → no shortening.
-        clip, span, speed = 4.0, 3.0, 1.5
-        assert clip / speed <= span
-        # 6s natural at 1.5x = 4s fitted → exceeds 3s span → shorten.
-        assert 6.0 / speed > span
 
 
 # ── shorten_texts_batch per-item floor (Fix 4) ──
