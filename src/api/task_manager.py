@@ -31,6 +31,34 @@ class Task:
     events: list[dict] = field(default_factory=list)
 
 
+def _build_tts_mix_settings(
+    platforms_cfg: dict,
+    underlay_db: float | None,
+) -> dict:
+    """Build per-platform {original_volume, tts_volume} dict.
+
+    If underlay_db is provided (dB scale), it overrides original_volume for
+    ALL enabled platforms — the user's explicit preference wins over the
+    per-platform YAML defaults. The conversion is: linear = 10 ** (dB / 20).
+
+    When underlay_db is None the per-platform original_volume from
+    tts_voices.yaml is used as-is.
+    """
+    result: dict[str, dict] = {}
+    for platform_name, p in platforms_cfg.items():
+        if not p.get("enabled", False):
+            continue
+        if underlay_db is not None:
+            original_vol = 10 ** (underlay_db / 20)
+        else:
+            original_vol = p.get("original_volume", 0.3)
+        result[platform_name] = {
+            "original_volume": original_vol,
+            "tts_volume": p.get("tts_volume", 1.0),
+        }
+    return result
+
+
 def _detect_video_status(video_id: str, has_srt: bool, srt_langs: list[str]) -> str:
     """Detect video status from filesystem state."""
     from pathlib import Path
@@ -533,7 +561,6 @@ class TaskManager:
         llm_api_key: str | None = None,
         llm_backend: str | None = None,
         playback_speed: float | None = None,
-        underlay_db: float | None = None,
     ):
         """Execute a TTS generation task in the background.
 
@@ -573,7 +600,6 @@ class TaskManager:
                 llm_api_key=llm_api_key,
                 llm_backend=llm_backend,
                 playback_speed=playback_speed,
-                underlay_db=underlay_db,
                 on_progress=on_progress,
             )
 
@@ -602,6 +628,7 @@ class TaskManager:
         tts_mix_settings: dict[str, dict] | None = None,
         blur_settings: dict | None = None,
         manual_region: dict | None = None,
+        underlay_db: float | None = None,
     ):
         """Execute a video processing task in the background."""
         from src.processor import process_for_all_platforms
@@ -645,6 +672,12 @@ class TaskManager:
                 profiles_data = load_voice_profiles(config)
                 tts_platforms = profiles_data.get("platforms", {})
 
+                # Build per-platform mix settings from underlay_db (dB→linear)
+                # or fall back to per-platform YAML defaults. The caller-supplied
+                # tts_mix_settings dict (from ProcessRequest) still wins for any
+                # platform it already contains — this only fills missing ones.
+                derived_mix = _build_tts_mix_settings(tts_platforms, underlay_db)
+
                 tts_audio_paths = {}
                 for platform in platforms:
                     plat_cfg = tts_platforms.get(platform, {})
@@ -658,14 +691,18 @@ class TaskManager:
                     if tts_path.exists():
                         tts_audio_paths[platform] = tts_path
 
-                        # Also set mix settings from platform config if not overridden
+                        # Fill mix settings: caller-supplied wins; derived_mix
+                        # (from underlay_db) is the fallback.
                         if tts_mix_settings is None:
                             tts_mix_settings = {}
                         if platform not in tts_mix_settings:
-                            tts_mix_settings[platform] = {
-                                "original_volume": plat_cfg.get("original_volume", 0.3),
-                                "tts_volume": plat_cfg.get("tts_volume", 1.0),
-                            }
+                            tts_mix_settings[platform] = derived_mix.get(
+                                platform,
+                                {
+                                    "original_volume": plat_cfg.get("original_volume", 0.3),
+                                    "tts_volume": plat_cfg.get("tts_volume", 1.0),
+                                },
+                            )
 
             # Load subtitle region for blur if blur is enabled
             subtitle_region = None

@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-import subprocess
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -316,7 +315,7 @@ class TestRunTtsTrack:
         """Bug fix: pipeline previously hardcoded model='deepseek-chat' regardless
         of backend, causing API calls to anthropic/openai to fail and the
         translator to silently disappear."""
-        from src.tts.runner import _DEFAULT_LLM_MODELS, _build_llm_translator
+        from src.tts.runner import _DEFAULT_LLM_MODELS
 
         captured = {}
 
@@ -327,7 +326,6 @@ class TestRunTtsTrack:
         # Patch LLMTranslator inside the module so _build_llm_translator
         # constructs our fake.
         import src.tts.runner as runner_mod
-        original = __import__("src.translator.llm", fromlist=["LLMTranslator"]).LLMTranslator
 
         # Use direct monkey-patch on the imported symbol the helper uses
         with patch.object(runner_mod, "_build_llm_translator", wraps=runner_mod._build_llm_translator):
@@ -538,145 +536,6 @@ class TestBatchProcessorTTS:
             srt_path.unlink(missing_ok=True)
 
 
-class TestRegressionMutingBug:
-    """Regression: a sentence whose synthesis returns zero-byte audio used to
-    be silently dropped from the output. The new contract keeps the slot and
-    fills it with the source-language audio at full volume."""
-
-    @pytest.mark.asyncio
-    async def test_zero_duration_synth_keeps_slot_with_source_audio(self, tmp_path):
-        from src.tts.assembler import TTSAssembler
-        from src.tts.base import BaseTTSProvider
-
-        class FlakyProvider(BaseTTSProvider):
-            calls = 0
-
-            async def synthesize(self, text, voice, **kw):
-                FlakyProvider.calls += 1
-                # Return empty bytes for the sentence containing "fail_me"
-                # (zero-duration); otherwise return a minimal WAV with 0.5s
-                # of silence at 24kHz mono.
-                if "fail_me" in text:
-                    return b""
-                import struct
-                sample_count = 12000
-                wav = (
-                    b"RIFF" + struct.pack("<I", 36 + sample_count * 2) + b"WAVEfmt " +
-                    struct.pack("<IHHIIHH", 16, 1, 1, 24000, 48000, 2, 16) +
-                    b"data" + struct.pack("<I", sample_count * 2) + b"\x00\x00" * sample_count
-                )
-                return wav
-
-            async def list_voices(self, language=None):
-                return []
-
-        segments = [
-            {"start": 0.0, "end": 1.0, "text": "first sentence"},
-            {"start": 1.0, "end": 2.0, "text": "fail_me sentence"},
-            {"start": 2.0, "end": 3.0, "text": "third sentence"},
-        ]
-
-        out_path = tmp_path / "out.wav"
-        assembler = TTSAssembler(translator=None)
-        # Provide a fake video_path — the assembler reads its audio for fallback
-        fake_video = tmp_path / "video.mp4"
-        # Create a tiny silent MP4 via ffmpeg so the underlay branch has input
-        subprocess.run(
-            ["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono:d=3",
-             "-c:a", "aac", str(fake_video)],
-            check=True, capture_output=True, timeout=15,
-        )
-
-        _, plan = await assembler.generate_full_track(
-            provider=FlakyProvider(),
-            segments=segments,
-            voice_profile={"voice": "test"},
-            video_duration=3.0,
-            output_path=out_path,
-            merge_sentences=False,
-            playback_speed=1.5,
-            underlay_db=0.0,        # underlay off — only failure-window matters
-            video_path=fake_video,
-        )
-
-        # All three sentences appear in the plan (no silent drops)
-        assert len(plan) == 3
-        # Sentence 1 (the failed one) is flagged for review
-        flagged = [s for s in plan if s.get("needs_review")]
-        assert any(s["index"] == 1 and s["reason"] in ("synth_empty", "synth_failed")
-                   for s in flagged)
-        # Output WAV exists and is not empty
-        assert out_path.exists() and out_path.stat().st_size > 100
-
-
-class TestUnderlayLevels:
-    """The underlay branch reads the source MP4's audio stream directly and
-    mixes it under the dub at the configured underlay_db level. underlay_db=0
-    disables the underlay entirely (silence between dub clips)."""
-
-    async def _run(self, tmp_path, underlay_db):
-        """Generate one short dub and return the output WAV's mean_volume in dB."""
-        from src.tts.assembler import TTSAssembler
-        from src.tts.base import BaseTTSProvider
-
-        class TinyProvider(BaseTTSProvider):
-            async def synthesize(self, text, voice, **kw):
-                # 0.2s of -inf-dB silence (still a real WAV clip)
-                import struct
-                samples = 4800
-                return (
-                    b"RIFF" + struct.pack("<I", 36 + samples * 2) + b"WAVEfmt " +
-                    struct.pack("<IHHIIHH", 16, 1, 1, 24000, 48000, 2, 16) +
-                    b"data" + struct.pack("<I", samples * 2) + b"\x00\x00" * samples
-                )
-
-            async def list_voices(self, language=None):
-                return []
-
-        # Source video: 3s of pink noise so the underlay is detectable
-        tmp_path.mkdir(parents=True, exist_ok=True)
-        video_path = tmp_path / "src.mp4"
-        subprocess.run(
-            ["ffmpeg", "-y", "-f", "lavfi",
-             "-i", "anoisesrc=color=pink:duration=3:amplitude=0.5",
-             "-c:a", "aac", str(video_path)],
-            check=True, capture_output=True, timeout=15,
-        )
-        out_path = tmp_path / f"out_{int(underlay_db)}.wav"
-        assembler = TTSAssembler(translator=None)
-        await assembler.generate_full_track(
-            provider=TinyProvider(),
-            segments=[
-                {"start": 0.0, "end": 1.0, "text": "a"},
-                {"start": 2.0, "end": 3.0, "text": "b"},
-            ],
-            voice_profile={"voice": "test"},
-            video_duration=3.0,
-            output_path=out_path,
-            merge_sentences=False,
-            playback_speed=1.5,
-            underlay_db=underlay_db,
-            video_path=video_path,
-        )
-        # Use ffmpeg's volumedetect filter to measure mean_volume of the output
-        probe = subprocess.run(
-            ["ffmpeg", "-i", str(out_path), "-af", "volumedetect",
-             "-f", "null", "-"],
-            capture_output=True, text=True, timeout=15,
-        )
-        import re
-        m = re.search(r"mean_volume:\s*(-?\d+(?:\.\d+)?)\s*dB", probe.stderr)
-        assert m, f"could not parse mean_volume from ffmpeg stderr: {probe.stderr[-500:]}"
-        return float(m.group(1))
-
-    async def test_underlay_minus_12_louder_than_off(self, tmp_path):
-        loud = await self._run(tmp_path / "loud", -12.0)
-        off = await self._run(tmp_path / "off", 0.0)
-        # With underlay at -12 dB the gap between dub clips contains the source
-        # noise; with underlay off (db=0 disables the branch in the test
-        # scenario — no failure windows, no nonzero gain), the gap is silent
-        # → significantly lower mean_volume.
-        assert loud > off + 5   # at least 5 dB louder
 
 
 class TestDubsyncSrtWriter:
@@ -798,136 +657,3 @@ class TestDubsyncSrtWriter:
         )
 
 
-class TestConfigStringCoercion:
-    """Regression: underlay_db read from config.yaml comes through as a
-    string (env-var interpolation always returns strings). The runner must
-    coerce to float before passing to the assembler, and the assembler
-    must defensively cast in case anything else sneaks through."""
-
-    async def test_assembler_handles_string_underlay_db(self, tmp_path):
-        """Passing underlay_db as a string directly to generate_full_track
-        must not crash — it should be coerced to float at the function entry
-        and produce a normal output WAV."""
-        from src.tts.assembler import TTSAssembler
-        from src.tts.base import BaseTTSProvider
-
-        class TinyProvider(BaseTTSProvider):
-            async def synthesize(self, text, voice, **kw):
-                import struct
-                samples = 4800
-                return (
-                    b"RIFF" + struct.pack("<I", 36 + samples * 2) + b"WAVEfmt " +
-                    struct.pack("<IHHIIHH", 16, 1, 1, 24000, 48000, 2, 16) +
-                    b"data" + struct.pack("<I", samples * 2) + b"\x00\x00" * samples
-                )
-
-            async def list_voices(self, language=None):
-                return []
-
-        # Real source MP4 so the underlay branch has a real audio input
-        video_path = tmp_path / "src.mp4"
-        subprocess.run(
-            ["ffmpeg", "-y", "-f", "lavfi",
-             "-i", "anoisesrc=color=pink:duration=3:amplitude=0.5",
-             "-c:a", "aac", str(video_path)],
-            check=True, capture_output=True, timeout=15,
-        )
-        out_path = tmp_path / "out.wav"
-        assembler = TTSAssembler(translator=None)
-        # Pass underlay_db as the string "-12.0" — the exact bug we hit in
-        # production via the config.yaml interpolation path.
-        await assembler.generate_full_track(
-            provider=TinyProvider(),
-            segments=[
-                {"start": 0.0, "end": 1.0, "text": "a"},
-                {"start": 2.0, "end": 3.0, "text": "b"},
-            ],
-            voice_profile={"voice": "test"},
-            video_duration=3.0,
-            output_path=out_path,
-            merge_sentences=False,
-            playback_speed="1.5",   # <-- ALSO stringified, mirrors a future YAML config
-            underlay_db="-12.0",    # <-- the exact production bug
-            video_path=video_path,
-        )
-        assert out_path.exists() and out_path.stat().st_size > 100
-
-    async def test_runner_coerces_string_underlay_db_from_config(self, tmp_path, monkeypatch):
-        """The runner must coerce config['tts']['underlay_db'] from string to
-        float before passing to the assembler. This is the integration
-        regression: full path from config dict → runner → assembler."""
-        from src.tts.runner import run_tts_track
-
-        # Real source MP4 to satisfy the assembler
-        video_path = tmp_path / "src.mp4"
-        subprocess.run(
-            ["ffmpeg", "-y", "-f", "lavfi",
-             "-i", "anullsrc=r=24000:cl=mono:d=2",
-             "-c:a", "aac", str(video_path)],
-            check=True, capture_output=True, timeout=15,
-        )
-
-        # Patch the assembler to capture what underlay_db value it actually
-        # received. We don't care about producing audio here — only about
-        # the type that crossed the runner→assembler boundary.
-        captured = {}
-        async def _fake_generate(*args, **kwargs):
-            captured.update(kwargs)
-            # Return a minimal valid tuple
-            fake_out = tmp_path / "fake_out.wav"
-            fake_out.write_bytes(b"RIFF")
-            return fake_out, []
-
-        # Build a minimal config with stringified underlay_db (mimics YAML
-        # interpolation output).
-        config = {
-            "tts": {
-                "underlay_db": "-12.0",   # <-- the bug input
-                "voices_config": "config/tts_voices.yaml",
-            },
-            "translation": {"backend": "deepseek"},
-        }
-
-        # Fake voice profiles so we don't depend on config/tts_voices.yaml
-        fake_profiles = {
-            "profiles": {
-                "female-vi-natural": {
-                    "provider": "google",
-                    "voice": "vi-VN-Wavenet-A",
-                    "language": "vi",
-                }
-            },
-            "platforms": {},
-            "default_provider": "google",
-        }
-        # Fake segments — runner calls parse_srt after checking srt_path.exists().
-        # Patch both load_voice_profiles and the SRT existence / parse chain.
-        fake_segments = [{"start": 0.0, "end": 1.0, "text": "hello"}]
-
-        with patch("src.tts.load_voice_profiles", return_value=fake_profiles), \
-             patch("pathlib.Path.exists", return_value=True), \
-             patch("src.processor.subtitle.parse_srt", return_value=fake_segments), \
-             patch("src.tts.assembler.TTSAssembler.generate_full_track",
-                   new=AsyncMock(side_effect=_fake_generate)):
-            try:
-                await run_tts_track(
-                    video_id="testid",
-                    video_path=video_path,
-                    language="vi",
-                    voice_profile_name="female-vi-natural",
-                    config=config,
-                    canonical_duration=2.0,
-                    playback_speed=None,    # runner reads from config (none) then default
-                    underlay_db=None,       # runner falls back to config (string!)
-                )
-            except Exception:
-                # Allow downstream failures (e.g. missing TTS provider deps);
-                # we only care about the type captured pre-failure.
-                pass
-
-        assert "underlay_db" in captured, "assembler was never called"
-        assert isinstance(captured["underlay_db"], float), (
-            f"underlay_db reached assembler as {type(captured['underlay_db']).__name__} "
-            f"({captured['underlay_db']!r}); runner must coerce to float"
-        )
-        assert captured["underlay_db"] == -12.0

@@ -230,10 +230,6 @@ class TTSRequest(BaseModel):
     # exactly this speed (uniform pacing). When None, the assembler default
     # (1.5×) is used.
     playback_speed: float | None = None
-    # Underlay level (dB) for the original-language audio mixed under the dub.
-    # 0 disables the underlay entirely. When None, the runner falls back to
-    # config.yaml then the assembler default (-12 dB).
-    underlay_db: float | None = None
 
 
 class TTSPreviewRequest(BaseModel):
@@ -243,10 +239,6 @@ class TTSPreviewRequest(BaseModel):
     # Apply atempo at this speed to the previewed sample so the user can
     # hear what the dub will sound like at their chosen playback speed.
     playback_speed: float = 1.0
-    # Underlay level (dB) for the original-language audio mixed under the dub.
-    # 0 disables the underlay entirely. When None, the runner falls back to
-    # config.yaml then the assembler default (-12 dB).
-    underlay_db: float | None = None
     speed: str = "+0%"
     pitch: str = "+0Hz"
     api_key: str | None = None  # per-request API key for paid providers

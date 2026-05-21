@@ -107,7 +107,6 @@ async def run_tts_track(
     llm_api_key: str | None = None,
     llm_backend: str | None = None,
     playback_speed: float | None = None,
-    underlay_db: float | None = None,
     on_progress: Callable[[int, int, str], None] | None = None,
 ) -> dict:
     # Coerce request-supplied playback_speed in case it arrived as a string
@@ -211,21 +210,6 @@ async def run_tts_track(
     )
 
     # ── Assemble ────────────────────────────────────────────────────
-    # Resolve underlay_db: request override → config default → assembler default.
-    # YAML env-var interpolation always returns strings, so the config value
-    # comes through as e.g. "-12.0" — coerce to float here.
-    if underlay_db is None:
-        tts_cfg = config.get("tts", {}) if config else {}
-        raw = tts_cfg.get("underlay_db")
-        if raw is not None:
-            try:
-                underlay_db = float(raw)
-            except (TypeError, ValueError):
-                logger.warning(
-                    f"config tts.underlay_db is not numeric ({raw!r}); "
-                    f"falling back to assembler default"
-                )
-                underlay_db = None
     assembler = TTSAssembler(translator=translator)
     _, sentence_plan = await assembler.generate_full_track(
         provider=tts_provider,
@@ -238,8 +222,6 @@ async def run_tts_track(
         llm_caller=llm_caller,
         srt_path=srt_path,
         playback_speed=playback_speed,
-        underlay_db=underlay_db,
-        video_path=video_path,
     )
 
     # ── Output duration via ffprobe (informational) ────────────────

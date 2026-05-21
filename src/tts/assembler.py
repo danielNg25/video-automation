@@ -16,8 +16,9 @@ Assembly model (planner architecture):
       review.
     - Stage 4: Apply atempo per the plan's effective_speed, anchor each clip
       at its plan-determined final_start.
-    - Stage 5: Concatenate clips onto a silence track (underlay mixing arrives
-      in Task 7).
+    - Stage 5: Concatenate clips onto a silence track. Source-video audio
+      mixing is handled exclusively by the processor (src/processor/ffmpeg.py)
+      at the original_volume level derived from the user's underlay_db setting.
 """
 
 from __future__ import annotations
@@ -426,8 +427,6 @@ class TTSAssembler:
         llm_caller: Callable | None = None,
         srt_path: Path | None = None,  # kept for back-compat; ignored
         playback_speed: float | None = None,
-        underlay_db: float | None = None,
-        video_path: Path | None = None,
     ) -> tuple[Path, list[dict]]:
         """Generate a full-length TTS audio track from subtitle segments.
 
@@ -465,17 +464,12 @@ class TTSAssembler:
         5. Concatenate clips onto a silence track via ffmpeg.
 
         ``srt_path`` is accepted for back-compat (the assembler no longer
-        rewrites the input SRT). ``underlay_db`` and ``video_path`` are
-        forwarded to Stage 5 in Task 7 for the Chinese underlay mix.
+        rewrites the input SRT). Source-video audio mixing is the processor's
+        responsibility — see src/processor/ffmpeg.py.
         """
         # Defensive coercion: any caller that passes a stringified numeric
         # (e.g. from a config path the runner didn't catch) gets handled
         # here so the ffmpeg filter-graph builder can rely on numeric types.
-        if isinstance(underlay_db, str):
-            try:
-                underlay_db = float(underlay_db)
-            except ValueError:
-                underlay_db = None
         if isinstance(playback_speed, str):
             try:
                 playback_speed = float(playback_speed)
@@ -577,16 +571,12 @@ class TTSAssembler:
             # === Stage 2: Build DubPlan (pure function, no I/O) ===
             from src.tts.planner import (
                 PLAYBACK_SPEED_DEFAULT,
-                UNDERLAY_DB_DEFAULT,
                 Planner,
             )
 
             effective_speed = (
                 playback_speed if (playback_speed and playback_speed > 0)
                 else PLAYBACK_SPEED_DEFAULT
-            )
-            effective_underlay = (
-                underlay_db if (underlay_db is not None) else UNDERLAY_DB_DEFAULT
             )
 
             sentence_inputs = [
@@ -606,11 +596,10 @@ class TTSAssembler:
                 natural_synth_durations=natural_durations,
                 playback_speed=effective_speed,
                 video_duration=video_duration,
-                underlay_db=effective_underlay,
             )
 
             logger.info(
-                f"Planner: speed={effective_speed}x underlay={effective_underlay}dB "
+                f"Planner: speed={effective_speed}x "
                 f"sentences={len(dub_plan.sentences)} "
                 f"shortened={sum(1 for s in dub_plan.sentences if s.shorten_pct < 1.0)} "
                 f"drift_end={dub_plan.total_drift_end:.2f}s "
@@ -666,8 +655,9 @@ class TTSAssembler:
                             played_duration = slot.clip_duration
                     fitted_clips.append((sp.final_start, played_path))
                 else:
-                    # No clip — flag for review; failure_windows (collected
-                    # below) will fill this slot with source audio at 0 dB.
+                    # No clip — flag for review; the source-language audio
+                    # will still be audible via the processor's original_volume
+                    # mix, at the same level as the rest of the video.
                     sp.needs_review = True
                     sp.reason = sp.reason or "synth_empty"
                 sentence_plan.append({
@@ -698,22 +688,9 @@ class TTSAssembler:
             if on_progress:
                 on_progress(total, total, "Concatenating audio track...")
 
-            # Collect time windows where synth failed so the source audio
-            # can fill them at 0 dB instead of leaving silence.
-            failure_windows: list[tuple[float, float]] = []
-            for sp in dub_plan.sentences:
-                if sp.reason in ("synth_empty", "synth_failed"):
-                    failure_windows.append(
-                        (sp.final_start, sp.final_start + sp.final_duration)
-                    )
-
             # === Stage 5: Concatenate clips onto a silence track ===
-            _concatenate_with_silence(
-                fitted_clips, video_duration, output_path,
-                video_path=video_path,
-                underlay_db=effective_underlay,
-                failure_windows=failure_windows,
-            )
+            # Source-video audio mixing happens in the processor stage, not here.
+            _concatenate_with_silence(fitted_clips, video_duration, output_path)
 
             # === Stage 6: Emit per-segment dubsync.srt ===
             try:
@@ -792,17 +769,13 @@ def _concatenate_with_silence(
     clips: list[tuple[float, Path | None]],
     total_duration: float,
     output_path: Path,
-    *,
-    video_path: Path | None = None,
-    underlay_db: float = 0.0,
-    failure_windows: list[tuple[float, float]] | None = None,
 ) -> None:
-    """Concatenate audio clips with silence padding; optionally mix the
-    source video's audio underneath at `underlay_db` (0 disables); in
-    failure_windows, raise the underlay back to 0 dB so the original
-    voice carries the slot."""
-    failure_windows = failure_windows or []
+    """Concatenate audio clips with silence padding to match video duration.
 
+    Produces a WAV containing only the dub clips placed at their final_start
+    positions, on a base of silence. Source-video audio mixing is the
+    processor's responsibility — see src/processor/ffmpeg.py.
+    """
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp = Path(tmp_dir)
 
@@ -815,12 +788,7 @@ def _concatenate_with_silence(
         )
 
         valid_clips = [(t, p) for t, p in clips if p is not None and p.exists()]
-        underlay_enabled = (
-            video_path is not None and video_path.exists() and
-            (underlay_db != 0.0 or failure_windows)
-        )
-
-        if not valid_clips and not underlay_enabled:
+        if not valid_clips:
             subprocess.run(
                 ["ffmpeg", "-y", "-i", str(silence_path), str(output_path)],
                 capture_output=True, text=True, check=True, timeout=60,
@@ -829,44 +797,14 @@ def _concatenate_with_silence(
 
         inputs = ["-i", str(silence_path)]
         filter_parts: list[str] = []
-        underlay_label = None
-        amix_count = 1   # silence track always present
-
-        if underlay_enabled:
-            inputs.extend(["-i", str(video_path)])
-            underlay_label = "underlay"
-            amix_count += 1
-            # Build the underlay branch: format to mono 24k, apply base gain,
-            # then un-duck during failure windows by adding +|underlay_db| dB.
-            if underlay_db == 0.0:
-                chain = "[1:a]aformat=channel_layouts=mono:sample_rates=24000"
-            else:
-                chain = (
-                    "[1:a]aformat=channel_layouts=mono:sample_rates=24000,"
-                    f"volume={underlay_db}dB"
-                )
-            # Un-duck filter chain: raise back to 0 dB inside failure windows
-            for f_start, f_end in failure_windows:
-                if underlay_db != 0.0:
-                    chain += (
-                        f",volume=enable='between(t,{f_start:.3f},{f_end:.3f})':"
-                        f"volume={-underlay_db}dB"
-                    )
-            chain += f"[{underlay_label}]"
-            filter_parts.append(chain)
-
         for i, (start_time, clip_path) in enumerate(valid_clips):
             inputs.extend(["-i", str(clip_path)])
-            input_idx = (2 if underlay_enabled else 1) + i
+            input_idx = 1 + i
             delay_ms = int(start_time * 1000)
             filter_parts.append(f"[{input_idx}]adelay={delay_ms}|{delay_ms}[d{i}]")
 
-        mix_inputs = "[0]"
-        if underlay_label:
-            mix_inputs += f"[{underlay_label}]"
-        for i in range(len(valid_clips)):
-            mix_inputs += f"[d{i}]"
-        n_total = amix_count + len(valid_clips)
+        mix_inputs = "[0]" + "".join(f"[d{i}]" for i in range(len(valid_clips)))
+        n_total = 1 + len(valid_clips)
         filter_parts.append(
             f"{mix_inputs}amix=inputs={n_total}:duration=first:"
             f"dropout_transition=0,volume={n_total}[mixed]"

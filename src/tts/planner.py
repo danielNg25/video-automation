@@ -16,7 +16,6 @@ from dataclasses import dataclass, field
 
 # ── Constants (see docs/superpowers/specs/2026-05-20-tts-dubbing-redesign.md) ──
 PLAYBACK_SPEED_DEFAULT = 1.5
-UNDERLAY_DB_DEFAULT = -18.0
 SHORTEN_TARGETS = (0.85, 0.75, 0.65)   # try in order, loosest first
 SHORTEN_FLOOR = 0.60                    # never accept text below this fraction
 RECLAIM_MIN_GAP = 1.0                   # only reclaim from silent gaps ≥ this
@@ -104,7 +103,6 @@ class SentencePlan:
 class DubPlan:
     sentences: list[SentencePlan]
     playback_speed: float
-    underlay_db: float
     total_drift_end: float
     drift_cap_hits: int
     reset_points: list[int] = field(default_factory=list)
@@ -218,13 +216,12 @@ class Planner:
         natural_synth_durations: list[float],
         playback_speed: float,
         video_duration: float,
-        underlay_db: float,
     ) -> DubPlan:
         """Build the global DubPlan. Returns an empty plan for empty input."""
         if not sentences:
             return DubPlan(
                 sentences=[], playback_speed=playback_speed,
-                underlay_db=underlay_db, total_drift_end=0.0,
+                total_drift_end=0.0,
                 drift_cap_hits=0,
             )
         if len(natural_synth_durations) != len(sentences):
@@ -307,7 +304,6 @@ class Planner:
         return DubPlan(
             sentences=final_out,
             playback_speed=playback_speed,
-            underlay_db=underlay_db,
             total_drift_end=final_out[-1].drift_out if final_out else 0.0,
             drift_cap_hits=drift_cap_hits,
             reset_points=reset_points,
