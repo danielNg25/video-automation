@@ -107,6 +107,7 @@ async def run_tts_track(
     llm_api_key: str | None = None,
     llm_backend: str | None = None,
     playback_speed: float | None = None,
+    underlay_db: float | None = None,
     on_progress: Callable[[int, int, str], None] | None = None,
 ) -> dict:
     """Generate the TTS track for a video and return result metadata.
@@ -210,6 +211,8 @@ async def run_tts_track(
         llm_caller=llm_caller,
         srt_path=srt_path,
         playback_speed=playback_speed,
+        underlay_db=underlay_db,
+        video_path=video_path,
     )
 
     # ── Output duration via ffprobe (informational) ────────────────

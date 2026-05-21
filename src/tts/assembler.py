@@ -1,13 +1,23 @@
 """TTS audio assembler: builds a full-length audio track from subtitle segments.
 
-Assembly model (post-simplification):
-    - Sentences are merged from consecutive SRT segments (LLM if available,
-      heuristic fallback). The merger never spans a silent gap larger than
-      MAX_MERGE_GAP_SECONDS so a single dub clip never erases a real pause.
-    - Each merged sentence is synthesised once and placed at its source
-      `start` at natural speed. No atempo, no shortening, no SRT rewriting.
-    - If a clip is longer than its source span, it overruns into the next
-      sentence and ffmpeg's amix blends the overlap.
+Assembly model (planner architecture):
+    - Stage 0: Sentences are merged from consecutive SRT segments (LLM if
+      available, heuristic fallback). The merger never spans a silent gap
+      larger than MAX_MERGE_GAP_SECONDS so a single dub clip never erases a
+      real pause.
+    - Stage 1: Synthesize one clip per sentence at the provider's natural
+      speed.
+    - Stage 2: Build a DubPlan via the pure-function Planner. The planner
+      decides per-sentence shortening targets, drift accumulation, gap reclaim,
+      and reset points — globally, without I/O.
+    - Stage 3: Batch re-synthesise sentences flagged by the planner. A single
+      LLM call shortens all flagged sentences; clips that came out shorter are
+      swapped in; others fall back to the Stage 1 clip and are flagged for
+      review.
+    - Stage 4: Apply atempo per the plan's effective_speed, anchor each clip
+      at its plan-determined final_start.
+    - Stage 5: Concatenate clips onto a silence track (underlay mixing arrives
+      in Task 7).
 """
 
 from __future__ import annotations
@@ -317,6 +327,97 @@ class TTSAssembler:
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._translator = translator  # LLMTranslator or None
 
+    async def _apply_shortening(
+        self, *, plan, sentence_groups, slots, provider, voice, kwargs,
+        tmp, effective_speed,
+    ):
+        """Stage 3: ask the LLM to shorten every sentence the plan flagged
+        (shorten_pct < 1.0). Single batched LLM call; re-synthesise each
+        result concurrently. Accept the new clip if it's shorter than the
+        original; otherwise keep the original and flag for review."""
+        from src.tts.planner import SHORTEN_UNDERSHOOT_OK
+
+        if not self._translator:
+            # No LLM — skip shortening; plan's shorten_pct decisions become
+            # advisory only and the synth duration overrides everything.
+            for sp in plan.sentences:
+                if sp.shorten_pct < 1.0:
+                    sp.needs_review = True
+                    sp.reason = "shorten_no_llm"
+            return
+
+        targets = [sp for sp in plan.sentences if sp.shorten_pct < 1.0]
+        if not targets:
+            return
+
+        batch = []
+        for sp in targets:
+            slot = slots[sp.index]
+            batch.append({
+                "text": sp.original_text,
+                "target_pct": int(sp.shorten_pct * 100),
+                "current_duration": slot.clip_duration,
+                "target_duration": sp.final_duration,
+                "speed_ratio": (
+                    slot.clip_duration / sp.final_duration
+                    if sp.final_duration > 0 else 1.0
+                ),
+            })
+
+        try:
+            shortened_texts = await self._translator.shorten_texts_batch(batch)
+        except Exception as e:
+            logger.warning(f"Stage 3 batched shortening failed: {e}")
+            for sp in targets:
+                sp.needs_review = True
+                sp.reason = "reshorten_failed"
+            return
+
+        # Re-synthesise each shortened text concurrently
+        resynth = []
+        for sp, text in zip(targets, shortened_texts):
+            if text == sp.original_text:
+                # LLM returned no change — drop shortening for this sentence
+                sp.shorten_pct = 1.0
+                continue
+            sp.target_text = text
+            resynth.append((sp, text))
+
+        if not resynth:
+            return
+
+        async def _synth(sp, text):
+            async with self._semaphore:
+                return await provider.synthesize(text, voice, **kwargs)
+
+        results = await asyncio.gather(
+            *[_synth(sp, text) for sp, text in resynth],
+            return_exceptions=True,
+        )
+
+        for (sp, text), audio in zip(resynth, results):
+            slot = slots[sp.index]
+            if isinstance(audio, Exception) or audio is None or len(audio) == 0:
+                sp.needs_review = True
+                sp.reason = "reshorten_failed"
+                sp.target_text = sp.original_text
+                continue
+            new_clip = tmp / f"reshort_{sp.index:04d}.mp3"
+            new_clip.write_bytes(audio)
+            new_dur = _get_audio_duration(new_clip)
+            if new_dur <= 0 or new_dur >= slot.clip_duration:
+                sp.needs_review = True
+                sp.reason = "reshorten_not_shorter"
+                sp.target_text = sp.original_text
+                continue
+            planned = sp.final_duration * effective_speed
+            ratio = new_dur / planned if planned > 0 else 0.0
+            if ratio > 1.0 + SHORTEN_UNDERSHOOT_OK:
+                sp.needs_review = True
+                sp.reason = "shorten_undershot"
+            slot.clip_path = new_clip
+            slot.clip_duration = new_dur
+
     async def generate_full_track(
         self,
         provider: BaseTTSProvider,
@@ -329,21 +430,47 @@ class TTSAssembler:
         llm_caller: Callable | None = None,
         srt_path: Path | None = None,  # kept for back-compat; ignored
         playback_speed: float | None = None,
+        underlay_db: float | None = None,
+        video_path: Path | None = None,
     ) -> tuple[Path, list[dict]]:
         """Generate a full-length TTS audio track from subtitle segments.
 
-        Pipeline:
+        Returns ``(output_path, sentence_plan)`` where ``sentence_plan`` is a
+        list of per-sentence dicts with the following keys:
+
+            index            – sentence index (0-based)
+            text             – final (possibly shortened) text spoken
+            original_text    – pre-shortening text from Stage 1
+            start            – plan final_start (seconds)
+            end              – plan final_start + final_duration (seconds)
+            window_start     – original source subtitle start (seconds)
+            window_end       – original source subtitle end (seconds)
+            synth_duration   – natural duration of Stage 1 clip (seconds)
+            fitted_duration  – actual duration placed in the track (seconds)
+            speed_ratio      – effective playback speed applied
+            shorten_pct      – fraction the planner asked for (1.0 = no shorten)
+            drift_in         – accumulated drift at sentence start (seconds)
+            drift_out        – accumulated drift after sentence (seconds)
+            push_amount      – seconds of overrun pushed to downstream (seconds)
+            reclaimed_silence – silence consumed by this sentence's clip (seconds)
+            was_shortened    – True if the LLM provided a shorter version
+            needs_review     – True if the clip failed some quality check
+            reason           – short reason code if needs_review else None
+
+        Pipeline stages:
         0. Merge segments into sentence groups (LLM or heuristic). The LLM
            merger never spans gaps > MAX_MERGE_GAP_SECONDS.
         1. Synthesize one clip per sentence at the provider's natural speed.
-        2. Apply ffmpeg atempo at the configured `playback_speed` (default
-           1.0 = no re-encode). Place each clip at its sentence's source
-           `start`. No fitting, no shortening, no shifting. If a clip
-           overruns its source span at the chosen speed, ffmpeg's amix
-           blends the overlap with the next clip.
+        2. Build a DubPlan via Planner.build_plan (pure, no I/O). Decides
+           per-sentence shortening targets, drift, gap reclaim, reset points.
+        3. Batch re-synthesise shortened sentences via one LLM call. Clips
+           that are not shorter fall back to the Stage 1 clip.
+        4. Apply atempo per effective_speed, place clips at plan final_start.
+        5. Concatenate clips onto a silence track via ffmpeg.
 
-        `srt_path` is accepted for back-compat (the assembler no longer
-        rewrites the input SRT).
+        ``srt_path`` is accepted for back-compat (the assembler no longer
+        rewrites the input SRT). ``underlay_db`` and ``video_path`` are
+        forwarded to Stage 5 in Task 7 for the Chinese underlay mix.
         """
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -437,223 +564,121 @@ class TTSAssembler:
                     window_end=sg.end,
                 ))
 
-            # Per-slot shortening history; surfaced in the sentence_plan + JSON.
-            shorten_state: dict[int, dict] = {
-                i: {"original_text": sg.text, "passes": 0}
+            # === Stage 2: Build DubPlan (pure function, no I/O) ===
+            from src.tts.planner import (
+                PLAYBACK_SPEED_DEFAULT,
+                UNDERLAY_DB_DEFAULT,
+                Planner,
+            )
+
+            effective_speed = (
+                playback_speed if (playback_speed and playback_speed > 0)
+                else PLAYBACK_SPEED_DEFAULT
+            )
+            effective_underlay = (
+                underlay_db if (underlay_db is not None) else UNDERLAY_DB_DEFAULT
+            )
+
+            sentence_inputs = [
+                {
+                    "index": sg.segment_indices[0] if sg.segment_indices else i,
+                    "segment_indices": sg.segment_indices,
+                    "text": sg.text,
+                    "start": sg.start,
+                    "end": sg.end,
+                }
                 for i, sg in enumerate(sentence_groups)
-            }
+            ]
+            natural_durations = [s.clip_duration for s in slots]
 
-            # === Stage 1.5: LLM-driven shortening (skipped without translator) ===
-            # When `clip_duration / playback_speed > source_span`, the dub
-            # would overrun even after atempo. Ask the LLM to shorten the
-            # text and re-synthesise. Up to SHORTENING_MAX_PASSES attempts,
-            # each 5pp tighter than the last (clamped at 30%). Slots that
-            # fit drop out between passes; slots that still overflow after
-            # all passes fall through to Stage 2 and overrun normally.
-            speed = playback_speed if (playback_speed and playback_speed > 0) else 1.0
+            dub_plan = Planner.build_plan(
+                sentences=sentence_inputs,
+                natural_synth_durations=natural_durations,
+                playback_speed=effective_speed,
+                video_duration=video_duration,
+                underlay_db=effective_underlay,
+            )
 
-            if self._translator and slots:
-                for pass_idx in range(1, SHORTENING_MAX_PASSES + 1):
-                    overflow: list[tuple[SegmentSlot, float]] = []
-                    for slot in slots:
-                        if slot.clip_path is None or slot.clip_duration <= 0:
-                            continue
-                        span = slot.window_end - slot.window_start
-                        if span <= 0:
-                            continue
-                        if slot.clip_duration / speed > span:
-                            overflow.append((slot, span))
+            logger.info(
+                f"Planner: speed={effective_speed}x underlay={effective_underlay}dB "
+                f"sentences={len(dub_plan.sentences)} "
+                f"shortened={sum(1 for s in dub_plan.sentences if s.shorten_pct < 1.0)} "
+                f"drift_end={dub_plan.total_drift_end:.2f}s "
+                f"cap_hits={dub_plan.drift_cap_hits}"
+            )
 
-                    if not overflow:
-                        if pass_idx == 1:
-                            logger.info(
-                                f"All clips fit at {speed}× — no shortening needed"
-                            )
-                        break
+            # === Stage 3: Batch re-synthesise shortened sentences ===
+            await self._apply_shortening(
+                plan=dub_plan, sentence_groups=sentence_groups, slots=slots,
+                provider=provider, voice=voice, kwargs=kwargs, tmp=tmp,
+                effective_speed=effective_speed,
+            )
 
-                    batch: list[dict] = []
-                    for slot, span in overflow:
-                        natural_pct = (span * speed / slot.clip_duration) * 100
-                        target_pct = max(30, int(natural_pct) - 5 * (pass_idx - 1))
-                        batch.append({
-                            "text": sentence_groups[slot.index].text,
-                            "target_pct": target_pct,
-                            "current_duration": slot.clip_duration,
-                            "target_duration": span,
-                            "speed_ratio": slot.clip_duration / span,
-                        })
+            if on_progress:
+                on_progress(total, total, "Shortening complete")
 
-                    logger.info(
-                        f"Shortening pass {pass_idx}/{SHORTENING_MAX_PASSES}: "
-                        f"{len(overflow)} slots over budget"
-                    )
-                    if on_progress:
-                        on_progress(
-                            0, total,
-                            f"Shortening pass {pass_idx}: {len(overflow)} sentences",
-                        )
-
-                    try:
-                        shortened_texts = await self._translator.shorten_texts_batch(batch)
-                    except Exception as e:
-                        logger.warning(f"Shortening pass {pass_idx} failed: {e}")
-                        break
-
-                    # Re-synthesise only sentences whose text actually changed.
-                    resynth_targets: list[tuple[SegmentSlot, str]] = []
-                    for (slot, _), shortened in zip(overflow, shortened_texts):
-                        if shortened == sentence_groups[slot.index].text:
-                            continue
-                        resynth_targets.append((slot, shortened))
-
-                    if not resynth_targets:
-                        # LLM didn't shorten anything this pass — next pass
-                        # would just hit the same texts. Bail early.
-                        break
-
-                    new_clips = await asyncio.gather(
-                        *[synth_one(slot.index, text, suffix=f"_p{pass_idx}")
-                          for slot, text in resynth_targets],
-                        return_exceptions=True,
-                    )
-
-                    for (slot, shortened), new_clip in zip(resynth_targets, new_clips):
-                        if isinstance(new_clip, Exception):
-                            logger.warning(
-                                f"Sentence {slot.index} re-synth failed (pass "
-                                f"{pass_idx}): {new_clip!r}"
-                            )
-                            continue
-                        if new_clip is None:
-                            continue
-                        new_dur = _get_audio_duration(new_clip)
-                        if new_dur <= 0 or new_dur >= slot.clip_duration:
-                            # Re-synth wasn't actually shorter — keep original.
-                            continue
-                        # Swap in the shorter clip and update the merged-text
-                        # so the persisted merge plan and sentence_plan
-                        # reflect what was spoken.
-                        slot.clip_path = new_clip
-                        slot.clip_duration = new_dur
-                        shorten_state[slot.index]["passes"] += 1
-                        old_sg = sentence_groups[slot.index]
-                        sentence_groups[slot.index] = SentenceGroup(
-                            segment_indices=old_sg.segment_indices,
-                            text=shortened,
-                            start=old_sg.start,
-                            end=old_sg.end,
-                        )
-
-                if on_progress:
-                    on_progress(total, total, "Shortening complete")
-            else:
-                if not self._translator:
-                    logger.info(
-                        "LLM shortening skipped — no translator configured "
-                        "(save an API key in Settings → API Keys to enable it)."
-                    )
-
-            # Persist the merged sentences (post-shortening) alongside the
-            # dub WAV. Two artefacts:
-            #   - {output}.merged.srt  — readable, source-aligned timings
-            #   - {output}.merged.json — adds source_indices, original_text,
-            #                            was_shortened, shorten_passes
-            try:
-                from src.processor.subtitle import write_srt as _write_srt
-                merged_srt_path = output_path.with_suffix(".merged.srt")
-                _write_srt(
-                    [
-                        {"start": sg.start, "end": sg.end, "text": sg.text}
-                        for sg in sentence_groups
-                    ],
-                    merged_srt_path,
-                )
-                merged_json_path = output_path.with_suffix(".merged.json")
-                merged_json_path.write_text(
-                    json.dumps(
-                        [
-                            {
-                                "index": i,
-                                "source_indices": sg.segment_indices,
-                                "start": round(sg.start, 3),
-                                "end": round(sg.end, 3),
-                                "text": sg.text,
-                                "original_text": shorten_state[i]["original_text"],
-                                "was_shortened": shorten_state[i]["passes"] > 0,
-                                "shorten_passes": shorten_state[i]["passes"],
-                            }
-                            for i, sg in enumerate(sentence_groups)
-                        ],
-                        ensure_ascii=False,
-                        indent=2,
-                    )
-                )
-                logger.info(
-                    f"Saved merge plan: {merged_srt_path.name} + {merged_json_path.name}"
-                )
-            except Exception as e:
-                logger.warning(f"Could not save merge-plan files: {e}")
-
-            # === Stage 2: Apply uniform `playback_speed` and place clips ===
-            # Each clip is sped up via ffmpeg atempo to the configured speed
-            # (1.0 = natural, no re-encode). Then placed at its source `start`.
-            # If the speed-adjusted clip is still longer than its source span,
-            # it overruns the next slot — ffmpeg amix blends the overlap.
-            logger.info(f"TTS dub playback_speed = {speed}× (1.0 = natural, no atempo)")
-
+            # === Stage 4: Apply atempo per plan, prepare clip list ===
+            logger.info(f"TTS dub playback_speed = {effective_speed}×")
             fitted_clips: list[tuple[float, Path | None]] = []
-            for slot in slots:
-                window_size = slot.window_end - slot.window_start
-
+            for sp in dub_plan.sentences:
+                slot = slots[sp.index]
                 played_path: Path | None = None
                 played_duration = 0.0
                 if slot.clip_path is not None and slot.clip_duration > 0:
-                    if abs(speed - 1.0) < 0.01:
+                    if abs(effective_speed - 1.0) < 0.01:
                         played_path = slot.clip_path
                         played_duration = slot.clip_duration
                     else:
-                        fitted_path = tmp / f"fitted_{slot.index:04d}.mp3"
+                        fitted_path = tmp / f"fitted_{sp.index:04d}.mp3"
                         try:
-                            _speed_up_audio(slot.clip_path, fitted_path, speed)
+                            _speed_up_audio(slot.clip_path, fitted_path, effective_speed)
                             ad = _get_audio_duration(fitted_path)
                             if ad > 0:
                                 played_path = fitted_path
                                 played_duration = ad
                             else:
                                 logger.warning(
-                                    f"Sentence {slot.index}: atempo produced empty output, "
+                                    f"Sentence {sp.index}: atempo empty output, "
                                     f"falling back to natural speed"
                                 )
+                                sp.needs_review = True
+                                sp.reason = sp.reason or "atempo_off_target"
                                 played_path = slot.clip_path
                                 played_duration = slot.clip_duration
                         except Exception as e:
                             logger.warning(
-                                f"Sentence {slot.index}: atempo failed ({e}), "
+                                f"Sentence {sp.index}: atempo failed ({e}), "
                                 f"falling back to natural speed"
                             )
+                            sp.needs_review = True
+                            sp.reason = sp.reason or "atempo_failed"
                             played_path = slot.clip_path
                             played_duration = slot.clip_duration
-                    fitted_clips.append((slot.window_start, played_path))
+                    fitted_clips.append((sp.final_start, played_path))
                 else:
-                    logger.warning(
-                        f"Sentence {slot.index} dropped from output: no audio clip "
-                        f"(source span {slot.window_start:.2f}–{slot.window_end:.2f}s)"
-                    )
-
-                overrun = max(0.0, played_duration - window_size) if played_duration > 0 else 0.0
-                state = shorten_state.get(slot.index, {"original_text": "", "passes": 0})
+                    # No clip — Task 7 lands Chinese-at-0-dB fallback. For
+                    # this commit, flag and skip (matches existing behaviour).
+                    sp.needs_review = True
+                    sp.reason = sp.reason or "synth_empty"
                 sentence_plan.append({
-                    "index": slot.index,
-                    "text": sentence_groups[slot.index].text,
-                    "start": round(slot.window_start, 3),
-                    "end": round(slot.window_end, 3),
+                    "index": sp.index,
+                    "text": sp.target_text,
+                    "original_text": sp.original_text,
+                    "start": round(sp.final_start, 3),
+                    "end": round(sp.final_start + sp.final_duration, 3),
+                    "window_start": round(sp.original_start, 3),
+                    "window_end": round(sp.original_end, 3),
                     "synth_duration": round(slot.clip_duration, 3),
                     "fitted_duration": round(played_duration, 3),
-                    "speed_ratio": round(speed, 3),
-                    "overrun_seconds": round(overrun, 3),
-                    "was_shortened": state["passes"] > 0,
-                    "shorten_passes": state["passes"],
-                    "original_text": state["original_text"],
+                    "speed_ratio": round(effective_speed, 3),
+                    "shorten_pct": round(sp.shorten_pct, 3),
+                    "drift_in": round(sp.drift_in, 3),
+                    "drift_out": round(sp.drift_out, 3),
+                    "push_amount": round(sp.push_amount, 3),
+                    "reclaimed_silence": round(sp.reclaimed_silence, 3),
+                    "was_shortened": sp.shorten_pct < 1.0,
+                    "needs_review": sp.needs_review,
+                    "reason": sp.reason,
                 })
 
             if on_progress:
