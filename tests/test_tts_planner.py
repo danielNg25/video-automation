@@ -163,3 +163,73 @@ class TestPhaseA:
         assert plan.sentences[2].drift_in == 0.0
         assert plan.sentences[2].final_start == pytest.approx(5.0, abs=1e-6)
         assert 1 in plan.reset_points  # reset happened after sentence 1
+
+
+class TestPhaseBShortenTargets:
+    """Phase B picks the loosest target from SHORTEN_TARGETS that fits."""
+
+    def test_picks_75_for_moderate_overrun(self):
+        # 1s slot, 1.3s desired (1.95/1.5)
+        # Required shorten ≈ 1.0/1.3 = 0.77 → pick loosest of (0.85, 0.75, 0.65)
+        # that's ≤ 0.77 → 0.75
+        sents = [
+            _sentence(0, 0.0, 1.0),
+            _sentence(1, 1.0, 5.0),   # big slot so no further drift
+        ]
+        plan = Planner.build_plan(
+            sentences=sents,
+            natural_synth_durations=[1.95, 0.5],   # 1.95/1.5 = 1.3 played
+            playback_speed=1.5,
+            video_duration=5.0,
+            underlay_db=-12.0,
+        )
+        assert plan.sentences[0].shorten_pct == 0.75
+
+    def test_picks_85_when_15pct_overrun(self):
+        # 1s slot, ~1.17s desired → required ≈ 1/1.17 = 0.855 → pick 0.85
+        sents = [_sentence(0, 0.0, 1.0), _sentence(1, 1.0, 5.0)]
+        plan = Planner.build_plan(
+            sentences=sents,
+            natural_synth_durations=[1.755, 0.5],   # 1.755 / 1.5 = 1.17 played
+            playback_speed=1.5,
+            video_duration=5.0,
+            underlay_db=-12.0,
+        )
+        assert plan.sentences[0].shorten_pct == 0.85
+
+    def test_floor_at_60_when_even_65_does_not_fit(self):
+        # 1s slot, 2.0s desired → required = 0.5 → no target ≤ 0.5, take SHORTEN_FLOOR
+        sents = [_sentence(0, 0.0, 1.0), _sentence(1, 1.0, 5.0)]
+        plan = Planner.build_plan(
+            sentences=sents,
+            natural_synth_durations=[3.0, 0.5],   # 3.0 / 1.5 = 2.0 played
+            playback_speed=1.5,
+            video_duration=5.0,
+            underlay_db=-12.0,
+        )
+        assert plan.sentences[0].shorten_pct == SHORTEN_FLOOR  # 0.60
+
+    def test_no_shortening_when_no_overflow(self):
+        sents = [_sentence(0, 0.0, 5.0)]
+        plan = Planner.build_plan(
+            sentences=sents,
+            natural_synth_durations=[3.0],
+            playback_speed=1.5,
+            video_duration=5.0,
+            underlay_db=-12.0,
+        )
+        assert plan.sentences[0].shorten_pct == 1.0
+
+    def test_reclaim_runs_before_shortening(self):
+        # 1s slot, 1.2s desired, 2s gap after → reclaim absorbs the 0.2s overrun,
+        # no shortening needed
+        sents = [_sentence(0, 0.0, 1.0), _sentence(1, 3.0, 4.0)]
+        plan = Planner.build_plan(
+            sentences=sents,
+            natural_synth_durations=[1.8, 0.5],
+            playback_speed=1.5,
+            video_duration=4.0,
+            underlay_db=-12.0,
+        )
+        assert plan.sentences[0].shorten_pct == 1.0
+        assert plan.sentences[0].reclaimed_silence > 0

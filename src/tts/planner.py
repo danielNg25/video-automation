@@ -26,6 +26,30 @@ DRIFT_CAP = 3.0                         # max accumulated drift before rebalance
 SHORTEN_UNDERSHOOT_OK = 0.10            # accept clip up to 10% over planned
 
 
+def _required_shorten_pct(desired: float, available: float) -> float:
+    """How much shorter (as a fraction of desired) the sentence needs to be to fit `available`.
+
+    Returns 1.0 when desired <= 0 (no shortening computable / needed).
+    """
+    if desired <= 0:
+        return 1.0
+    return max(0.0, available / desired)
+
+
+def _pick_shorten_target(required: float) -> float:
+    """Pick the loosest target in SHORTEN_TARGETS that's ≤ required.
+
+    Returns 1.0 if no shortening is needed (required >= 1.0).
+    Returns SHORTEN_FLOOR if no target in SHORTEN_TARGETS fits.
+    """
+    if required >= 1.0:
+        return 1.0
+    for t in SHORTEN_TARGETS:   # loosest first
+        if t <= required:
+            return t
+    return SHORTEN_FLOOR
+
+
 @dataclass
 class SentencePlan:
     index: int
@@ -71,10 +95,8 @@ class Planner:
         """Build the global DubPlan. Returns an empty plan for empty input."""
         if not sentences:
             return DubPlan(
-                sentences=[],
-                playback_speed=playback_speed,
-                underlay_db=underlay_db,
-                total_drift_end=0.0,
+                sentences=[], playback_speed=playback_speed,
+                underlay_db=underlay_db, total_drift_end=0.0,
                 drift_cap_hits=0,
             )
         if len(natural_synth_durations) != len(sentences):
@@ -87,41 +109,55 @@ class Planner:
                 f"playback_speed must be > 0, got {playback_speed}"
             )
 
+        N = len(sentences)
+        # Pre-compute per-sentence statics
+        orig_starts = [float(s["start"]) for s in sentences]
+        orig_ends = [float(s["end"]) for s in sentences]
+        slot_sizes = [max(0.0, e - s) for s, e in zip(orig_starts, orig_ends)]
+        raw_gaps_after = [
+            max(0.0, (orig_starts[i + 1] if i + 1 < N else video_duration) - orig_ends[i])
+            for i in range(N)
+        ]
+        desired_natural = [natural_synth_durations[i] / playback_speed for i in range(N)]
+
+        # Phase B (preview): pick shorten targets based on slot + max reclaim
+        shorten_pcts = [1.0] * N
+        for i in range(N):
+            slot = slot_sizes[i]
+            gap = raw_gaps_after[i]
+            reclaim_room = max(0.0, gap - RECLAIM_RESERVE) if gap >= RECLAIM_MIN_GAP else 0.0
+            available = slot + reclaim_room
+            shorten_pcts[i] = _pick_shorten_target(
+                _required_shorten_pct(desired_natural[i], available)
+            )
+
+        # Effective desired durations after Phase B's shortening decision
+        effective_desired = [desired_natural[i] * shorten_pcts[i] for i in range(N)]
+
+        # Phase A (recomputed against effective durations)
         out: list[SentencePlan] = []
         reset_points: list[int] = []
         drift = 0.0
-        N = len(sentences)
-
         for i in range(N):
-            s = sentences[i]
-            natural = natural_synth_durations[i]
-            desired = natural / playback_speed
-            orig_start = float(s["start"])
-            orig_end = float(s["end"])
-            slot_size = max(0.0, orig_end - orig_start)
-            next_start = (
-                float(sentences[i + 1]["start"]) if i + 1 < N else video_duration
-            )
-            raw_gap_after = max(0.0, next_start - orig_end)
-
+            desired = effective_desired[i]
+            slot = slot_sizes[i]
+            gap = raw_gaps_after[i]
             drift_in_value = drift
-            final_start = orig_start + drift
+            final_start = orig_starts[i] + drift
             reclaimed = 0.0
             push_amount = 0.0
 
-            if desired <= slot_size:
+            if desired <= slot:
                 final_duration = desired
-                # If we entered with drift, try to recover via the gap after us.
-                if drift > 0 and raw_gap_after >= RECLAIM_MIN_GAP:
-                    reclaim = min(drift, raw_gap_after - RECLAIM_RESERVE)
+                if drift > 0 and gap >= RECLAIM_MIN_GAP:
+                    reclaim = min(drift, gap - RECLAIM_RESERVE)
                     if reclaim > 0:
                         drift -= reclaim
                         reclaimed = reclaim
             else:
-                overrun = desired - slot_size
-                # First absorb what the gap will let us
-                if raw_gap_after >= RECLAIM_MIN_GAP:
-                    absorb = min(overrun, raw_gap_after - RECLAIM_RESERVE)
+                overrun = desired - slot
+                if gap >= RECLAIM_MIN_GAP:
+                    absorb = min(overrun, gap - RECLAIM_RESERVE)
                     if absorb > 0:
                         overrun -= absorb
                         reclaimed = absorb
@@ -134,32 +170,29 @@ class Planner:
 
             out.append(SentencePlan(
                 index=i,
-                segment_indices=list(s.get("segment_indices", [i])),
-                original_text=s.get("text", ""),
-                target_text=s.get("text", ""),
-                natural_synth_duration=natural,
-                original_start=orig_start,
-                original_end=orig_end,
+                segment_indices=list(sentences[i].get("segment_indices", [i])),
+                original_text=sentences[i].get("text", ""),
+                target_text=sentences[i].get("text", ""),
+                natural_synth_duration=natural_synth_durations[i],
+                original_start=orig_starts[i],
+                original_end=orig_ends[i],
                 final_start=final_start,
                 final_duration=final_duration,
                 drift_in=drift_in_value,
                 drift_out=drift_out,
-                shorten_pct=1.0,
+                shorten_pct=shorten_pcts[i],
                 push_amount=push_amount,
                 reclaimed_silence=reclaimed,
                 needs_review=False,
                 reason=None,
             ))
 
-            if raw_gap_after >= RESET_GAP_THRESHOLD:
+            if gap >= RESET_GAP_THRESHOLD:
                 reset_points.append(i)
                 drift = 0.0
 
         return DubPlan(
-            sentences=out,
-            playback_speed=playback_speed,
-            underlay_db=underlay_db,
-            total_drift_end=drift,
-            drift_cap_hits=0,
-            reset_points=reset_points,
+            sentences=out, playback_speed=playback_speed,
+            underlay_db=underlay_db, total_drift_end=drift,
+            drift_cap_hits=0, reset_points=reset_points,
         )
