@@ -721,3 +721,138 @@ class TestDubsyncSrtWriter:
         assert rewritten[0]["end"] == pytest.approx(11.0, abs=1e-3)
         assert rewritten[1]["start"] == pytest.approx(11.0, abs=1e-3)
         assert rewritten[1]["end"] == pytest.approx(15.0, abs=1e-3)
+
+
+class TestConfigStringCoercion:
+    """Regression: underlay_db read from config.yaml comes through as a
+    string (env-var interpolation always returns strings). The runner must
+    coerce to float before passing to the assembler, and the assembler
+    must defensively cast in case anything else sneaks through."""
+
+    async def test_assembler_handles_string_underlay_db(self, tmp_path):
+        """Passing underlay_db as a string directly to generate_full_track
+        must not crash — it should be coerced to float at the function entry
+        and produce a normal output WAV."""
+        from src.tts.assembler import TTSAssembler
+        from src.tts.base import BaseTTSProvider
+
+        class TinyProvider(BaseTTSProvider):
+            async def synthesize(self, text, voice, **kw):
+                import struct
+                samples = 4800
+                return (
+                    b"RIFF" + struct.pack("<I", 36 + samples * 2) + b"WAVEfmt " +
+                    struct.pack("<IHHIIHH", 16, 1, 1, 24000, 48000, 2, 16) +
+                    b"data" + struct.pack("<I", samples * 2) + b"\x00\x00" * samples
+                )
+
+            async def list_voices(self, language=None):
+                return []
+
+        # Real source MP4 so the underlay branch has a real audio input
+        video_path = tmp_path / "src.mp4"
+        subprocess.run(
+            ["ffmpeg", "-y", "-f", "lavfi",
+             "-i", "anoisesrc=color=pink:duration=3:amplitude=0.5",
+             "-c:a", "aac", str(video_path)],
+            check=True, capture_output=True, timeout=15,
+        )
+        out_path = tmp_path / "out.wav"
+        assembler = TTSAssembler(translator=None)
+        # Pass underlay_db as the string "-12.0" — the exact bug we hit in
+        # production via the config.yaml interpolation path.
+        await assembler.generate_full_track(
+            provider=TinyProvider(),
+            segments=[
+                {"start": 0.0, "end": 1.0, "text": "a"},
+                {"start": 2.0, "end": 3.0, "text": "b"},
+            ],
+            voice_profile={"voice": "test"},
+            video_duration=3.0,
+            output_path=out_path,
+            merge_sentences=False,
+            playback_speed="1.5",   # <-- ALSO stringified, mirrors a future YAML config
+            underlay_db="-12.0",    # <-- the exact production bug
+            video_path=video_path,
+        )
+        assert out_path.exists() and out_path.stat().st_size > 100
+
+    async def test_runner_coerces_string_underlay_db_from_config(self, tmp_path, monkeypatch):
+        """The runner must coerce config['tts']['underlay_db'] from string to
+        float before passing to the assembler. This is the integration
+        regression: full path from config dict → runner → assembler."""
+        from src.tts.runner import run_tts_track
+
+        # Real source MP4 to satisfy the assembler
+        video_path = tmp_path / "src.mp4"
+        subprocess.run(
+            ["ffmpeg", "-y", "-f", "lavfi",
+             "-i", "anullsrc=r=24000:cl=mono:d=2",
+             "-c:a", "aac", str(video_path)],
+            check=True, capture_output=True, timeout=15,
+        )
+
+        # Patch the assembler to capture what underlay_db value it actually
+        # received. We don't care about producing audio here — only about
+        # the type that crossed the runner→assembler boundary.
+        captured = {}
+        async def _fake_generate(*args, **kwargs):
+            captured.update(kwargs)
+            # Return a minimal valid tuple
+            fake_out = tmp_path / "fake_out.wav"
+            fake_out.write_bytes(b"RIFF")
+            return fake_out, []
+
+        # Build a minimal config with stringified underlay_db (mimics YAML
+        # interpolation output).
+        config = {
+            "tts": {
+                "underlay_db": "-12.0",   # <-- the bug input
+                "voices_config": "config/tts_voices.yaml",
+            },
+            "translation": {"backend": "deepseek"},
+        }
+
+        # Fake voice profiles so we don't depend on config/tts_voices.yaml
+        fake_profiles = {
+            "profiles": {
+                "female-vi-natural": {
+                    "provider": "edge",
+                    "voice": "vi-VN-HoaiMyNeural",
+                    "language": "vi",
+                }
+            },
+            "platforms": {},
+            "default_provider": "edge",
+        }
+        # Fake segments — runner calls parse_srt after checking srt_path.exists().
+        # Patch both load_voice_profiles and the SRT existence / parse chain.
+        fake_segments = [{"start": 0.0, "end": 1.0, "text": "hello"}]
+
+        with patch("src.tts.load_voice_profiles", return_value=fake_profiles), \
+             patch("pathlib.Path.exists", return_value=True), \
+             patch("src.processor.subtitle.parse_srt", return_value=fake_segments), \
+             patch("src.tts.assembler.TTSAssembler.generate_full_track",
+                   new=AsyncMock(side_effect=_fake_generate)):
+            try:
+                await run_tts_track(
+                    video_id="testid",
+                    video_path=video_path,
+                    language="vi",
+                    voice_profile_name="female-vi-natural",
+                    config=config,
+                    canonical_duration=2.0,
+                    playback_speed=None,    # runner reads from config (none) then default
+                    underlay_db=None,       # runner falls back to config (string!)
+                )
+            except Exception:
+                # Allow downstream failures (e.g. missing TTS provider deps);
+                # we only care about the type captured pre-failure.
+                pass
+
+        assert "underlay_db" in captured, "assembler was never called"
+        assert isinstance(captured["underlay_db"], float), (
+            f"underlay_db reached assembler as {type(captured['underlay_db']).__name__} "
+            f"({captured['underlay_db']!r}); runner must coerce to float"
+        )
+        assert captured["underlay_db"] == -12.0

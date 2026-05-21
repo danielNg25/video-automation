@@ -468,6 +468,20 @@ class TTSAssembler:
         rewrites the input SRT). ``underlay_db`` and ``video_path`` are
         forwarded to Stage 5 in Task 7 for the Chinese underlay mix.
         """
+        # Defensive coercion: any caller that passes a stringified numeric
+        # (e.g. from a config path the runner didn't catch) gets handled
+        # here so the ffmpeg filter-graph builder can rely on numeric types.
+        if isinstance(underlay_db, str):
+            try:
+                underlay_db = float(underlay_db)
+            except ValueError:
+                underlay_db = None
+        if isinstance(playback_speed, str):
+            try:
+                playback_speed = float(playback_speed)
+            except ValueError:
+                playback_speed = None
+
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         voice = voice_profile["voice"]

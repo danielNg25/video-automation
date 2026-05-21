@@ -110,6 +110,18 @@ async def run_tts_track(
     underlay_db: float | None = None,
     on_progress: Callable[[int, int, str], None] | None = None,
 ) -> dict:
+    # Coerce request-supplied playback_speed in case it arrived as a string
+    # (e.g. from config.yaml interpolation in some future use, or a misbehaving
+    # client). Runner is the boundary where types should be normalised.
+    if playback_speed is not None and not isinstance(playback_speed, (int, float)):
+        try:
+            playback_speed = float(playback_speed)
+        except (TypeError, ValueError):
+            logger.warning(
+                f"playback_speed is not numeric ({playback_speed!r}); "
+                f"falling back to assembler default"
+            )
+            playback_speed = None
     """Generate the TTS track for a video and return result metadata.
 
     Args:
@@ -200,9 +212,20 @@ async def run_tts_track(
 
     # ── Assemble ────────────────────────────────────────────────────
     # Resolve underlay_db: request override → config default → assembler default.
+    # YAML env-var interpolation always returns strings, so the config value
+    # comes through as e.g. "-12.0" — coerce to float here.
     if underlay_db is None:
         tts_cfg = config.get("tts", {}) if config else {}
-        underlay_db = tts_cfg.get("underlay_db")
+        raw = tts_cfg.get("underlay_db")
+        if raw is not None:
+            try:
+                underlay_db = float(raw)
+            except (TypeError, ValueError):
+                logger.warning(
+                    f"config tts.underlay_db is not numeric ({raw!r}); "
+                    f"falling back to assembler default"
+                )
+                underlay_db = None
     assembler = TTSAssembler(translator=translator)
     _, sentence_plan = await assembler.generate_full_track(
         provider=tts_provider,
