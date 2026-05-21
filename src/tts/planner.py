@@ -276,7 +276,7 @@ class Planner:
             if not candidates:
                 # Unrecoverable: flag the cap-hit sentence(s) and stop
                 for i in range(N):
-                    if out[i].drift_out > DRIFT_CAP and i not in flagged:
+                    if out[i].drift_out > DRIFT_CAP + 1e-9 and i not in flagged:
                         flagged[i] = "drift_cap_hit"
                 break
             # Pick the candidate with the largest overrun (post-shortening)
@@ -288,26 +288,17 @@ class Planner:
             if next_pct is None or next_pct >= shorten_pcts[target_i]:
                 # Defensive: nothing to do
                 for i in range(N):
-                    if out[i].drift_out > DRIFT_CAP and i not in flagged:
+                    if out[i].drift_out > DRIFT_CAP + 1e-9 and i not in flagged:
                         flagged[i] = "drift_cap_hit"
                 break
             shorten_pcts[target_i] = next_pct
             drift_cap_hits += 1
 
-        # Phase C post-pass: count sentences at SHORTEN_FLOOR that still push
-        # downstream (each one represents a "drift cap hit" — the algorithm
-        # reached its hard shortening limit on that sentence).  This drives
-        # DubPlan.drift_cap_hits so callers can surface how many sentences
-        # had to resort to the floor.  Then flag any sentence whose drift_out
-        # reached or exceeded DRIFT_CAP (within floating-point tolerance),
-        # indicating drift could not be fully contained.
+        # Phase C post-pass: flag any sentence whose drift_out strictly
+        # exceeds DRIFT_CAP, indicating drift could not be fully contained.
         final_out, reset_points, _final_max_drift, _peak = statics.simulate(shorten_pcts)
-        drift_cap_hits += sum(
-            1 for sp in final_out
-            if sp.shorten_pct <= SHORTEN_FLOOR and sp.push_amount > 0
-        )
         for i in range(N):
-            if final_out[i].drift_out >= DRIFT_CAP - _CAP_EPSILON and i not in flagged:
+            if final_out[i].drift_out > DRIFT_CAP + 1e-9 and i not in flagged:
                 flagged[i] = "drift_cap_hit"
         for i, reason in flagged.items():
             final_out[i].needs_review = True
