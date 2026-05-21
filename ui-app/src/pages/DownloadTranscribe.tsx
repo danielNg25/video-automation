@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
-import { postDownload, getVideos, subscribeSSE, deleteVideo, getProfiles, postPipeline, getTTSProviders, getTTSProfiles } from '../api/client';
-import type { VideoMetadata, TranslationProfileSummary, TTSProviderInfo, VoiceProfileConfig } from '../api/types';
+import { postDownload, getVideos, subscribeSSE, deleteVideo, getProfiles, postPipeline, getTTSProviders, getTTSProfiles, getTTSVoices } from '../api/client';
+import type { VideoMetadata, TranslationProfileSummary, TTSProviderInfo, VoiceProfileConfig, VoiceInfo } from '../api/types';
 import { loadApiKeys, loadLLMPrefs, saveLLMPrefs, storageGet, storageSet } from '../utils/storage';
 
 const PIPELINE_TASK_KEY = 'pipeline_active_task';
@@ -32,9 +32,19 @@ function PipelinePage() {
   const [profiles, setProfiles] = useState<TranslationProfileSummary[]>([]);
   const [selectedProfile, setSelectedProfile] = useState('');
   const [ttsProviders, setTtsProviders] = useState<TTSProviderInfo[]>([]);
-  const [selectedTtsProvider, setSelectedTtsProvider] = useState('edge');
+  const [selectedTtsProvider, setSelectedTtsProvider] = useState(() =>
+    storageGet('tts_selected_provider') || 'google'
+  );
   const [ttsProfiles, setTtsProfiles] = useState<Record<string, VoiceProfileConfig>>({});
   const [selectedTtsProfile, setSelectedTtsProfile] = useState('female-vi-natural');
+  const [ttsVoices, setTtsVoices] = useState<VoiceInfo[]>([]);
+  const [selectedVoiceId, setSelectedVoiceId] = useState(() => {
+    const provider = storageGet('tts_selected_provider') || 'google';
+    return storageGet(`tts_voice_id_${provider}`) || '';
+  });
+  const [voiceIdInput, setVoiceIdInput] = useState(() => storageGet('tts_voice_id_elevenlabs') || '');
+  const [voiceIdSaved, setVoiceIdSaved] = useState(false);
+  const [ttsApiKey, setTtsApiKey] = useState('');
   const [playbackSpeed, setPlaybackSpeed] = useState(() => {
     const saved = parseFloat(storageGet('tts_playback_speed') || '');
     return Number.isFinite(saved) && saved >= 1.0 && saved <= 2.0 ? saved : 1.5;
@@ -60,6 +70,40 @@ function PipelinePage() {
     const keyMap: Record<string, string> = { anthropic: keys.anthropic, openai: keys.openai, deepseek: keys.deepseek };
     setLlmApiKey(keyMap[llmBackend] || '');
   }, [llmBackend]);
+
+  // Load voice list when the TTS provider changes.
+  useEffect(() => {
+    if (selectedTtsProvider === 'elevenlabs') {
+      setTtsVoices([]);
+      const saved = storageGet('tts_voice_id_elevenlabs') || '';
+      setSelectedVoiceId(saved);
+      setVoiceIdInput(saved);
+      setTtsApiKey('');
+      return;
+    }
+    const keys = loadApiKeys();
+    const key = (keys as Record<string, string>)[selectedTtsProvider] || '';
+    setTtsApiKey(key);
+    if (!key) {
+      setTtsVoices([]);
+      return;
+    }
+    (async () => {
+      try {
+        const voices = await getTTSVoices(undefined, selectedTtsProvider, key);
+        setTtsVoices(voices);
+        const saved = storageGet(`tts_voice_id_${selectedTtsProvider}`) || '';
+        const isValid = !!saved && voices.some(v => v.name === saved);
+        const picked = isValid ? saved : (voices[0]?.name || '');
+        setSelectedVoiceId(picked);
+        if (!isValid && saved) {
+          storageSet(`tts_voice_id_${selectedTtsProvider}`, '');
+        }
+      } catch {
+        setTtsVoices([]);
+      }
+    })();
+  }, [selectedTtsProvider]);
 
   // Parse URLs from input
   const parsedUrls = urlInput.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
@@ -218,7 +262,9 @@ function PipelinePage() {
       ttsProviderName === 'elevenlabs' ? apiKeys.elevenlabs :
       ttsProviderName === 'openai' ? apiKeys.openai :
       ttsProviderName === 'google' ? apiKeys.google : '';
-    const ttsVoiceId = (ttsProviderName === 'elevenlabs' ? (storageGet('tts_voice_id') || '') : '');
+    // All providers now forward a voice override — use the per-provider key,
+    // falling back to the in-memory selection if localStorage is empty.
+    const ttsVoiceId = storageGet(`tts_voice_id_${ttsProviderName}`) || selectedVoiceId || '';
     const ttsOverrides = {
       tts_provider: ttsProviderName || undefined,
       tts_voice: ttsVoiceId || undefined,
@@ -561,7 +607,7 @@ function PipelinePage() {
                           <div className="grid grid-cols-2 gap-3">
                             <div>
                               <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold block mb-1.5">Provider</label>
-                              <select value={selectedTtsProvider} onChange={(e) => setSelectedTtsProvider(e.target.value)}
+                              <select value={selectedTtsProvider} onChange={(e) => { setSelectedTtsProvider(e.target.value); storageSet('tts_selected_provider', e.target.value); }}
                                 className="w-full bg-surface-container border-none text-xs text-on-surface h-10 px-3 rounded-lg focus:ring-1 focus:ring-primary">
                                 {ttsProviders.map((p) => <option key={p.id} value={p.id}>{p.name}{p.free ? ' (Free)' : ''}</option>)}
                               </select>
@@ -576,6 +622,72 @@ function PipelinePage() {
                               </select>
                             </div>
                           </div>
+
+                          {/* Missing API key warning for paid providers */}
+                          {ttsProviders.find(p => p.id === selectedTtsProvider)?.requires_key && !ttsApiKey && (
+                            <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs p-3 rounded-lg flex items-center gap-2">
+                              <span className="material-symbols-outlined text-sm">warning</span>
+                              <span>No API key configured for <strong>{selectedTtsProvider}</strong>.</span>
+                              <button
+                                onClick={() => navigate('/settings#apikeys')}
+                                className="ml-auto text-[10px] font-bold uppercase tracking-wider text-amber-300 hover:text-amber-200 flex items-center gap-1 whitespace-nowrap"
+                              >
+                                <span className="material-symbols-outlined text-xs">settings</span>
+                                Configure
+                              </button>
+                            </div>
+                          )}
+
+                          {/* ElevenLabs: Voice ID input */}
+                          {selectedTtsProvider === 'elevenlabs' && (
+                            <div className="space-y-2">
+                              <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block">Voice ID</label>
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  value={voiceIdInput}
+                                  onChange={(e) => { setVoiceIdInput(e.target.value); setVoiceIdSaved(false); }}
+                                  placeholder="Paste ElevenLabs voice ID"
+                                  className="flex-1 bg-surface-container border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary placeholder:text-zinc-600 font-mono"
+                                />
+                                <button
+                                  onClick={() => {
+                                    setSelectedVoiceId(voiceIdInput);
+                                    storageSet('tts_voice_id_elevenlabs', voiceIdInput);
+                                    setVoiceIdSaved(true);
+                                    setTimeout(() => setVoiceIdSaved(false), 2000);
+                                  }}
+                                  disabled={!voiceIdInput}
+                                  className="px-3 py-2 rounded text-[10px] font-bold uppercase bg-primary/20 text-primary hover:bg-primary/30 disabled:opacity-50 transition-colors"
+                                >
+                                  {voiceIdSaved ? 'Saved' : 'Save'}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Google / OpenAI: voice dropdown */}
+                          {selectedTtsProvider !== 'elevenlabs' && (
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block">Voice</label>
+                              <select
+                                value={selectedVoiceId}
+                                onChange={(e) => {
+                                  setSelectedVoiceId(e.target.value);
+                                  storageSet(`tts_voice_id_${selectedTtsProvider}`, e.target.value);
+                                }}
+                                className="w-full bg-surface-container border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
+                              >
+                                {ttsVoices.length === 0 && <option value="">No voices loaded (check API key)</option>}
+                                {ttsVoices.map((v) => (
+                                  <option key={v.name} value={v.name}>
+                                    {v.friendly_name || v.name} ({v.gender}) — {v.language}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+
                           <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-container">
                             <span className="material-symbols-outlined text-sm text-on-surface-variant">speed</span>
                             <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold flex-1">Dub Playback Speed</label>
