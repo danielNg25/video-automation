@@ -599,3 +599,73 @@ class TestRegressionMutingBug:
                    for s in flagged)
         # Output WAV exists and is not empty
         assert out_path.exists() and out_path.stat().st_size > 100
+
+
+class TestUnderlayLevels:
+    """The underlay branch reads the source MP4's audio stream directly and
+    mixes it under the dub at the configured underlay_db level. underlay_db=0
+    disables the underlay entirely (silence between dub clips)."""
+
+    async def _run(self, tmp_path, underlay_db):
+        """Generate one short dub and return the output WAV's mean_volume in dB."""
+        from src.tts.assembler import TTSAssembler
+        from src.tts.base import BaseTTSProvider
+
+        class TinyProvider(BaseTTSProvider):
+            async def synthesize(self, text, voice, **kw):
+                # 0.2s of -inf-dB silence (still a real WAV clip)
+                import struct
+                samples = 4800
+                return (
+                    b"RIFF" + struct.pack("<I", 36 + samples * 2) + b"WAVEfmt " +
+                    struct.pack("<IHHIIHH", 16, 1, 1, 24000, 48000, 2, 16) +
+                    b"data" + struct.pack("<I", samples * 2) + b"\x00\x00" * samples
+                )
+
+            async def list_voices(self, language=None):
+                return []
+
+        # Source video: 3s of pink noise so the underlay is detectable
+        tmp_path.mkdir(parents=True, exist_ok=True)
+        video_path = tmp_path / "src.mp4"
+        subprocess.run(
+            ["ffmpeg", "-y", "-f", "lavfi",
+             "-i", "anoisesrc=color=pink:duration=3:amplitude=0.5",
+             "-c:a", "aac", str(video_path)],
+            check=True, capture_output=True, timeout=15,
+        )
+        out_path = tmp_path / f"out_{int(underlay_db)}.wav"
+        assembler = TTSAssembler(translator=None)
+        await assembler.generate_full_track(
+            provider=TinyProvider(),
+            segments=[
+                {"start": 0.0, "end": 1.0, "text": "a"},
+                {"start": 2.0, "end": 3.0, "text": "b"},
+            ],
+            voice_profile={"voice": "test"},
+            video_duration=3.0,
+            output_path=out_path,
+            merge_sentences=False,
+            playback_speed=1.5,
+            underlay_db=underlay_db,
+            video_path=video_path,
+        )
+        # Use ffmpeg's volumedetect filter to measure mean_volume of the output
+        probe = subprocess.run(
+            ["ffmpeg", "-i", str(out_path), "-af", "volumedetect",
+             "-f", "null", "-"],
+            capture_output=True, text=True, timeout=15,
+        )
+        import re
+        m = re.search(r"mean_volume:\s*(-?\d+(?:\.\d+)?)\s*dB", probe.stderr)
+        assert m, f"could not parse mean_volume from ffmpeg stderr: {probe.stderr[-500:]}"
+        return float(m.group(1))
+
+    async def test_underlay_minus_12_louder_than_off(self, tmp_path):
+        loud = await self._run(tmp_path / "loud", -12.0)
+        off = await self._run(tmp_path / "off", 0.0)
+        # With underlay at -12 dB the gap between dub clips contains the source
+        # noise; with underlay off (db=0 disables the branch in the test
+        # scenario — no failure windows, no nonzero gain), the gap is silent
+        # → significantly lower mean_volume.
+        assert loud > off + 5   # at least 5 dB louder
