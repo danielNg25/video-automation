@@ -533,6 +533,7 @@ class TaskManager:
         llm_api_key: str | None = None,
         llm_backend: str | None = None,
         playback_speed: float | None = None,
+        underlay_db: float | None = None,
     ):
         """Execute a TTS generation task in the background.
 
@@ -572,6 +573,7 @@ class TaskManager:
                 llm_api_key=llm_api_key,
                 llm_backend=llm_backend,
                 playback_speed=playback_speed,
+                underlay_db=underlay_db,
                 on_progress=on_progress,
             )
 
