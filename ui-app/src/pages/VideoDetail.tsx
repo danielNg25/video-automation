@@ -68,6 +68,10 @@ function VideoDetailPage() {
     const saved = parseFloat(storageGet('tts_playback_speed') || '');
     return Number.isFinite(saved) && saved >= 1.0 && saved <= 2.0 ? saved : 1.5;
   });
+  const [underlayDb, setUnderlayDb] = useState(() => {
+    const saved = parseFloat(storageGet('tts_underlay_db') || '');
+    return Number.isFinite(saved) && saved >= -24 && saved <= 0 ? saved : -12;
+  });
   const [useDirectVoice, setUseDirectVoice] = useState(false);
   const [isGeneratingTts, setIsGeneratingTts] = useState(false);
   const [ttsProgress, setTtsProgress] = useState({ pct: 0, message: '' });
@@ -310,6 +314,7 @@ function VideoDetailPage() {
         llmApiKey || undefined,
         llmBackend || undefined,
         playbackSpeed,
+        underlayDb,
       );
       const es = subscribeSSE(task_id, (eventType, data) => {
         if (eventType === 'progress') {
@@ -761,6 +766,30 @@ function VideoDetailPage() {
                     <span className="text-[10px] text-on-surface-variant font-mono">×</span>
                   </div>
 
+                  {/* Original-language underlay */}
+                  <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-container-highest">
+                    <span className="material-symbols-outlined text-sm text-on-surface-variant">graphic_eq</span>
+                    <label className="text-xs text-on-surface-variant flex-1">
+                      Original underlay
+                    </label>
+                    <select
+                      value={String(underlayDb)}
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value);
+                        setUnderlayDb(v);
+                        storageSet('tts_underlay_db', String(v));
+                      }}
+                      className="px-2 py-1 text-xs font-mono text-on-surface bg-surface-container-low border border-outline-variant/30 rounded focus:outline-none focus:border-primary"
+                    >
+                      <option value="0">Off</option>
+                      <option value="-24">-24</option>
+                      <option value="-18">-18</option>
+                      <option value="-12">-12</option>
+                      <option value="-6">-6</option>
+                    </select>
+                    <span className="text-[10px] text-on-surface-variant font-mono">dB</span>
+                  </div>
+
                   {/* Voice Preview */}
                   {(() => {
                     const previewVoice = selectedVoiceId;
@@ -774,6 +803,7 @@ function VideoDetailPage() {
                           pitch="+0Hz"
                           apiKey={ttsApiKey || undefined}
                           playbackSpeed={playbackSpeed}
+                          underlayDb={underlayDb}
                           sampleText={
                             ttsLanguage === 'vi'
                               ? 'Xin chào các bạn, hôm nay chúng ta sẽ nói về một chủ đề rất thú vị.'
