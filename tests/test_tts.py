@@ -825,13 +825,13 @@ class TestConfigStringCoercion:
         fake_profiles = {
             "profiles": {
                 "female-vi-natural": {
-                    "provider": "edge",
-                    "voice": "vi-VN-HoaiMyNeural",
+                    "provider": "google",
+                    "voice": "vi-VN-Wavenet-A",
                     "language": "vi",
                 }
             },
             "platforms": {},
-            "default_provider": "edge",
+            "default_provider": "google",
         }
         # Fake segments — runner calls parse_srt after checking srt_path.exists().
         # Patch both load_voice_profiles and the SRT existence / parse chain.
