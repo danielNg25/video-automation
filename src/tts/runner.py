@@ -199,6 +199,10 @@ async def run_tts_track(
     )
 
     # ── Assemble ────────────────────────────────────────────────────
+    # Resolve underlay_db: request override → config default → assembler default.
+    if underlay_db is None:
+        tts_cfg = config.get("tts", {}) if config else {}
+        underlay_db = tts_cfg.get("underlay_db")
     assembler = TTSAssembler(translator=translator)
     _, sentence_plan = await assembler.generate_full_track(
         provider=tts_provider,
