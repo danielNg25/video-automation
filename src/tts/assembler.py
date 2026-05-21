@@ -697,6 +697,19 @@ class TTSAssembler:
                 failure_windows=failure_windows,
             )
 
+            # === Stage 6: Emit per-segment dubsync.srt ===
+            try:
+                from src.tts.dubsync_srt import write_dubsync_srt
+                language = voice_profile.get("language") or "vi"
+                stem = output_path.stem
+                video_id = stem.split("_")[0] if "_" in stem else stem
+                dubsync_path = Path("data/srt") / f"{video_id}_{language}.dubsync.srt"
+                dubsync_path.parent.mkdir(parents=True, exist_ok=True)
+                write_dubsync_srt(segments, sentence_plan, dubsync_path)
+                logger.info(f"Wrote dubsync SRT: {dubsync_path}")
+            except Exception as e:
+                logger.warning(f"Could not write dubsync SRT: {e}")
+
         overrun_count = sum(1 for s in sentence_plan if s.get("overrun_seconds", 0) > 0)
         logger.info(
             f"Generated TTS track: {output_path} — {len(sentence_plan)} sentences, "

@@ -537,3 +537,18 @@ class TestProcessForAllPlatforms:
                 )
 
         assert len(results) == 0
+
+
+class TestSubtitleSelectionPrefersDubsync:
+    def test_dubsync_preferred_over_legacy(self, tmp_path):
+        from src.processor.subtitle import select_subtitle_for_platform
+        (tmp_path / "abc_vi.srt").write_text("1\n00:00:00,000 --> 00:00:01,000\nold\n\n")
+        (tmp_path / "abc_vi.dubsync.srt").write_text("1\n00:00:00,000 --> 00:00:01,000\nnew\n\n")
+        out = select_subtitle_for_platform("abc", "tiktok", tmp_path, {"subtitle_language": "vi"})
+        assert out.name == "abc_vi.dubsync.srt"
+
+    def test_legacy_used_when_dubsync_missing(self, tmp_path):
+        from src.processor.subtitle import select_subtitle_for_platform
+        (tmp_path / "abc_vi.srt").write_text("1\n00:00:00,000 --> 00:00:01,000\nlegacy\n\n")
+        out = select_subtitle_for_platform("abc", "tiktok", tmp_path, {"subtitle_language": "vi"})
+        assert out.name == "abc_vi.srt"

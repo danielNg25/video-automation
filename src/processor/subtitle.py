@@ -531,14 +531,19 @@ def select_subtitle_for_platform(
             search_langs.append(lang)
 
     for lang in search_langs:
-        srt_path = srt_dir / f"{video_id}_{lang}.srt"
-        if srt_path.exists():
+        dubsync = srt_dir / f"{video_id}_{lang}.dubsync.srt"
+        legacy = srt_dir / f"{video_id}_{lang}.srt"
+        if dubsync.exists():
+            logger.info(
+                f"Platform {platform}: using dubsync subtitles ({dubsync.name})"
+            )
+            return dubsync
+        if legacy.exists():
             if lang != configured_lang:
                 logger.warning(
                     f"Platform {platform}: preferred '{configured_lang}' SRT not found, "
                     f"falling back to '{lang}'"
                 )
-            return srt_path
-
+            return legacy
     logger.warning(f"No SRT found for video {video_id} (searched: {search_langs})")
     return None

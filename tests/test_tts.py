@@ -669,3 +669,55 @@ class TestUnderlayLevels:
         # scenario — no failure windows, no nonzero gain), the gap is silent
         # → significantly lower mean_volume.
         assert loud > off + 5   # at least 5 dB louder
+
+
+class TestDubsyncSrtWriter:
+    """The dubsync writer redistributes shortened text and final timings
+    proportionally across the original source segments."""
+
+    def test_redistributes_text_at_word_boundaries(self, tmp_path):
+        from src.tts.dubsync_srt import write_dubsync_srt
+        # One merged sentence covering 3 source segments; target text is
+        # shorter than the joined originals.
+        source_segments = [
+            {"start": 0.0, "end": 1.0, "text": "one two three"},
+            {"start": 1.0, "end": 2.0, "text": "four five six seven"},
+            {"start": 2.0, "end": 3.0, "text": "eight nine"},
+        ]
+        sentence_plans = [
+            {
+                "segment_indices": [0, 1, 2],
+                "target_text": "alpha beta gamma delta",
+                "final_start": 0.0, "final_duration": 3.0,
+            }
+        ]
+        out = tmp_path / "out.dubsync.srt"
+        write_dubsync_srt(source_segments, sentence_plans, out)
+        from src.processor.subtitle import parse_srt
+        rewritten = parse_srt(out)
+        assert len(rewritten) == 3
+        joined = " ".join(r["text"] for r in rewritten).replace("  ", " ").strip()
+        assert joined == "alpha beta gamma delta"
+
+    def test_timing_is_proportional_to_original_durations(self, tmp_path):
+        from src.processor.subtitle import parse_srt
+        from src.tts.dubsync_srt import write_dubsync_srt
+        source_segments = [
+            {"start": 0.0, "end": 0.5, "text": "a"},   # 0.5s
+            {"start": 0.5, "end": 2.5, "text": "b"},   # 2.0s
+        ]
+        sentence_plans = [
+            {
+                "segment_indices": [0, 1],
+                "target_text": "alpha beta",
+                "final_start": 10.0, "final_duration": 5.0,
+            }
+        ]
+        out = tmp_path / "out.dubsync.srt"
+        write_dubsync_srt(source_segments, sentence_plans, out)
+        rewritten = parse_srt(out)
+        # First segment: 0.5/2.5 of 5.0 = 1.0s; second: 4.0s
+        assert rewritten[0]["start"] == pytest.approx(10.0, abs=1e-3)
+        assert rewritten[0]["end"] == pytest.approx(11.0, abs=1e-3)
+        assert rewritten[1]["start"] == pytest.approx(11.0, abs=1e-3)
+        assert rewritten[1]["end"] == pytest.approx(15.0, abs=1e-3)
