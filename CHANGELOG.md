@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- TTS providers cleanup spec (`docs/superpowers/specs/2026-05-21-tts-providers-cleanup-design.md`). Removes the free unreliable providers (`edge`, `gtts`, `piper`) — Edge TTS in particular caused ~40% per-sentence failures in production. Keeps only the three paid providers (Google Cloud TTS, ElevenLabs, OpenAI). Migrates all voice profiles from Edge voice names to Google Wavenet equivalents. Also fixes a pipeline-launcher bug where the voice override was only sent for ElevenLabs (so Google + OpenAI would inherit an Edge voice name from the profile and crash on the provider side). Per-provider localStorage keys (`tts_voice_id_google`, `tts_voice_id_openai`, `tts_voice_id_elevenlabs`) replace the shared `tts_voice_id` key.
 - `<TTSPreview>` accepts an `underlayDb` prop and forwards it on the preview request. The `/api/tts/preview` endpoint applies a stand-in underlay (mixes the synthesized clip with itself at `underlay_db`) so the user can roughly hear the chosen level alongside the dub speed.
 - Pipeline launcher (DownloadTranscribe): per-run underlay select alongside the playback-speed input. Both share `tts_underlay_db` / `tts_playback_speed` localStorage keys with Settings and VideoDetail.
 - VideoDetail TTS panel: per-run "Original underlay" select beside the playback-speed input. Default reads from localStorage; selection persists and is forwarded on the TTS POST.
