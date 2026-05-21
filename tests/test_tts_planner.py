@@ -272,3 +272,56 @@ class TestPickShortenTarget:
         # 0.50 < SHORTEN_FLOOR (0.60), but the function returns 0.60
         # because that's the hard lower bound.
         assert _pick_shorten_target(0.50) == SHORTEN_FLOOR
+
+
+class TestPhaseCDriftCap:
+    """Phase C: if projected drift exceeds DRIFT_CAP, tighten upstream
+    shortening until drift is bounded; flag if unrecoverable."""
+
+    def test_no_rebalance_when_drift_under_cap(self):
+        # Single small overrun → drift well under 3s cap
+        sents = [_sentence(0, 0.0, 1.0), _sentence(1, 1.0, 5.0)]
+        plan = Planner.build_plan(
+            sentences=sents, natural_synth_durations=[1.8, 0.5],
+            playback_speed=1.5, video_duration=5.0, underlay_db=-12.0,
+        )
+        assert plan.drift_cap_hits == 0
+
+    def test_rebalance_tightens_upstream_when_drift_exceeds_cap(self):
+        # Stack four sentences that each overrun by ~1s — naïve drift = 4s > 3s cap
+        # Phase C should tighten upstream sentences to bring drift ≤ 3s.
+        sents = [
+            _sentence(0, 0.0, 1.0),
+            _sentence(1, 1.0, 2.0),
+            _sentence(2, 2.0, 3.0),
+            _sentence(3, 3.0, 4.0),
+            _sentence(4, 4.0, 10.0),   # big slot, no further drift
+        ]
+        # 3.0s natural, 1.5× → 2.0s played for each → 1s overrun each → 4s drift naive
+        plan = Planner.build_plan(
+            sentences=sents, natural_synth_durations=[3.0, 3.0, 3.0, 3.0, 0.5],
+            playback_speed=1.5, video_duration=10.0, underlay_db=-12.0,
+        )
+        # After rebalance, drift ≤ DRIFT_CAP and at least one upstream sentence
+        # has shorten_pct tighter than what Phase B alone picked.
+        assert plan.drift_cap_hits >= 1
+        # The largest measured drift_out among the four overrunning sentences must
+        # be ≤ DRIFT_CAP + small epsilon
+        max_drift = max(plan.sentences[i].drift_out for i in range(4))
+        assert max_drift <= DRIFT_CAP + 1e-6
+
+    def test_unrecoverable_drift_flags_needs_review(self):
+        # All sentences already at SHORTEN_FLOOR — can't tighten further
+        # Five sentences, each 1s slot, 4s natural (2.67s played at 1.5×),
+        # required shorten = 0.375 → all picked SHORTEN_FLOOR (0.60), still
+        # overrun by 1.6 - 1.0 = 0.6 played seconds each → drift 3.0+ at sentence 5
+        sents = [_sentence(i, float(i), float(i) + 1) for i in range(5)]
+        sents.append(_sentence(5, 5.0, 15.0))   # final sentence has slack
+        plan = Planner.build_plan(
+            sentences=sents,
+            natural_synth_durations=[4.0, 4.0, 4.0, 4.0, 4.0, 0.5],
+            playback_speed=1.5, video_duration=15.0, underlay_db=-12.0,
+        )
+        # At least one cap-hit sentence flagged
+        review = [s for s in plan.sentences if s.needs_review]
+        assert any(s.reason == "drift_cap_hit" for s in review)
