@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `<TTSPreview>` accepts an `underlayDb` prop and forwards it on the preview request. The `/api/tts/preview` endpoint applies a stand-in underlay (mixes the synthesized clip with itself at `underlay_db`) so the user can roughly hear the chosen level alongside the dub speed.
 - Pipeline launcher (DownloadTranscribe): per-run underlay select alongside the playback-speed input. Both share `tts_underlay_db` / `tts_playback_speed` localStorage keys with Settings and VideoDetail.
 - VideoDetail TTS panel: per-run "Original underlay" select beside the playback-speed input. Default reads from localStorage; selection persists and is forwarded on the TTS POST.
 - Settings → TTS Dubbing: new sidebar entry and section with `Dub playback speed` and `Original-language underlay` controls. Both persist to localStorage (`tts_playback_speed`, `tts_underlay_db`) and are shared with VideoDetail and DownloadTranscribe.

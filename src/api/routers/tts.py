@@ -281,4 +281,36 @@ async def preview_tts(request: TTSPreviewRequest):
             # still plays, just not at the requested speed.
             pass
 
+    # Apply a stand-in underlay so the user can gauge how loud the original
+    # voice will sit under the dub before committing to a full generation.
+    # The preview has no source video, so we mix the synthesised clip with
+    # itself at underlay_db — this approximates the relative level.
+    if request.underlay_db is not None and request.underlay_db != 0:
+        import subprocess
+        import tempfile
+
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as in_f:
+                in_f.write(audio_bytes)
+                in_path = in_f.name
+            out_path = in_path + ".mixed.mp3"
+            subprocess.run(
+                [
+                    "ffmpeg", "-y", "-i", in_path,
+                    "-filter_complex",
+                    f"[0:a]volume={request.underlay_db}dB[u];[0:a][u]amix=inputs=2:duration=first",
+                    out_path,
+                ],
+                capture_output=True, text=True, check=True, timeout=15,
+            )
+            with open(out_path, "rb") as f:
+                audio_bytes = f.read()
+            import os
+            os.unlink(in_path)
+            if os.path.exists(out_path):
+                os.unlink(out_path)
+        except Exception:
+            # Fall back to the un-mixed audio if the ffmpeg step fails.
+            pass
+
     return Response(content=audio_bytes, media_type="audio/mpeg")
