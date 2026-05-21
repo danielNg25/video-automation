@@ -332,3 +332,52 @@ class TestPhaseCDriftCap:
         # The flagged sentence(s) must have drift strictly over the cap
         for s in review:
             assert s.drift_out > DRIFT_CAP
+
+
+class TestPlaybackSpeedScaling:
+    """The planner's decisions scale with playback_speed."""
+
+    def _sents(self):
+        return [
+            _sentence(0, 0.0, 2.0),
+            _sentence(1, 2.0, 4.0),
+            _sentence(2, 4.0, 6.0),
+        ]
+
+    def test_at_1x_more_shortening_than_at_1_5x(self):
+        natural = [3.0, 3.0, 3.0]
+        plan_1x = Planner.build_plan(
+            sentences=self._sents(), natural_synth_durations=natural,
+            playback_speed=1.0, video_duration=6.0, underlay_db=-12.0,
+        )
+        plan_15 = Planner.build_plan(
+            sentences=self._sents(), natural_synth_durations=natural,
+            playback_speed=1.5, video_duration=6.0, underlay_db=-12.0,
+        )
+        shorten_count_1x = sum(1 for s in plan_1x.sentences if s.shorten_pct < 1.0)
+        shorten_count_15 = sum(1 for s in plan_15.sentences if s.shorten_pct < 1.0)
+        assert shorten_count_1x >= shorten_count_15
+
+    def test_at_2x_no_shortening_needed(self):
+        # 3s natural / 2.0× = 1.5s played; slots are 2s → fits without shortening
+        natural = [3.0, 3.0, 3.0]
+        plan = Planner.build_plan(
+            sentences=self._sents(), natural_synth_durations=natural,
+            playback_speed=2.0, video_duration=6.0, underlay_db=-12.0,
+        )
+        assert all(s.shorten_pct == 1.0 for s in plan.sentences)
+        assert plan.total_drift_end == 0.0
+
+    def test_played_duration_scales_inversely_with_speed(self):
+        natural = [3.0]
+        sents = [_sentence(0, 0.0, 10.0)]
+        plan_1x = Planner.build_plan(
+            sentences=sents, natural_synth_durations=natural,
+            playback_speed=1.0, video_duration=10.0, underlay_db=-12.0,
+        )
+        plan_15 = Planner.build_plan(
+            sentences=sents, natural_synth_durations=natural,
+            playback_speed=1.5, video_duration=10.0, underlay_db=-12.0,
+        )
+        assert plan_1x.sentences[0].final_duration == pytest.approx(3.0, abs=1e-6)
+        assert plan_15.sentences[0].final_duration == pytest.approx(2.0, abs=1e-6)
