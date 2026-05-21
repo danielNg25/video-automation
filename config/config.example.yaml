@@ -36,7 +36,7 @@ ocr:
 # TTS Dubbing
 tts:
     enabled: true
-    default_provider: edge              # "edge" (free), "openai", "google"
+    default_provider: google            # "google", "openai", "elevenlabs"
     voices_config: 'config/tts_voices.yaml'
     # Underlay level (dB) for the original-language audio mixed under the dub.
     # 0 disables the underlay entirely. Default: -12 (audible undertone).

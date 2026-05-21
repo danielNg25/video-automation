@@ -36,6 +36,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `SHORTENING_MAX_PASSES` constant in `src/tts/assembler.py` and the test classes that asserted on the deleted iterative-shortening internals (`TestSentenceShortening` and the over-specific anchor-helper assertion `test_redistribute_and_split_back_helpers_are_gone`). The translator's `shorten_texts_batch` floor logic remains live and is covered by `TestShortenTextsBatchFloor` in `tests/test_tts.py`.
 
 ### Changed
+- `config/tts_voices.yaml` migrated from Edge voice names to Google Wavenet equivalents. Profiles renamed: `female-en-edge` → `female-en-natural`, `male-en-edge` → `male-en-natural`. `platforms.youtube.profile` reference updated to match. `default_provider` changed from `edge` to `google`. `src/tts/CLAUDE.md` updated to mention Google as the factory default.
 - `.env` is no longer required for normal Docker use. API keys (Anthropic / DeepSeek / OpenAI / ElevenLabs / Google) are entered in the Settings UI and stored in `localStorage`; they're sent per-request and never persisted on the server. `docker-compose.yml` no longer references `env_file: .env`. `.env.example` slimmed down to a single optional `DOUYIN_API_BASE` override.
 
 ### Removed

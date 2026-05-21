@@ -4,7 +4,7 @@ This module handles text-to-speech dubbing for the pipeline.
 
 ## Files
 
-- `__init__.py` — factory: `get_tts_provider()` selects Edge TTS by default, falling back to other providers based on config.
+- `__init__.py` — factory: `get_tts_provider()` selects Google Cloud TTS by default, falling back to other providers based on config.
 - `base.py` — `BaseTTSProvider` ABC with `synthesise(text, voice, output_path)`.
 - `assembler.py` — end-to-end dubbing orchestrator: synthesises per-segment clips, runs the planner, applies atempo, mixes underlay, writes the final WAV and `dubsync.srt`.
 - `planner.py` — pure-function timing/shortening core (see below).
