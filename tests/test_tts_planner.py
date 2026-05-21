@@ -39,7 +39,7 @@ def _sentence(index: int, start: float, end: float, text: str = "test"):
 class TestPlannerConstants:
     def test_constants_match_spec(self):
         assert PLAYBACK_SPEED_DEFAULT == 1.5
-        assert UNDERLAY_DB_DEFAULT == -12.0
+        assert UNDERLAY_DB_DEFAULT == -18.0
         assert SHORTEN_TARGETS == (0.85, 0.75, 0.65)
         assert SHORTEN_FLOOR == 0.60
         assert RECLAIM_MIN_GAP == 1.0

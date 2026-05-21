@@ -730,6 +730,73 @@ class TestDubsyncSrtWriter:
         assert rewritten[1]["start"] == pytest.approx(11.0, abs=1e-3)
         assert rewritten[1]["end"] == pytest.approx(15.0, abs=1e-3)
 
+    def test_writer_handles_actual_assembler_dict_shape(self, tmp_path):
+        """Regression: the assembler's sentence_plan dict shape must include
+        `segment_indices`, `target_text`, `final_start`, and `final_duration`.
+        If any are missing, the writer's main loop skips the sentence and the
+        defensive `preserve source unchanged` branch emits original segments.
+        This was a real bug shipped in the dubbing redesign and silently
+        masked by the defensive fallback.
+
+        The fix is in `src/tts/assembler.py`'s sentence_plan.append block.
+        This test pins the contract by constructing a sentence_plans list
+        using the EXACT keys the assembler emits and asserting the writer's
+        main loop runs (not the fallback)."""
+        from src.processor.subtitle import parse_srt
+        from src.tts.dubsync_srt import write_dubsync_srt
+
+        # Source segments — 3 entries with distinct timings
+        source_segments = [
+            {"start": 0.0, "end": 1.0, "text": "alpha original"},
+            {"start": 1.0, "end": 2.0, "text": "beta original"},
+            {"start": 2.0, "end": 3.5, "text": "gamma original"},
+        ]
+        # A single merged sentence covering all 3, with shortened text AND a
+        # pushed-back final_start to make the rewrite visible.
+        sentence_plans = [
+            {
+                "index": 0,
+                "segment_indices": [0, 1, 2],
+                "text": "shortened spoken text",
+                "target_text": "shortened spoken text",
+                "original_text": "alpha original beta original gamma original",
+                "start": 5.0,
+                "end": 7.5,
+                "final_start": 5.0,
+                "final_duration": 2.5,
+            }
+        ]
+        out = tmp_path / "test_id_vi.dubsync.srt"
+        write_dubsync_srt(source_segments, sentence_plans, out)
+        rewritten = parse_srt(out)
+
+        # The writer's main loop produced 3 entries (one per source segment).
+        assert len(rewritten) == 3, (
+            f"Expected 3 rewritten entries (one per source segment); got "
+            f"{len(rewritten)}. If 0 or unchanged-source, the writer's "
+            f"main loop didn't run — segment_indices key likely missing."
+        )
+
+        # CRITICAL: each rewritten entry's TEXT is a slice of the SHORTENED
+        # `target_text`, not the original segment text. If the writer fell
+        # through to the defensive branch, the text would equal the originals
+        # ("alpha original" etc.).
+        joined = " ".join(r["text"] for r in rewritten).replace("  ", " ").strip()
+        assert joined == "shortened spoken text", (
+            f"Rewritten text is not the redistributed target_text; got "
+            f"{joined!r}. The writer likely fell through to the defensive "
+            f"'preserve source unchanged' branch."
+        )
+
+        # CRITICAL: timings must be anchored at final_start=5.0, not the
+        # source's start=0.0. If the writer fell through, the first entry's
+        # start would be 0.0.
+        assert rewritten[0]["start"] == pytest.approx(5.0, abs=1e-3), (
+            f"First rewritten entry's start is {rewritten[0]['start']!r}; "
+            f"expected ~5.0 (from final_start). The writer likely fell "
+            f"through to the defensive branch."
+        )
+
 
 class TestConfigStringCoercion:
     """Regression: underlay_db read from config.yaml comes through as a

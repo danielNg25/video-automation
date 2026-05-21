@@ -93,7 +93,7 @@ function VideoDetailPage() {
   });
   const [underlayDb, setUnderlayDb] = useState(() => {
     const saved = parseFloat(storageGet('tts_underlay_db') || '');
-    return Number.isFinite(saved) && saved >= -24 && saved <= 0 ? saved : -12;
+    return Number.isFinite(saved) && saved >= -24 && saved <= 0 ? saved : -18;
   });
   const [useDirectVoice, setUseDirectVoice] = useState(false);
   const [isGeneratingTts, setIsGeneratingTts] = useState(false);

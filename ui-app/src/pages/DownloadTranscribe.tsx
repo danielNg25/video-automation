@@ -51,7 +51,7 @@ function PipelinePage() {
   });
   const [underlayDb, setUnderlayDb] = useState(() => {
     const saved = parseFloat(storageGet('tts_underlay_db') || '');
-    return Number.isFinite(saved) && saved >= -24 && saved <= 0 ? saved : -12;
+    return Number.isFinite(saved) && saved >= -24 && saved <= 0 ? saved : -18;
   });
   const [blurEnabled, setBlurEnabled] = useState(true);
   const [savedPrefs] = useState(loadLLMPrefs);

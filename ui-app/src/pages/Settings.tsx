@@ -53,7 +53,7 @@ function SettingsPage() {
   });
   const [underlayDb, setUnderlayDb] = useState(() => {
     const v = parseFloat(storageGet('tts_underlay_db') || '');
-    return Number.isFinite(v) && v >= -24 && v <= 0 ? v : -12;
+    return Number.isFinite(v) && v >= -24 && v <= 0 ? v : -18;
   });
 
   // Find the closest matching option value for a numeric config value

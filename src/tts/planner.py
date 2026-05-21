@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 
 # ── Constants (see docs/superpowers/specs/2026-05-20-tts-dubbing-redesign.md) ──
 PLAYBACK_SPEED_DEFAULT = 1.5
-UNDERLAY_DB_DEFAULT = -12.0
+UNDERLAY_DB_DEFAULT = -18.0
 SHORTEN_TARGETS = (0.85, 0.75, 0.65)   # try in order, loosest first
 SHORTEN_FLOOR = 0.60                    # never accept text below this fraction
 RECLAIM_MIN_GAP = 1.0                   # only reclaim from silent gaps ≥ this

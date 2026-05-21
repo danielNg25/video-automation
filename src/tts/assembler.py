@@ -672,10 +672,14 @@ class TTSAssembler:
                     sp.reason = sp.reason or "synth_empty"
                 sentence_plan.append({
                     "index": sp.index,
+                    "segment_indices": list(sentence_groups[sp.index].segment_indices),
                     "text": sp.target_text,
+                    "target_text": sp.target_text,
                     "original_text": sp.original_text,
                     "start": round(sp.final_start, 3),
                     "end": round(sp.final_start + sp.final_duration, 3),
+                    "final_start": round(sp.final_start, 3),
+                    "final_duration": round(sp.final_duration, 3),
                     "window_start": round(sp.original_start, 3),
                     "window_end": round(sp.original_end, 3),
                     "synth_duration": round(slot.clip_duration, 3),
