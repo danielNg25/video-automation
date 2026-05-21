@@ -82,6 +82,10 @@ class Planner:
                 f"natural_synth_durations length {len(natural_synth_durations)} "
                 f"does not match sentences length {len(sentences)}"
             )
+        if playback_speed <= 0:
+            raise ValueError(
+                f"playback_speed must be > 0, got {playback_speed}"
+            )
 
         out: list[SentencePlan] = []
         reset_points: list[int] = []
@@ -91,7 +95,7 @@ class Planner:
         for i in range(N):
             s = sentences[i]
             natural = natural_synth_durations[i]
-            desired = natural / playback_speed if playback_speed > 0 else natural
+            desired = natural / playback_speed
             orig_start = float(s["start"])
             orig_end = float(s["end"])
             slot_size = max(0.0, orig_end - orig_start)
@@ -100,6 +104,7 @@ class Planner:
             )
             raw_gap_after = max(0.0, next_start - orig_end)
 
+            drift_in_value = drift
             final_start = orig_start + drift
             reclaimed = 0.0
             push_amount = 0.0
@@ -137,7 +142,7 @@ class Planner:
                 original_end=orig_end,
                 final_start=final_start,
                 final_duration=final_duration,
-                drift_in=final_start - orig_start,
+                drift_in=drift_in_value,
                 drift_out=drift_out,
                 shorten_pct=1.0,
                 push_amount=push_amount,

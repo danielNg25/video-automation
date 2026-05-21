@@ -98,8 +98,8 @@ class TestPlannerEmpty:
         assert plan.reset_points == []
 
 
-class TestPhaseANoOverflow:
-    """Phase A: everything fits at playback_speed; no shortening needed."""
+class TestPhaseA:
+    """Phase A: drift accumulation, gap reclaim, and reset at long pauses."""
 
     def test_all_sentences_fit_no_drift(self):
         # 3 sentences, each 2s slot, 2.0s natural synth → 1.33s played at 1.5×
