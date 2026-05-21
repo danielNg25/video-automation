@@ -656,8 +656,8 @@ class TTSAssembler:
                             played_duration = slot.clip_duration
                     fitted_clips.append((sp.final_start, played_path))
                 else:
-                    # No clip — Task 7 lands Chinese-at-0-dB fallback. For
-                    # this commit, flag and skip (matches existing behaviour).
+                    # No clip — flag for review; failure_windows (collected
+                    # below) will fill this slot with source audio at 0 dB.
                     sp.needs_review = True
                     sp.reason = sp.reason or "synth_empty"
                 sentence_plan.append({
@@ -684,8 +684,22 @@ class TTSAssembler:
             if on_progress:
                 on_progress(total, total, "Concatenating audio track...")
 
-            # === Stage 3: Concatenate clips onto a silence track ===
-            _concatenate_with_silence(fitted_clips, video_duration, output_path)
+            # Collect time windows where synth failed so the source audio
+            # can fill them at 0 dB instead of leaving silence.
+            failure_windows: list[tuple[float, float]] = []
+            for sp in dub_plan.sentences:
+                if sp.reason in ("synth_empty", "synth_failed"):
+                    failure_windows.append(
+                        (sp.final_start, sp.final_start + sp.final_duration)
+                    )
+
+            # === Stage 5: Concatenate clips onto a silence track ===
+            _concatenate_with_silence(
+                fitted_clips, video_duration, output_path,
+                video_path=video_path,
+                underlay_db=effective_underlay,
+                failure_windows=failure_windows,
+            )
 
         overrun_count = sum(1 for s in sentence_plan if s.get("overrun_seconds", 0) > 0)
         logger.info(
@@ -751,25 +765,35 @@ def _concatenate_with_silence(
     clips: list[tuple[float, Path | None]],
     total_duration: float,
     output_path: Path,
+    *,
+    video_path: Path | None = None,
+    underlay_db: float = 0.0,
+    failure_windows: list[tuple[float, float]] | None = None,
 ) -> None:
-    """Concatenate audio clips with silence padding to match video duration."""
+    """Concatenate audio clips with silence padding; optionally mix the
+    source video's audio underneath at `underlay_db` (0 disables); in
+    failure_windows, raise the underlay back to 0 dB so the original
+    voice carries the slot."""
+    failure_windows = failure_windows or []
+
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp = Path(tmp_dir)
 
         silence_path = tmp / "silence.wav"
         subprocess.run(
-            [
-                "ffmpeg", "-y",
-                "-f", "lavfi",
-                "-i", f"anullsrc=r=24000:cl=mono:d={total_duration}",
-                "-c:a", "pcm_s16le",
-                str(silence_path),
-            ],
+            ["ffmpeg", "-y", "-f", "lavfi",
+             "-i", f"anullsrc=r=24000:cl=mono:d={total_duration}",
+             "-c:a", "pcm_s16le", str(silence_path)],
             capture_output=True, text=True, check=True, timeout=60,
         )
 
         valid_clips = [(t, p) for t, p in clips if p is not None and p.exists()]
-        if not valid_clips:
+        underlay_enabled = (
+            video_path is not None and video_path.exists() and
+            (underlay_db != 0.0 or failure_windows)
+        )
+
+        if not valid_clips and not underlay_enabled:
             subprocess.run(
                 ["ffmpeg", "-y", "-i", str(silence_path), str(output_path)],
                 capture_output=True, text=True, check=True, timeout=60,
@@ -777,35 +801,59 @@ def _concatenate_with_silence(
             return
 
         inputs = ["-i", str(silence_path)]
-        filter_parts = []
+        filter_parts: list[str] = []
+        underlay_label = None
+        amix_count = 1   # silence track always present
+
+        if underlay_enabled:
+            inputs.extend(["-i", str(video_path)])
+            underlay_label = "underlay"
+            amix_count += 1
+            # Build the underlay branch: format to mono 24k, apply base gain,
+            # then un-duck during failure windows by adding +|underlay_db| dB.
+            if underlay_db == 0.0:
+                chain = "[1:a]aformat=channel_layouts=mono:sample_rates=24000"
+            else:
+                chain = (
+                    "[1:a]aformat=channel_layouts=mono:sample_rates=24000,"
+                    f"volume={underlay_db}dB"
+                )
+            # Un-duck filter chain: raise back to 0 dB inside failure windows
+            for f_start, f_end in failure_windows:
+                if underlay_db != 0.0:
+                    chain += (
+                        f",volume=enable='between(t,{f_start:.3f},{f_end:.3f})':"
+                        f"volume={-underlay_db}dB"
+                    )
+            chain += f"[{underlay_label}]"
+            filter_parts.append(chain)
 
         for i, (start_time, clip_path) in enumerate(valid_clips):
             inputs.extend(["-i", str(clip_path)])
-            input_idx = i + 1
+            input_idx = (2 if underlay_enabled else 1) + i
             delay_ms = int(start_time * 1000)
-            filter_parts.append(
-                f"[{input_idx}]adelay={delay_ms}|{delay_ms}[d{i}]"
-            )
+            filter_parts.append(f"[{input_idx}]adelay={delay_ms}|{delay_ms}[d{i}]")
 
-        mix_inputs = "[0]" + "".join(f"[d{i}]" for i in range(len(valid_clips)))
-        n_inputs = len(valid_clips) + 1
+        mix_inputs = "[0]"
+        if underlay_label:
+            mix_inputs += f"[{underlay_label}]"
+        for i in range(len(valid_clips)):
+            mix_inputs += f"[d{i}]"
+        n_total = amix_count + len(valid_clips)
         filter_parts.append(
-            f"{mix_inputs}amix=inputs={n_inputs}:duration=first:dropout_transition=0,volume={n_inputs}[boosted]"
+            f"{mix_inputs}amix=inputs={n_total}:duration=first:"
+            f"dropout_transition=0,volume={n_total}[mixed]"
         )
-        filter_parts.append("[boosted]loudnorm=I=-16:TP=-1.5:LRA=11[out]")
+        filter_parts.append("[mixed]loudnorm=I=-16:TP=-1.5:LRA=11[out]")
 
         filter_complex = ";".join(filter_parts)
-
         cmd = [
-            "ffmpeg", "-y",
-            *inputs,
+            "ffmpeg", "-y", *inputs,
             "-filter_complex", filter_complex,
             "-map", "[out]",
-            "-c:a", "pcm_s16le",
-            "-ar", "24000",
+            "-c:a", "pcm_s16le", "-ar", "24000",
             str(output_path),
         ]
-
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         if result.returncode != 0:
             raise RuntimeError(f"Audio concatenation failed: {result.stderr[-500:]}")

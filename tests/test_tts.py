@@ -570,3 +570,74 @@ class TestBatchProcessorTTS:
             mock_proc.burn_reformat_and_dub.assert_not_called()
         finally:
             srt_path.unlink(missing_ok=True)
+
+
+class TestRegressionMutingBug:
+    """Regression: a sentence whose synthesis returns zero-byte audio used to
+    be silently dropped from the output. The new contract keeps the slot and
+    fills it with the source-language audio at full volume."""
+
+    @pytest.mark.asyncio
+    async def test_zero_duration_synth_keeps_slot_with_source_audio(self, tmp_path):
+        from src.tts.assembler import TTSAssembler
+        from src.tts.base import BaseTTSProvider
+
+        class FlakyProvider(BaseTTSProvider):
+            calls = 0
+
+            async def synthesize(self, text, voice, **kw):
+                FlakyProvider.calls += 1
+                # Return empty bytes for the sentence containing "fail_me"
+                # (zero-duration); otherwise return a minimal WAV with 0.5s
+                # of silence at 24kHz mono.
+                if "fail_me" in text:
+                    return b""
+                import struct
+                sample_count = 12000
+                wav = (
+                    b"RIFF" + struct.pack("<I", 36 + sample_count * 2) + b"WAVEfmt " +
+                    struct.pack("<IHHIIHH", 16, 1, 1, 24000, 48000, 2, 16) +
+                    b"data" + struct.pack("<I", sample_count * 2) + b"\x00\x00" * sample_count
+                )
+                return wav
+
+            async def list_voices(self, language=None):
+                return []
+
+        segments = [
+            {"start": 0.0, "end": 1.0, "text": "first sentence"},
+            {"start": 1.0, "end": 2.0, "text": "fail_me sentence"},
+            {"start": 2.0, "end": 3.0, "text": "third sentence"},
+        ]
+
+        out_path = tmp_path / "out.wav"
+        assembler = TTSAssembler(translator=None)
+        # Provide a fake video_path — the assembler reads its audio for fallback
+        fake_video = tmp_path / "video.mp4"
+        # Create a tiny silent MP4 via ffmpeg so the underlay branch has input
+        subprocess.run(
+            ["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono:d=3",
+             "-c:a", "aac", str(fake_video)],
+            check=True, capture_output=True, timeout=15,
+        )
+
+        _, plan = await assembler.generate_full_track(
+            provider=FlakyProvider(),
+            segments=segments,
+            voice_profile={"voice": "test"},
+            video_duration=3.0,
+            output_path=out_path,
+            merge_sentences=False,
+            playback_speed=1.5,
+            underlay_db=0.0,        # underlay off — only failure-window matters
+            video_path=fake_video,
+        )
+
+        # All three sentences appear in the plan (no silent drops)
+        assert len(plan) == 3
+        # Sentence 1 (the failed one) is flagged for review
+        flagged = [s for s in plan if s.get("needs_review")]
+        assert any(s["index"] == 1 and s["reason"] in ("synth_empty", "synth_failed")
+                   for s in flagged)
+        # Output WAV exists and is not empty
+        assert out_path.exists() and out_path.stat().st_size > 100
