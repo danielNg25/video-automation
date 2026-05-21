@@ -81,11 +81,13 @@ class TestTTSFactory:
         with pytest.raises(ValueError, match="Unknown TTS provider"):
             get_tts_provider({}, provider="nonexistent")
 
-    def test_removed_edge_provider_raises(self):
+    def test_removed_providers_raise(self):
+        """Edge, gtts, and piper were deleted and now must raise."""
         from src.tts import get_tts_provider
 
-        with pytest.raises(ValueError, match="Unknown TTS provider"):
-            get_tts_provider({}, provider="edge")
+        for removed in ("edge", "gtts", "piper"):
+            with pytest.raises(ValueError, match="Unknown TTS provider"):
+                get_tts_provider({}, provider=removed)
 
     def test_config_default_provider(self):
         from src.tts import get_tts_provider

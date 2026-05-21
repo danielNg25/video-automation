@@ -239,7 +239,7 @@ class TTSRequest(BaseModel):
 class TTSPreviewRequest(BaseModel):
     text: str
     voice: str = "vi-VN-HoaiMyNeural"
-    provider: str = "edge"
+    provider: str = "google"
     # Apply atempo at this speed to the previewed sample so the user can
     # hear what the dub will sound like at their chosen playback speed.
     playback_speed: float = 1.0
@@ -261,7 +261,7 @@ class VoiceInfo(BaseModel):
 
 
 class VoiceProfileConfig(BaseModel):
-    provider: str = "edge"
+    provider: str = "google"
     voice: str
     language: str
     speed: str = "+0%"
