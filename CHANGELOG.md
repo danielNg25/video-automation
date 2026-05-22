@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `ui-app/src/pages/videoDetail/TranslateTab.tsx`. Moves the translation panel out of the inline VideoDetail accordion. Profile picker, LLM backend/model selectors, API key + base URL fields, Run button, and progress bar. Reads parent state through props; no behavior change. Tab state in `?tab=translate` query param.
 - VideoDetail tab shell + Overview tab (`ui-app/src/pages/videoDetail/OverviewTab.tsx`). Tab state lives in the `?tab=` query param (`overview` | `translate` | `dub` | `export`). Overview tab shows the video info card, status badge, Open Editor / Re-extract / Download MP4 actions, and the transcription progress card. Translate/Dub/Export tabs still render the legacy inline panels until Tasks 6–8 extract them.
 - `<PipelineRunsTable />` mounted at the bottom of the Pipeline page (`ui-app/src/pages/DownloadTranscribe.tsx`). The same expandable-rows table that Dashboard shows today now lives below the pipeline form on `/download`, paving the way for Dashboard's removal.
 - `ui-app/src/lib/usePipelineRuns.ts`: hook that polls `GET /api/pipeline/runs` every 30s with a fallback to `/api/pipeline/history` for legacy per-video data. Exports `PipelineRun` interface plus `relativeTime` and `stageFromStatus` helpers. Standalone file — not yet wired into any page.
@@ -43,6 +44,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `config/config.yaml` and `config.example.yaml` gain `tts.underlay_db: -12.0` (overridable via `TTS_UNDERLAY_DB` env var). The runner uses this as the default when the request omits `underlay_db`.
 - `is_dubsync: bool` field on `SrtResponse`. The GET `/api/videos/{id}/srt` endpoint sets it to `true` when the served file is the dub-synced derivative; the editor banner uses this to warn users that re-running TTS overwrites the file.
 - Subtitle Editor warning banner: when the editor is displaying the dub-synced SRT (the new default served by GET `/api/videos/{id}/srt`), an amber banner at the top of the editor warns that re-running TTS will overwrite manual edits. Driven by the new `is_dubsync` field on `SrtResponse`.
+
+### Changed
+- VideoDetail tab type tightening + Re-extract subtitles button now disabled while transcription is in progress.
 
 ### Fixed
 - Eliminated the "Chinese voice played twice" bug: the assembler was reading the source MP4's audio and baking a -18 dB underlay into the TTS WAV, while the processor's audio-mix stage independently mixed the source MP4 audio at its own `original_volume` (default 0.3 / ~-10 dB). The user heard both. Removed the assembler's underlay logic entirely — `_concatenate_with_silence` no longer accepts `video_path`, `underlay_db`, or `failure_windows`; the TTS WAV now contains only the Vietnamese dub on silence. The user's `underlay_db` setting (still configurable in Settings / VideoDetail / DownloadTranscribe) now routes to the processor's `original_volume` parameter via a dB→linear conversion at the pipeline boundary. Per-platform `original_volume` defaults in `tts_voices.yaml` remain as fallback when no `underlay_db` is set.

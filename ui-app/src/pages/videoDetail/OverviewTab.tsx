@@ -98,7 +98,8 @@ export function OverviewTab(props: Props) {
                   </button>
                   <button
                     onClick={onTranscribe}
-                    className="bg-surface-container-highest text-on-surface px-4 py-2 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:bg-surface-container-high active:scale-95 transition-all"
+                    disabled={isTranscribing}
+                    className="bg-surface-container-highest text-on-surface px-4 py-2 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:bg-surface-container-high active:scale-95 transition-all disabled:opacity-50"
                   >
                     <span className="material-symbols-outlined text-sm">refresh</span>
                     Re-extract subtitles

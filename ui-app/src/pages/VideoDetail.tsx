@@ -4,6 +4,7 @@ import { TopBar } from '../components/TopBar';
 import { TTSPreview } from '../components/TTSPreview';
 import { SubtitleEditorPanel } from '../components/SubtitleEditorPanel';
 import { OverviewTab } from './videoDetail/OverviewTab';
+import { TranslateTab } from './videoDetail/TranslateTab';
 import {
   getVideo, getSrt, postTranscribe, postTranslate, postTTS,
   subscribeSSE, getProfiles, getTTSProfiles, getTTSProviders, getTTSVoices,
@@ -15,7 +16,7 @@ import type {
   VideoMetadata, SubtitleSegment, TranslationProfileSummary,
   VoiceProfileConfig, TTSProviderInfo, VoiceInfo,
 } from '../api/types';
-import { loadApiKeys, loadLLMPrefs, saveLLMPrefs, storageGet, storageSet } from '../utils/storage';
+import { loadApiKeys, loadLLMPrefs, storageGet, storageSet } from '../utils/storage';
 
 const PLATFORM_INFO: Record<string, { label: string; subLangLabel: string; constraint: string }> = {
   tiktok: { label: 'TikTok', subLangLabel: 'Vietnamese', constraint: '9:16 / 10min / 4GB' },
@@ -45,8 +46,9 @@ function VideoDetailPage() {
   const { videoId } = useParams<{ videoId: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = (searchParams.get('tab') as 'overview' | 'translate' | 'dub' | 'export') || 'overview';
-  const setActiveTab = (tab: string) => setSearchParams((p) => { p.set('tab', tab); return p; }, { replace: true });
+  type Tab = 'overview' | 'translate' | 'dub' | 'export';
+  const activeTab = (searchParams.get('tab') as Tab) || 'overview';
+  const setActiveTab = (tab: Tab) => setSearchParams((p) => { p.set('tab', tab); return p; }, { replace: true });
 
   // Video state
   const [videoMeta, setVideoMeta] = useState<VideoMetadata | null>(null);
@@ -118,24 +120,6 @@ function VideoDetailPage() {
       return next;
     });
   }, []);
-
-  const MODEL_OPTIONS: Record<string, { label: string; value: string }[]> = {
-    deepseek: [
-      { label: 'DeepSeek V3', value: 'deepseek-chat' },
-      { label: 'DeepSeek R1', value: 'deepseek-reasoner' },
-    ],
-    anthropic: [
-      { label: 'Claude Sonnet 4', value: 'claude-sonnet-4-20250514' },
-      { label: 'Claude Haiku 3.5', value: 'claude-3-5-haiku-20241022' },
-      { label: 'Claude Opus 4', value: 'claude-opus-4-20250514' },
-    ],
-    openai: [
-      { label: 'GPT-4o', value: 'gpt-4o' },
-      { label: 'GPT-4o Mini', value: 'gpt-4o-mini' },
-      { label: 'GPT-4.1', value: 'gpt-4.1' },
-      { label: 'GPT-4.1 Mini', value: 'gpt-4.1-mini' },
-    ],
-  };
 
   // Load API key from localStorage when backend changes
   useEffect(() => {
@@ -467,9 +451,29 @@ function VideoDetailPage() {
           />
         )}
 
-        {activeTab !== 'overview' && (
+        {activeTab === 'translate' && videoMeta && (
+          <TranslateTab
+            profiles={profiles}
+            selectedProfile={selectedProfile}
+            onChangeProfile={setSelectedProfile}
+            llmBackend={llmBackend}
+            onChangeLlmBackend={setLlmBackend}
+            llmModel={llmModel}
+            onChangeLlmModel={setLlmModel}
+            llmApiKey={llmApiKey}
+            onChangeLlmApiKey={setLlmApiKey}
+            llmBaseUrl={llmBaseUrl}
+            onChangeLlmBaseUrl={setLlmBaseUrl}
+            isTranslating={isTranslating}
+            translateMessage={translateMessage}
+            translateProgress={translateProgress}
+            onTranslate={handleTranslate}
+          />
+        )}
+
+        {(activeTab === 'dub' || activeTab === 'export') && (
         <div className="space-y-6">
-          {/* === LEGACY BODY (Tasks 6, 7, 8 will replace these slices) === */}
+          {/* === LEGACY BODY (Tasks 7, 8 will replace these slices) === */}
           {/* Video Editor — main view */}
           {videoMeta && videoMeta.has_srt && (
             <div className="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/10">
@@ -495,149 +499,6 @@ function VideoDetailPage() {
               </div>
             </div>
           )}
-
-            {/* Translation Panel */}
-            {videoMeta && videoMeta.has_srt && (
-              <div className="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/10">
-                <button
-                  onClick={() => togglePanel('translate')}
-                  className="w-full p-4 border-b border-outline-variant/10 flex justify-between items-center hover:bg-surface-container/50 transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-primary text-lg">translate</span>
-                    <span className="text-xs font-bold uppercase tracking-widest">LLM Translation</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span
-                      onClick={(e) => { e.stopPropagation(); navigate('/profiles'); }}
-                      className="text-[10px] font-bold text-primary uppercase tracking-wider hover:underline flex items-center gap-1"
-                    >
-                      <span className="material-symbols-outlined text-xs">settings</span>
-                      Profiles
-                    </span>
-                    <span className={`material-symbols-outlined text-sm text-zinc-500 transition-transform ${openPanels.has('translate') ? 'rotate-180' : ''}`}>expand_more</span>
-                  </div>
-                </button>
-                {openPanels.has('translate') && <div className="p-5 space-y-4">
-                  {/* Profile Selector */}
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1">
-                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">Translation Profile</label>
-                      <div className="flex gap-2 items-center">
-                        <select
-                          value={selectedProfile}
-                          onChange={(e) => setSelectedProfile(e.target.value)}
-                          className="flex-1 bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
-                        >
-                          {profiles.map((p) => (
-                            <option key={p.name} value={p.name}>
-                              {p.name} ({p.target_language})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                    <button
-                      onClick={handleTranslate}
-                      disabled={isTranslating || !selectedProfile}
-                      className="bg-primary text-on-primary-fixed px-5 py-2 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap active:scale-95 transition-all disabled:opacity-50 mt-4"
-                    >
-                      <span>{isTranslating ? 'Translating...' : 'Translate'}</span>
-                      <span className="material-symbols-outlined text-sm">translate</span>
-                    </button>
-                  </div>
-
-                  {/* Backend & Model */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">Backend</label>
-                      <select
-                        value={llmBackend}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setLlmBackend(val);
-                          const models = MODEL_OPTIONS[val];
-                          const firstModel = models?.length ? models[0].value : '';
-                          if (firstModel) setLlmModel(firstModel);
-                          saveLLMPrefs(val, firstModel);
-                          if (val === 'deepseek') {
-                            setLlmBaseUrl('https://api.deepseek.com');
-                          } else {
-                            setLlmBaseUrl('');
-                          }
-                        }}
-                        className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
-                      >
-                        <option value="deepseek">DeepSeek</option>
-                        <option value="anthropic">Anthropic</option>
-                        <option value="openai">OpenAI</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">Model</label>
-                      <select
-                        value={llmModel}
-                        onChange={(e) => { setLlmModel(e.target.value); saveLLMPrefs(llmBackend, e.target.value); }}
-                        className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
-                      >
-                        {(MODEL_OPTIONS[llmBackend] || []).map((m) => (
-                          <option key={m.value} value={m.value}>
-                            {m.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* API Key Warning */}
-                  {!llmApiKey && (
-                    <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs p-3 rounded-lg flex items-center gap-2">
-                      <span className="material-symbols-outlined text-sm">warning</span>
-                      <span>No API key configured for <strong>{llmBackend}</strong>.</span>
-                      <button
-                        onClick={() => navigate('/settings#apikeys')}
-                        className="ml-auto text-[10px] font-bold uppercase tracking-wider text-amber-300 hover:text-amber-200 flex items-center gap-1 whitespace-nowrap"
-                      >
-                        <span className="material-symbols-outlined text-xs">settings</span>
-                        Configure
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Profile Description */}
-                  {selectedProfile && profiles.find((p) => p.name === selectedProfile) && (
-                    <div className="text-[11px] text-on-surface-variant bg-surface-container-highest/50 rounded p-3">
-                      {profiles.find((p) => p.name === selectedProfile)?.description}
-                    </div>
-                  )}
-
-                  {/* Translation Progress / Result */}
-                  {isTranslating && (
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center">
-                        <span className="text-[10px] font-mono text-zinc-500 uppercase">{translateMessage}</span>
-                        <span className="text-xs font-bold font-mono text-primary">{translateProgress.toFixed(0)}%</span>
-                      </div>
-                      <div className="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
-                        <div
-                          className="bg-primary h-full transition-all duration-500 shadow-[0_0_8px_rgba(208,188,255,0.4)]"
-                          style={{ width: `${translateProgress}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
-                  {!isTranslating && translateMessage === 'Translation complete' && (
-                    <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs p-3 rounded-lg flex items-center gap-2">
-                      <span className="material-symbols-outlined text-sm">check_circle</span>
-                      Translation complete — see translated subtitles in the SRT Preview panel
-                      <button onClick={() => setTranslateMessage('')} className="ml-auto text-emerald-500/50 hover:text-emerald-400">
-                        <span className="material-symbols-outlined text-sm">close</span>
-                      </button>
-                    </div>
-                  )}
-                </div>}
-              </div>
-            )}
 
             {/* TTS Dubbing Panel */}
             {videoMeta && videoMeta.has_srt && videoMeta.srt_languages.some(l => l !== 'zh') && (
