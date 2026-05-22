@@ -58,7 +58,7 @@ class FullPipelineRequest(BaseModel):
     force: bool = False
     metadata: dict | None = None
     tts_profile: str | None = None  # e.g. "female-vi-natural" — if set, generates TTS dub
-    blur_enabled: bool = True  # blur original subtitles before burn-in
+    blur_enabled: bool = False  # blur original subtitles before burn-in
     # Per-request overrides for TTS/LLM, mirroring TTSRequest so the pipeline
     # produces the same output as running TTS via the per-video flow.
     tts_provider: str | None = None  # override profile's provider
@@ -86,7 +86,7 @@ class BatchPipelineRequest(BaseModel):
     source_language: str = "zh"
     force: bool = False
     tts_profile: str | None = None  # e.g. "female-vi-natural" — if set, generates TTS dub
-    blur_enabled: bool = True  # blur original subtitles before burn-in
+    blur_enabled: bool = False  # blur original subtitles before burn-in
     tts_provider: str | None = None
     tts_voice: str | None = None
     tts_api_key: str | None = None

@@ -55,7 +55,7 @@ function PipelinePage() {
   });
   const [blurEnabled, setBlurEnabled] = useState(() => {
     const saved = storageGet('pipeline_default_blur_enabled');
-    return saved === null ? true : saved === '1';
+    return saved === null ? false : saved === '1';
   });
 
   const SUBTITLE_BG_PRESETS = {
@@ -67,7 +67,7 @@ function PipelinePage() {
 
   const [subtitleBackground, setSubtitleBackground] = useState<SubtitleBgPreset>(() => {
     const saved = storageGet('pipeline_default_subtitle_background');
-    return saved === 'subtle' || saved === 'strong' || saved === 'off' ? saved : 'off';
+    return saved === 'subtle' || saved === 'strong' || saved === 'off' ? saved : 'subtle';
   });
 
   const [defaultsSaved, setDefaultsSaved] = useState(false);
