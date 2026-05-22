@@ -29,7 +29,9 @@ function PipelinePage() {
 
   // Pipeline config
   const [profiles, setProfiles] = useState<TranslationProfileSummary[]>([]);
-  const [selectedProfile, setSelectedProfile] = useState('');
+  const [selectedProfile, setSelectedProfile] = useState(() =>
+    storageGet('pipeline_default_translation_profile') || ''
+  );
   const [ttsProviders, setTtsProviders] = useState<TTSProviderInfo[]>([]);
   const [selectedTtsProvider, setSelectedTtsProvider] = useState(() =>
     storageGet('tts_selected_provider') || 'google'
@@ -51,7 +53,33 @@ function PipelinePage() {
     const saved = parseFloat(storageGet('tts_underlay_db') || '');
     return Number.isFinite(saved) && saved >= -24 && saved <= 0 ? saved : -18;
   });
-  const [blurEnabled, setBlurEnabled] = useState(true);
+  const [blurEnabled, setBlurEnabled] = useState(() => {
+    const saved = storageGet('pipeline_default_blur_enabled');
+    return saved === null ? true : saved === '1';
+  });
+
+  const SUBTITLE_BG_PRESETS = {
+    off:    { background_color: '',           background_opacity: 0   },
+    subtle: { background_color: '&H80000000', background_opacity: 128 },
+    strong: { background_color: '&HFF000000', background_opacity: 255 },
+  } as const;
+  type SubtitleBgPreset = keyof typeof SUBTITLE_BG_PRESETS;
+
+  const [subtitleBackground, setSubtitleBackground] = useState<SubtitleBgPreset>(() => {
+    const saved = storageGet('pipeline_default_subtitle_background');
+    return saved === 'subtle' || saved === 'strong' || saved === 'off' ? saved : 'off';
+  });
+
+  const [defaultsSaved, setDefaultsSaved] = useState(false);
+
+  const handleSaveDefaults = () => {
+    storageSet('pipeline_default_translation_profile', selectedProfile);
+    storageSet('pipeline_default_blur_enabled', blurEnabled ? '1' : '0');
+    storageSet('pipeline_default_subtitle_background', subtitleBackground);
+    setDefaultsSaved(true);
+    setTimeout(() => setDefaultsSaved(false), 2000);
+  };
+
   const [savedPrefs] = useState(loadLLMPrefs);
   const [llmBackend, setLlmBackend] = useState(savedPrefs.backend);
   const [llmModel, setLlmModel] = useState(savedPrefs.model);
@@ -195,7 +223,11 @@ function PipelinePage() {
 
   useEffect(() => {
     loadVideos();
-    getProfiles().then(p => { setProfiles(p); if (p.length > 0) setSelectedProfile(p[0].name); }).catch(() => {});
+    getProfiles().then(p => {
+      setProfiles(p);
+      // Only fall back to first profile if nothing is saved in localStorage
+      setSelectedProfile(prev => prev || (p.length > 0 ? p[0].name : ''));
+    }).catch(() => {});
     getTTSProviders().then(setTtsProviders).catch(() => {});
 
     // Reconnect to active pipeline task if one exists
@@ -263,6 +295,8 @@ function PipelinePage() {
     // Derive voice profile from translation profile's target language.
     const targetLang = profiles.find((p) => p.name === selectedProfile)?.target_language ?? 'vi';
     const ttsVoiceProfile = targetLang === 'en' ? 'female-en-natural' : 'female-vi-natural';
+    // subtitle_style: null when "off" (preserves per-platform defaults); dict otherwise.
+    const subtitleStyle = subtitleBackground === 'off' ? null : SUBTITLE_BG_PRESETS[subtitleBackground];
     const ttsOverrides = {
       tts_provider: ttsProviderName || undefined,
       tts_voice: ttsVoiceId || undefined,
@@ -271,6 +305,7 @@ function PipelinePage() {
       llm_backend: llmBackend || undefined,
       playback_speed: playbackSpeed,
       underlay_db: underlayDb,
+      subtitle_style: subtitleStyle,
     };
 
     // Batch mode
@@ -290,6 +325,7 @@ function PipelinePage() {
             translation_override: selectedProfile ? { backend: llmBackend, model: llmModel, api_key: llmApiKey || undefined } : null,
             tts_profile: ttsVoiceProfile,
             blur_enabled: blurEnabled,
+            subtitle_style: subtitleStyle,
             ...ttsOverrides,
           }),
         });
@@ -662,6 +698,23 @@ function PipelinePage() {
                   </button>
                 </div>
 
+                {/* Subtitle Background */}
+                <div className="flex items-center gap-3">
+                  <span className="material-symbols-outlined text-sm text-on-surface-variant">format_color_fill</span>
+                  <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold flex-1">
+                    Subtitle Background
+                  </label>
+                  <select
+                    value={subtitleBackground}
+                    onChange={(e) => setSubtitleBackground(e.target.value as SubtitleBgPreset)}
+                    className="px-2 py-1 text-xs font-mono text-on-surface bg-surface-container-low border border-outline-variant/30 rounded focus:outline-none focus:border-primary"
+                  >
+                    <option value="off">Off</option>
+                    <option value="subtle">Subtle</option>
+                    <option value="strong">Strong</option>
+                  </select>
+                </div>
+
                 {/* ElevenLabs Voice ID — only when EL provider is selected */}
                 {selectedTtsProvider === 'elevenlabs' && (
                   <div className="space-y-2 pt-2 border-t border-outline-variant/10">
@@ -730,6 +783,19 @@ function PipelinePage() {
                 </button>
               </div>
             )}
+
+            {/* Save defaults */}
+            <div className="flex justify-end pt-2 border-t border-outline-variant/10">
+              <button
+                onClick={handleSaveDefaults}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm">
+                  {defaultsSaved ? 'check_circle' : 'save'}
+                </span>
+                <span>{defaultsSaved ? 'Saved' : 'Save as Default'}</span>
+              </button>
+            </div>
           </div>
         )}
 

@@ -71,6 +71,10 @@ class FullPipelineRequest(BaseModel):
     # 0 disables the underlay entirely. When None, the runner falls back to
     # config.yaml then the assembler default (-12 dB).
     underlay_db: float | None = None
+    # ASS style overrides merged with per-platform styles in the processor.
+    # E.g. {"background_color": "&H80000000", "background_opacity": 128} for a
+    # semi-transparent black background behind subtitles.
+    subtitle_style: dict | None = None
 
 
 class BatchPipelineRequest(BaseModel):
@@ -93,6 +97,10 @@ class BatchPipelineRequest(BaseModel):
     # 0 disables the underlay entirely. When None, the runner falls back to
     # config.yaml then the assembler default (-12 dB).
     underlay_db: float | None = None
+    # ASS style overrides merged with per-platform styles in the processor.
+    # E.g. {"background_color": "&H80000000", "background_opacity": 128} for a
+    # semi-transparent black background behind subtitles.
+    subtitle_style: dict | None = None
 
 
 class PipelineHistoryEntry(BaseModel):

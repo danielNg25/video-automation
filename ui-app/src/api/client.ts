@@ -224,6 +224,7 @@ export function postPipeline(
     llm_backend?: string;
     playback_speed?: number;
     underlay_db?: number;
+    subtitle_style?: Record<string, unknown> | null;
   },
 ): Promise<TaskResponse> {
   return request('/pipeline/full', {
@@ -244,6 +245,7 @@ export function postPipeline(
       llm_backend: ttsOverrides?.llm_backend ?? null,
       playback_speed: ttsOverrides?.playback_speed ?? null,
       underlay_db: ttsOverrides?.underlay_db ?? null,
+      subtitle_style: ttsOverrides?.subtitle_style ?? null,
     }),
   });
 }
