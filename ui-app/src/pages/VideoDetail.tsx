@@ -181,6 +181,16 @@ function VideoDetailPage() {
 
   // ── Handlers ──
 
+  const refreshVideoMeta = useCallback(async () => {
+    if (!videoId) return;
+    try {
+      const updated = await getVideo(videoId);
+      setVideoMeta(updated);
+    } catch {
+      // ignore — fresh fetch failed, banner will refresh on next mount
+    }
+  }, [videoId]);
+
   const handleTranslate = async () => {
     if (!videoMeta || !selectedProfile) return;
     setError('');
@@ -381,7 +391,11 @@ function VideoDetailPage() {
         )}
 
         {activeTab === 'editor' && videoMeta && (
-          <EditorTab videoId={videoMeta.video_id} initialVideo={videoMeta} />
+          <EditorTab
+            videoId={videoMeta.video_id}
+            initialVideo={videoMeta}
+            onSyncComplete={refreshVideoMeta}
+          />
         )}
 
         {activeTab === 'translate' && videoMeta && (

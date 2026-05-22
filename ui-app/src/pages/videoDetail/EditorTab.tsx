@@ -33,9 +33,6 @@ interface Props {
 }
 
 export function EditorTab({ videoId, initialVideo, onSyncComplete }: Props) {
-  // onSyncComplete is wired in a later task; reference it here to keep lint quiet.
-  void onSyncComplete;
-
   // Video player
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playerState, playerControls] = useVideoPlayer(videoRef);
@@ -412,7 +409,8 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete }: Props) {
           setIsSyncing(false);
           setSyncProgress({ pct: 100, message: 'Dub synced.' });
           es.close();
-          // Task C2 will wire onSyncComplete here
+          // Refresh the parent's video metadata so dub_status updates and the banner clears
+          onSyncComplete?.();
         } else if (eventType === 'error') {
           setIsSyncing(false);
           const errMsg = typeof data.message === 'string' ? data.message : 'Sync failed';
@@ -424,7 +422,7 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete }: Props) {
       setIsSyncing(false);
       setSyncError(e instanceof Error ? e.message : 'Sync failed');
     }
-  }, [video, activeLang]);
+  }, [video, activeLang, onSyncComplete]);
 
   // --- Preview burn-in ---
   const handlePreviewBurnIn = useCallback(async () => {

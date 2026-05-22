@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- VideoDetail refreshes `videoMeta` (and therefore `dub_status`) after a successful Sync Dub via a `refreshVideoMeta` callback passed as `onSyncComplete` to EditorTab. The Sync-Dub banner clears automatically without a manual reload.
 - `postDubSync(videoId, body)` API client helper in `ui-app/src/api/client.ts`.
 - `DubStatusEntry` TypeScript type; `VideoMetadata.dub_status?: DubStatusEntry[]` (now typed — the defensive cast in EditorTab's default-language logic simplifies).
 - EditorTab Sync-Dub banner: yellow "Dub for <lang> is out of sync" banner with explicit "Sync Dub" button. Renders when the active language's `dub_status` reports `out_of_sync: true`. Progress bar (amber theme) during sync; red error banner on failure with dismiss button. Reads TTS provider/voice/speed/underlay + LLM backend/key defaults from the same localStorage keys used by Pipeline + DubTab + Settings.
