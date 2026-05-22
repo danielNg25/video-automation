@@ -471,7 +471,7 @@ function VideoDetailPage() {
             onChangeTtsProfile={handleTtsProfileChange}
             ttsVoices={ttsVoices}
             selectedVoiceId={selectedVoiceId}
-            onChangeSelectedVoiceId={setSelectedVoiceId}
+            onChangeSelectedVoiceId={(v) => { setSelectedVoiceId(v); setTtsGenerated(false); }}
             voiceIdInput={voiceIdInput}
             onChangeVoiceIdInput={(v) => { setVoiceIdInput(v); setVoiceIdSaved(false); }}
             voiceIdSaved={voiceIdSaved}
