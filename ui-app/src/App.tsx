@@ -3,15 +3,12 @@ import { Layout } from './components/Layout';
 import { lazy, Suspense } from 'react';
 import { PipelineStatusProvider } from './lib/pipelineStatus';
 
-const DashboardPage = lazy(() => import('./pages/Dashboard'));
 const DownloadTranscribePage = lazy(() => import('./pages/DownloadTranscribe'));
 const SettingsPage = lazy(() => import('./pages/Settings'));
 const SubtitleEditorPage = lazy(() => import('./pages/SubtitleEditor'));
 const TranslationProfilesPage = lazy(() => import('./pages/TranslationProfiles'));
 const VideoListPage = lazy(() => import('./pages/VideoList'));
 const VideoDetailPage = lazy(() => import('./pages/VideoDetail'));
-
-void DashboardPage; // Removed in Task 4; kept lazy-imported so the bundler still finds the file until then.
 
 function LoadingFallback() {
   return (
