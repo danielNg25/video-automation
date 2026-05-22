@@ -241,6 +241,15 @@ class TTSRequest(BaseModel):
     playback_speed: float | None = None
 
 
+class SyncDubRequest(BaseModel):
+    language: str
+    provider: str
+    voice_id: str
+    playback_speed: float = 1.5
+    underlay_db: float = -18.0
+    api_key: str | None = None
+
+
 class TTSPreviewRequest(BaseModel):
     text: str
     voice: str = "vi-VN-HoaiMyNeural"

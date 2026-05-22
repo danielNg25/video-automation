@@ -382,6 +382,7 @@ douyin-automation/
 - [x] UI app overhaul (Phases 1–3 of `docs/superpowers/plans/2026-05-22-ui-app-overhaul.md`): remove Upload + Dashboard pages, rebuild VideoDetail as 4-tab layout, rebuild Settings as two-level sidebar, single source of truth for TTS settings
 - [x] Dub-sync feature: design + implementation plan committed (`docs/superpowers/specs/2026-05-22-dub-sync-and-editor-default-design.md` + `docs/superpowers/plans/2026-05-22-dub-sync-and-editor-default.md`)
 - [x] Dub-sync Task B1: per-segment WAV cache (`src/tts/segment_cache.py`) + dub metadata persistence (`src/tts/dub_meta.py`), wired into `assembler.generate_full_track()` and `task_manager.delete_video`
+- [x] Dub-sync Task B3: `POST /api/videos/{id}/dub/sync` endpoint + `src/tts/sync_runner.py` + `Assembler.run_partial(...)` — partial-regen path with > 50% / segment-count / provider-voice-speed-underlay-mismatch fallbacks to full regen via `src.tts.runner.run_tts_track`
 
 ---
 

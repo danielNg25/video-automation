@@ -10,6 +10,7 @@ from starlette.responses import FileResponse, Response
 
 from src.api.deps import get_config, get_data_dir, get_task_manager
 from src.api.models import (
+    SyncDubRequest,
     TaskResponse,
     TTSPreviewRequest,
     TTSRequest,
@@ -46,6 +47,106 @@ async def start_tts(request: TTSRequest):
             playback_speed=request.playback_speed,
         )
     )
+    return TaskResponse(task_id=task.task_id, status=task.status)
+
+
+@router.post("/api/videos/{video_id}/dub/sync", response_model=TaskResponse)
+async def sync_dub(video_id: str, request: SyncDubRequest):
+    """Re-sync the dub for a single language after subtitle edits.
+
+    Kicks off a background task that loads `dub_meta_{language}.json`,
+    diffs each segment's text against the saved record, and either:
+      - re-synthesises only the changed segments (partial path), or
+      - falls back to a full regen when > 50% of segments are dirty,
+        the segment count changed, or any of provider / voice_id /
+        playback_speed / underlay_db do not match dub_meta.
+    """
+    tm = get_task_manager()
+    video = tm.video_index.get(video_id)
+    if not video:
+        raise HTTPException(status_code=404, detail=f"Video {video_id} not found")
+
+    from src.api.routers.transcribe import _resolve_srt_path
+    from src.processor.subtitle import parse_srt
+
+    srt_path, _ = _resolve_srt_path(video_id, request.language)
+    if not srt_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"No SRT for {video_id}/{request.language} to sync against",
+        )
+    parsed = parse_srt(srt_path)
+    new_texts = [seg["text"] for seg in parsed]
+
+    current_params = {
+        "provider": request.provider,
+        "voice_id": request.voice_id,
+        "playback_speed": request.playback_speed,
+        "underlay_db": request.underlay_db,
+        "api_key": request.api_key,
+    }
+
+    task = tm.create_task("dub_sync")
+    task.video_id = video_id
+
+    async def _runner():
+        from src.tts.sync_runner import run_dub_sync
+
+        task_obj = tm.tasks[task.task_id]
+        task_obj.status = "running"
+        task_obj.message = "Starting dub sync..."
+        tm._emit(
+            task.task_id,
+            "progress",
+            {"progress": 0.0, "message": "Starting dub sync..."},
+        )
+
+        def on_progress(current: int, total: int, message: str):
+            pct = current / total if total > 0 else 0.0
+            task_obj.progress = pct
+            task_obj.message = message
+            tm._emit(
+                task.task_id,
+                "progress",
+                {"progress": pct, "message": message},
+            )
+
+        try:
+            result = await run_dub_sync(
+                video_id=video_id,
+                language=request.language,
+                new_texts=new_texts,
+                current_params=current_params,
+                on_progress=on_progress,
+            )
+
+            # Clear the dub_out_of_sync flag for this language since the
+            # dub now matches the SRT.
+            try:
+                from src.utils.state import PipelineState
+
+                state = PipelineState.load(video_id)
+                if request.language in state.dub_out_of_sync_languages:
+                    state.dub_out_of_sync_languages.remove(request.language)
+                    state.save()
+            except Exception:  # noqa: BLE001 — state update is best-effort
+                pass
+
+            task_obj.status = "completed"
+            task_obj.progress = 1.0
+            task_obj.message = (
+                f"Dub sync complete ({result.get('mode')}, "
+                f"{result.get('dirty_count', 0)} dirty)"
+            )
+            task_obj.result = {"video_id": video_id, **result}
+            tm._emit(task.task_id, "complete", task_obj.result)
+        except Exception as e:  # noqa: BLE001 — surface failure via SSE
+            task_obj.status = "failed"
+            task_obj.error = str(e)
+            task_obj.message = f"Dub sync failed: {e}"
+            tm._emit(task.task_id, "error", {"message": str(e)})
+
+    asyncio.create_task(_runner())
     return TaskResponse(task_id=task.task_id, status=task.status)
 
 
