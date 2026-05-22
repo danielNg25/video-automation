@@ -1,13 +1,12 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
 import { TTSPreview } from '../components/TTSPreview';
 import { postDownload, getVideos, subscribeSSE, deleteVideo, getProfiles, postPipeline, getTTSProviders, getTTSVoices } from '../api/client';
 import type { VideoMetadata, TranslationProfileSummary, TTSProviderInfo, VoiceInfo } from '../api/types';
 import { loadApiKeys, loadLLMPrefs, saveLLMPrefs, storageGet, storageSet } from '../utils/storage';
-
-const PIPELINE_TASK_KEY = 'pipeline_active_task';
-const POLL_INTERVAL = 2000; // 2 seconds
+import { usePipelineStatus } from '../lib/pipelineStatus';
+import { PipelineStageTracker } from '../components/PipelineStageTracker';
 
 function PipelinePage() {
   const navigate = useNavigate();
@@ -16,12 +15,11 @@ function PipelinePage() {
   const [error, setError] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
-  // Pipeline state
+  const { status: pipelineStatus, startPolling } = usePipelineStatus();
+  const isPipeline = pipelineStatus.status === 'running';
+
+  // Download-only state
   const [isDownloading, setIsDownloading] = useState(false);
-  const [isPipeline, setIsPipeline] = useState(false);
-  const [pipelineStage, setPipelineStage] = useState('');
-  const [pipelineProgress, setPipelineProgress] = useState(0);
-  const [pipelineMessage, setPipelineMessage] = useState('');
 
   // Batch state
   const [batchConcurrency, setBatchConcurrency] = useState(3);
@@ -136,130 +134,61 @@ function PipelinePage() {
   const isBatchMode = parsedUrls.length > 1;
   const url = parsedUrls[0] || '';
 
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const clearActiveTask = () => sessionStorage.removeItem(PIPELINE_TASK_KEY);
-  const saveActiveTask = (taskId: string, mode: 'single' | 'batch') => {
-    sessionStorage.setItem(PIPELINE_TASK_KEY, JSON.stringify({ taskId, mode }));
-  };
-
-  const stopPolling = useCallback(() => {
-    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-  }, []);
-
   const loadVideos = useCallback(async () => {
     try { setAllVideos((await getVideos()).videos); } catch { /* */ }
   }, []);
-
-  // Poll pipeline status endpoint
-  const startPolling = useCallback((taskId: string, mode: 'single' | 'batch') => {
-    stopPolling();
-
-    const poll = async () => {
-      try {
-        const r = await fetch(`/api/pipeline/${taskId}`);
-        if (!r.ok) { stopPolling(); clearActiveTask(); return; }
-        const d = await r.json();
-
-        if (mode === 'batch' && d.children) {
-          // Batch: aggregate children progress
-          const children = d.children as { video_id: string; status: string; current_stage: string; progress: number; message: string; error: string | null }[];
-          const done = children.filter(c => c.status === 'done' || c.status === 'failed').length;
-          const total = children.length;
-          const failed = children.filter(c => c.status === 'failed');
-          // Show the most advanced running child's stage, fall back to batch-level current_stage
-          const running = children.find(c => c.status !== 'done' && c.status !== 'failed' && c.current_stage);
-          const stage = running?.current_stage || (d.current_stage as string) || '';
-          if (stage) {
-            setPipelineStage(stage);
-          }
-          setBatchResults({ completed: done, total });
-
-          // Use average of all children's progress for smooth % updates
-          const avgProgress = children.length > 0
-            ? children.reduce((sum, c) => sum + (c.progress || 0), 0) / children.length
-            : 0;
-          setPipelineProgress(avgProgress * 100);
-
-          // Show all running children's messages, one per line
-          const runningChildren = children.filter(c => c.message && c.status !== 'done' && c.status !== 'failed');
-          const lines = runningChildren.map((c, i) => `#${i + 1} ${c.message}`);
-          setPipelineMessage(`[${done}/${total} done]\n${lines.join('\n') || 'Processing...'}`);
-
-          // Check if batch is done
-          if (d.status === 'completed' || d.status === 'failed') {
-            stopPolling(); setIsPipeline(false); setPipelineProgress(100);
-            if (failed.length > 0) {
-              const errMsgs = failed.map(c => `${c.video_id}: ${c.error || 'Unknown error'}`).join('\n');
-              setError(`${failed.length} of ${total} videos failed:\n${errMsgs}`);
-              setPipelineMessage(`Batch done: ${total - failed.length} succeeded, ${failed.length} failed`);
-            } else {
-              setPipelineMessage('Batch complete');
-            }
-            setBatchResults(null); setUrlInput(''); loadVideos(); clearActiveTask();
-          }
-        } else {
-          // Single: read stage/progress from state
-          setPipelineStage(d.current_stage || '');
-          setPipelineProgress((d.progress ?? 0) * 100);
-          setPipelineMessage(d.message || '');
-
-          if (d.status === 'completed') {
-            stopPolling(); setIsPipeline(false); setPipelineProgress(100); setPipelineMessage('Pipeline complete');
-            if (d.video_id) navigate(`/videos/${d.video_id}`);
-            loadVideos(); clearActiveTask();
-          } else if (d.status === 'failed') {
-            stopPolling(); setIsPipeline(false);
-            setError(d.error || 'Pipeline failed'); clearActiveTask();
-          }
-        }
-      } catch { /* network error, keep polling */ }
-    };
-
-    // Poll immediately then every POLL_INTERVAL
-    poll();
-    pollRef.current = setInterval(poll, POLL_INTERVAL);
-  }, [stopPolling, loadVideos, navigate]);
 
   useEffect(() => {
     loadVideos();
     getProfiles().then(p => {
       setProfiles(p);
-      // Only fall back to first profile if nothing is saved in localStorage
       setSelectedProfile(prev => prev || (p.length > 0 ? p[0].name : ''));
     }).catch(() => {});
     getTTSProviders().then(setTtsProviders).catch(() => {});
+  }, [loadVideos]);
 
-    // Reconnect to active pipeline task if one exists
-    const saved = sessionStorage.getItem(PIPELINE_TASK_KEY);
-    if (saved) {
-      try {
-        const { taskId, mode } = JSON.parse(saved) as { taskId: string; mode: 'single' | 'batch' };
-        fetch(`/api/pipeline/${taskId}`).then(r => {
-          if (!r.ok) { clearActiveTask(); return; }
-          return r.json();
-        }).then(task => {
-          if (!task) return;
-          if (task.status === 'running') {
-            setIsPipeline(true);
-            setPipelineStage(task.current_stage || '');
-            setPipelineProgress((task.progress ?? 0) * 100);
-            setPipelineMessage(task.message || 'Resuming...');
-            startPolling(taskId, mode);
-          } else if (task.status === 'completed') {
-            clearActiveTask();
-          } else if (task.status === 'failed') {
-            clearActiveTask();
-            if (task.error) setError(task.error);
-          } else {
-            clearActiveTask();
-          }
-        }).catch(() => clearActiveTask());
-      } catch { clearActiveTask(); }
+  // React to pipeline completion / failure
+  useEffect(() => {
+    if (
+      pipelineStatus.status === 'completed' &&
+      pipelineStatus.mode === 'single' &&
+      pipelineStatus.videoId
+    ) {
+      loadVideos();
+      navigate(`/videos/${pipelineStatus.videoId}`);
+    } else if (
+      pipelineStatus.status === 'completed' &&
+      pipelineStatus.mode === 'batch'
+    ) {
+      loadVideos();
+      setBatchResults(null);
+      setUrlInput('');
+    } else if (pipelineStatus.status === 'failed') {
+      setError(pipelineStatus.error || 'Pipeline failed');
     }
+  }, [
+    pipelineStatus.status,
+    pipelineStatus.mode,
+    pipelineStatus.videoId,
+    pipelineStatus.error,
+    loadVideos,
+    navigate,
+  ]);
 
-    return () => { stopPolling(); };
-  }, [loadVideos, startPolling, stopPolling]);
+  // Mirror batch progress into the existing batchResults display
+  useEffect(() => {
+    if (pipelineStatus.mode === 'batch' && pipelineStatus.status === 'running') {
+      setBatchResults({
+        completed: pipelineStatus.batchCompleted,
+        total: pipelineStatus.batchTotal,
+      });
+    }
+  }, [
+    pipelineStatus.mode,
+    pipelineStatus.status,
+    pipelineStatus.batchCompleted,
+    pipelineStatus.batchTotal,
+  ]);
 
   const handleDownload = async () => {
     if (!url) return;
@@ -310,8 +239,7 @@ function PipelinePage() {
 
     // Batch mode
     if (isBatchMode) {
-      setError(''); setIsPipeline(true); setPipelineStage('download'); setPipelineProgress(0);
-      setPipelineMessage(`Starting batch: ${parsedUrls.length} videos...`);
+      setError('');
       setBatchResults({ completed: 0, total: parsedUrls.length });
       try {
         const res = await fetch('/api/pipeline/batch', {
@@ -331,21 +259,19 @@ function PipelinePage() {
         });
         const data = await res.json();
         if (data.batch_id) {
-          saveActiveTask(data.batch_id, 'batch');
           startPolling(data.batch_id, 'batch');
         }
-      } catch (e) { setIsPipeline(false); setBatchResults(null); setError(e instanceof Error ? e.message : 'Batch failed'); }
+      } catch (e) { setBatchResults(null); setError(e instanceof Error ? e.message : 'Batch failed'); }
       return;
     }
 
     // Single URL mode
-    setError(''); setIsPipeline(true); setPipelineStage('download'); setPipelineProgress(0); setPipelineMessage('Starting download...');
+    setError('');
     try {
       const translationOverride = selectedProfile ? { backend: llmBackend, model: llmModel, api_key: llmApiKey || undefined } : undefined;
       const { task_id } = await postPipeline(url, selectedProfile || undefined, 'zh', translationOverride, ttsVoiceProfile, blurEnabled, ttsOverrides);
-      saveActiveTask(task_id, 'single');
       startPolling(task_id, 'single');
-    } catch (e) { setIsPipeline(false); setError(e instanceof Error ? e.message : 'Pipeline failed'); }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Pipeline failed'); }
   };
 
   const handleDeleteVideo = async (videoId: string) => {
@@ -440,28 +366,10 @@ function PipelinePage() {
           </div>
         )}
 
-        {/* Running progress strip — visible only during a single-URL pipeline run */}
-        {isPipeline && !isBatchMode && (
-          <div className="bg-surface-container-low rounded-xl p-4 flex items-center gap-4">
-            <div className="flex-1 space-y-1.5">
-              <div className="flex justify-between text-[10px] font-mono">
-                <span className="text-primary uppercase tracking-widest font-bold">
-                  {pipelineStage || 'Starting'}
-                </span>
-                <span className="text-zinc-500">{Math.round(pipelineProgress)}%</span>
-              </div>
-              <div className="w-full h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-primary transition-all duration-300"
-                  style={{ width: `${pipelineProgress}%` }}
-                />
-              </div>
-              {pipelineMessage && (
-                <p className="text-[10px] font-mono text-on-surface-variant whitespace-pre-line mt-1">
-                  {pipelineMessage}
-                </p>
-              )}
-            </div>
+        {/* Per-stage pipeline tracker — visible only during a single-URL pipeline run */}
+        {isPipeline && pipelineStatus.mode === 'single' && (
+          <div className="bg-surface-container-low rounded-xl p-5">
+            <PipelineStageTracker status={pipelineStatus} />
           </div>
         )}
 

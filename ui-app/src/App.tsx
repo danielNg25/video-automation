@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { lazy, Suspense } from 'react';
+import { PipelineStatusProvider } from './lib/pipelineStatus';
 
 const DashboardPage = lazy(() => import('./pages/Dashboard'));
 const DownloadTranscribePage = lazy(() => import('./pages/DownloadTranscribe'));
@@ -21,19 +22,21 @@ function LoadingFallback() {
 function App() {
   return (
     <BrowserRouter>
-      <Suspense fallback={<LoadingFallback />}>
-        <Routes>
-          <Route element={<Layout />}>
-            <Route index element={<DashboardPage />} />
-            <Route path="/download" element={<DownloadTranscribePage />} />
-            <Route path="/videos" element={<VideoListPage />} />
-            <Route path="/videos/:videoId" element={<VideoDetailPage />} />
-            <Route path="/editor/:videoId" element={<SubtitleEditorPage />} />
-            <Route path="/profiles" element={<TranslationProfilesPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-          </Route>
-        </Routes>
-      </Suspense>
+      <PipelineStatusProvider>
+        <Suspense fallback={<LoadingFallback />}>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route index element={<DashboardPage />} />
+              <Route path="/download" element={<DownloadTranscribePage />} />
+              <Route path="/videos" element={<VideoListPage />} />
+              <Route path="/videos/:videoId" element={<VideoDetailPage />} />
+              <Route path="/editor/:videoId" element={<SubtitleEditorPage />} />
+              <Route path="/profiles" element={<TranslationProfilesPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+            </Route>
+          </Routes>
+        </Suspense>
+      </PipelineStatusProvider>
     </BrowserRouter>
   );
 }
