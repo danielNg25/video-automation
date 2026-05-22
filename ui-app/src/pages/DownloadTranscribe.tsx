@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
 import { TTSPreview } from '../components/TTSPreview';
-import { postDownload, getVideos, subscribeSSE, deleteVideo, getProfiles, postPipeline, getTTSProviders, getTTSProfiles, getTTSVoices } from '../api/client';
-import type { VideoMetadata, TranslationProfileSummary, TTSProviderInfo, VoiceProfileConfig, VoiceInfo } from '../api/types';
+import { postDownload, getVideos, subscribeSSE, deleteVideo, getProfiles, postPipeline, getTTSProviders, getTTSVoices } from '../api/client';
+import type { VideoMetadata, TranslationProfileSummary, TTSProviderInfo, VoiceInfo } from '../api/types';
 import { loadApiKeys, loadLLMPrefs, saveLLMPrefs, storageGet, storageSet } from '../utils/storage';
 
 const PIPELINE_TASK_KEY = 'pipeline_active_task';
@@ -18,8 +18,6 @@ function PipelinePage() {
 
   // Pipeline state
   const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState(0);
-  const [downloadMessage, setDownloadMessage] = useState('');
   const [isPipeline, setIsPipeline] = useState(false);
   const [pipelineStage, setPipelineStage] = useState('');
   const [pipelineProgress, setPipelineProgress] = useState(0);
@@ -36,8 +34,7 @@ function PipelinePage() {
   const [selectedTtsProvider, setSelectedTtsProvider] = useState(() =>
     storageGet('tts_selected_provider') || 'google'
   );
-  const [ttsProfiles, setTtsProfiles] = useState<Record<string, VoiceProfileConfig>>({});
-  const [selectedTtsProfile, setSelectedTtsProfile] = useState('female-vi-natural');
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [ttsVoices, setTtsVoices] = useState<VoiceInfo[]>([]);
   const [selectedVoiceId, setSelectedVoiceId] = useState(() => {
     const provider = storageGet('tts_selected_provider') || 'google';
@@ -200,7 +197,6 @@ function PipelinePage() {
     loadVideos();
     getProfiles().then(p => { setProfiles(p); if (p.length > 0) setSelectedProfile(p[0].name); }).catch(() => {});
     getTTSProviders().then(setTtsProviders).catch(() => {});
-    getTTSProfiles().then(setTtsProfiles).catch(() => {});
 
     // Reconnect to active pipeline task if one exists
     const saved = sessionStorage.getItem(PIPELINE_TASK_KEY);
@@ -235,13 +231,12 @@ function PipelinePage() {
 
   const handleDownload = async () => {
     if (!url) return;
-    setError(''); setIsDownloading(true); setDownloadProgress(0); setDownloadMessage('Starting download...');
+    setError(''); setIsDownloading(true);
     try {
       const { task_id } = await postDownload(url);
       const es = subscribeSSE(task_id, (eventType, data) => {
-        if (eventType === 'progress') { setDownloadProgress((data.progress as number) * 100); setDownloadMessage(data.message as string); }
-        else if (eventType === 'complete') {
-          setIsDownloading(false); setDownloadProgress(100); setDownloadMessage('Download complete');
+        if (eventType === 'complete') {
+          setIsDownloading(false);
           const videoId = (data as Record<string, unknown>).video_id as string;
           if (videoId) navigate(`/videos/${videoId}`);
           loadVideos(); es.close();
@@ -257,19 +252,21 @@ function PipelinePage() {
     // page reads from, so the pipeline produces output identical to the
     // editor's "Generate TTS" button.
     const apiKeys = loadApiKeys();
-    const ttsProfileCfg = ttsProfiles[selectedTtsProfile];
-    const ttsProviderName = ttsProfileCfg?.provider || selectedTtsProvider;
-    const ttsApiKey =
+    const ttsProviderName = selectedTtsProvider;
+    const ttsApiKeyVal =
       ttsProviderName === 'elevenlabs' ? apiKeys.elevenlabs :
       ttsProviderName === 'openai' ? apiKeys.openai :
       ttsProviderName === 'google' ? apiKeys.google : '';
     // All providers now forward a voice override — use the per-provider key,
     // falling back to the in-memory selection if localStorage is empty.
     const ttsVoiceId = storageGet(`tts_voice_id_${ttsProviderName}`) || selectedVoiceId || '';
+    // Derive voice profile from translation profile's target language.
+    const targetLang = profiles.find((p) => p.name === selectedProfile)?.target_language ?? 'vi';
+    const ttsVoiceProfile = targetLang === 'en' ? 'female-en-natural' : 'female-vi-natural';
     const ttsOverrides = {
       tts_provider: ttsProviderName || undefined,
       tts_voice: ttsVoiceId || undefined,
-      tts_api_key: ttsApiKey || undefined,
+      tts_api_key: ttsApiKeyVal || undefined,
       llm_api_key: llmApiKey || undefined,
       llm_backend: llmBackend || undefined,
       playback_speed: playbackSpeed,
@@ -291,7 +288,7 @@ function PipelinePage() {
             concurrency: batchConcurrency,
             translate_profile: selectedProfile || null,
             translation_override: selectedProfile ? { backend: llmBackend, model: llmModel, api_key: llmApiKey || undefined } : null,
-            tts_profile: selectedTtsProfile || null,
+            tts_profile: ttsVoiceProfile,
             blur_enabled: blurEnabled,
             ...ttsOverrides,
           }),
@@ -309,7 +306,7 @@ function PipelinePage() {
     setError(''); setIsPipeline(true); setPipelineStage('download'); setPipelineProgress(0); setPipelineMessage('Starting download...');
     try {
       const translationOverride = selectedProfile ? { backend: llmBackend, model: llmModel, api_key: llmApiKey || undefined } : undefined;
-      const { task_id } = await postPipeline(url, selectedProfile || undefined, 'zh', translationOverride, selectedTtsProfile || undefined, blurEnabled, ttsOverrides);
+      const { task_id } = await postPipeline(url, selectedProfile || undefined, 'zh', translationOverride, ttsVoiceProfile, blurEnabled, ttsOverrides);
       saveActiveTask(task_id, 'single');
       startPolling(task_id, 'single');
     } catch (e) { setIsPipeline(false); setError(e instanceof Error ? e.message : 'Pipeline failed'); }
@@ -322,57 +319,6 @@ function PipelinePage() {
 
   const formatDuration = (s: number) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${Math.floor(s % 60).toString().padStart(2, '0')}`;
 
-  // Stepper state
-  const [expandedStep, setExpandedStep] = useState<number | null>(null);
-  const toggleStep = (n: number) => setExpandedStep(prev => prev === n ? null : n);
-
-  // Step state derivation during pipeline execution
-  // All backend stages in order. Steps map to: download→download, transcribe→transcribe,
-  // translate→translate, tts→tts, process/upload are post-TTS (all steps done).
-  const allStages = ['download', 'transcribe', 'translate', 'tts', 'process', 'upload'];
-  const stepStages: Record<string, string[]> = {
-    download: ['download'],
-    transcribe: ['transcribe'],
-    translate: ['translate'],
-    tts: ['tts'],
-    process: ['process', 'upload'],
-  };
-
-  const getStepState = (key: string): 'config' | 'running' | 'done' | 'pending' => {
-    if (isDownloading && key === 'download') return 'running';
-    if (!isPipeline) return 'config';
-    if (pipelineProgress >= 100) return 'done';
-
-    const currentIdx = allStages.indexOf(pipelineStage);
-    if (currentIdx === -1) return 'pending';
-
-    // The last stage this step "owns"
-    const ownedStages = stepStages[key] || [key];
-    const lastOwnedIdx = Math.max(...ownedStages.map(s => allStages.indexOf(s)));
-    const firstOwnedIdx = Math.min(...ownedStages.map(s => allStages.indexOf(s)));
-
-    if (currentIdx > lastOwnedIdx) return 'done';
-    if (currentIdx >= firstOwnedIdx && currentIdx <= lastOwnedIdx) {
-      // For Process step: 'upload' means process is done
-      if (key === 'process' && pipelineStage === 'upload') return 'done';
-      return 'running';
-    }
-    return 'pending';
-  };
-
-  const steps = [
-    { num: 1, key: 'download', icon: 'download', title: 'Download', summary: 'Douyin API + yt-dlp fallback' },
-    { num: 2, key: 'transcribe', icon: 'document_scanner', title: 'Extract Subtitles', summary: 'PaddleOCR — auto-detect Chinese subtitles' },
-    { num: 3, key: 'translate', icon: 'translate', title: 'Translate', summary: selectedProfile
-        ? `Profile: ${selectedProfile} · ${llmBackend === 'deepseek' ? 'DeepSeek' : llmBackend === 'anthropic' ? 'Anthropic' : 'OpenAI'} / ${(MODEL_OPTIONS[llmBackend] || []).find(m => m.value === llmModel)?.label || llmModel}`
-        : 'Skipped — no translation profile selected' },
-    { num: 4, key: 'tts', icon: 'record_voice_over', title: 'TTS Dubbing', summary: (() => {
-        const prov = ttsProviders.find(p => p.id === selectedTtsProvider);
-        const prof = ttsProfiles[selectedTtsProfile];
-        return `${prov?.name || selectedTtsProvider} · ${selectedTtsProfile}${prof ? ` (${prof.language === 'vi' ? 'Vietnamese' : prof.language === 'en' ? 'English' : prof.language})` : ''}`;
-      })() },
-    { num: 5, key: 'process', icon: 'movie_edit', title: 'Process & Burn', summary: blurEnabled ? 'Blur original subs · burn translated subs · reformat per platform' : 'Burn translated subs · reformat per platform (blur off)' },
-  ];
 
   return (
     <div className="flex flex-col h-full bg-surface">
@@ -458,373 +404,334 @@ function PipelinePage() {
           </div>
         )}
 
-        {/* Pipeline Stepper */}
-        <div className="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/10">
-          <div className="p-5 border-b border-outline-variant/10 flex justify-between items-center">
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-primary text-lg">account_tree</span>
-              <span className="text-sm font-bold tracking-tight text-on-surface">Pipeline Steps</span>
+        {/* Running progress strip — visible only during a single-URL pipeline run */}
+        {isPipeline && !isBatchMode && (
+          <div className="bg-surface-container-low rounded-xl p-4 flex items-center gap-4">
+            <div className="flex-1 space-y-1.5">
+              <div className="flex justify-between text-[10px] font-mono">
+                <span className="text-primary uppercase tracking-widest font-bold">
+                  {pipelineStage || 'Starting'}
+                </span>
+                <span className="text-zinc-500">{Math.round(pipelineProgress)}%</span>
+              </div>
+              <div className="w-full h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all duration-300"
+                  style={{ width: `${pipelineProgress}%` }}
+                />
+              </div>
+              {pipelineMessage && (
+                <p className="text-[10px] font-mono text-on-surface-variant whitespace-pre-line mt-1">
+                  {pipelineMessage}
+                </p>
+              )}
             </div>
-            {isPipeline && (
-              <span className="text-lg font-black font-mono text-primary tracking-tighter">{pipelineProgress.toFixed(0)}%</span>
-            )}
           </div>
+        )}
 
-          <div className="p-5">
-            {steps.map((step, i) => {
-              const state = getStepState(step.key);
-              const isExpanded = expandedStep === step.num;
-              const isRunning = state === 'running';
-              const isDone = state === 'done';
-              const isSkipped = step.key === 'translate' && !selectedProfile;
-              const isLast = i === steps.length - 1;
+        {/* Configuration card — hidden during a pipeline run */}
+        {!isPipeline && (
+          <div className="bg-surface-container-low rounded-xl p-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary text-lg">tune</span>
+              <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">
+                Configuration
+              </span>
+            </div>
 
-              return (
-                <div key={step.key} className="relative">
-                  {/* Connector line */}
-                  {!isLast && (
-                    <div className={`absolute left-[19px] top-[40px] w-0.5 ${isDone ? 'bg-emerald-500/40' : isRunning ? 'bg-primary/40' : 'bg-zinc-700/30'}`}
-                      style={{ height: isExpanded ? 'calc(100% - 20px)' : '24px' }} />
-                  )}
+            {/* Top row: Translation Profile + LLM Backend */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold block mb-1.5">
+                  Translation Profile
+                </label>
+                <select
+                  value={selectedProfile}
+                  onChange={(e) => setSelectedProfile(e.target.value)}
+                  className="w-full bg-surface-container border-none text-xs text-on-surface h-10 px-3 rounded-lg focus:ring-1 focus:ring-primary"
+                >
+                  <option value="">Skip translation</option>
+                  {profiles.map((p) => (
+                    <option key={p.name} value={p.name}>
+                      {p.name} ({p.target_language})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold block mb-1.5">
+                  LLM Backend
+                </label>
+                <select
+                  value={llmBackend}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setLlmBackend(val);
+                    const m = MODEL_OPTIONS[val];
+                    if (m?.length) {
+                      setLlmModel(m[0].value);
+                      saveLLMPrefs(val, m[0].value);
+                    }
+                  }}
+                  className="w-full bg-surface-container border-none text-xs text-on-surface h-10 px-3 rounded-lg focus:ring-1 focus:ring-primary"
+                >
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="openai">OpenAI</option>
+                </select>
+              </div>
+            </div>
 
-                  {/* Step header */}
-                  <div
-                    className={`flex items-center gap-4 p-3 rounded-lg cursor-pointer transition-colors ${
-                      isRunning ? 'bg-primary/5' : isExpanded ? 'bg-surface-container-highest/30' : 'hover:bg-surface-container-highest/20'
-                    }`}
-                    onClick={() => !isPipeline && toggleStep(step.num)}
-                  >
-                    {/* Step circle */}
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
-                      isDone ? 'bg-emerald-500/20 text-emerald-400'
-                        : isRunning ? 'bg-primary/20 text-primary'
-                          : isSkipped ? 'bg-zinc-800 text-zinc-600'
-                            : 'bg-surface-container-highest text-on-surface-variant'
-                    }`}>
-                      {isDone ? (
-                        <span className="material-symbols-outlined text-lg">check</span>
-                      ) : isRunning ? (
-                        <div className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-                      ) : (
-                        <span className="text-sm font-bold">{step.num}</span>
-                      )}
-                    </div>
-
-                    {/* Step title + summary */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-sm font-semibold ${isDone ? 'text-emerald-400' : isRunning ? 'text-primary' : isSkipped ? 'text-zinc-600' : 'text-on-surface'}`}>
-                          {step.title}
-                        </span>
-                        {isSkipped && <span className="text-[9px] font-mono uppercase text-zinc-600 bg-zinc-800 px-1.5 py-0.5 rounded">skipped</span>}
-                      </div>
-                      {!isExpanded && !isRunning && (
-                        <p className="text-xs text-on-surface-variant mt-0.5 truncate">
-                          {step.summary}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Expand arrow (only when not running pipeline) */}
-                    {!isPipeline && !isSkipped && (
-                      <span className="material-symbols-outlined text-sm text-zinc-500">{isExpanded ? 'expand_less' : 'expand_more'}</span>
+            {/* Middle row: TTS Provider + Voice */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold block mb-1.5">
+                  TTS Provider
+                </label>
+                <select
+                  value={selectedTtsProvider}
+                  onChange={(e) => {
+                    setSelectedTtsProvider(e.target.value);
+                    storageSet('tts_selected_provider', e.target.value);
+                  }}
+                  className="w-full bg-surface-container border-none text-xs text-on-surface h-10 px-3 rounded-lg focus:ring-1 focus:ring-primary"
+                >
+                  {ttsProviders.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}{p.free ? ' (Free)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold block mb-1.5">
+                  Voice
+                </label>
+                {selectedTtsProvider === 'elevenlabs' ? (
+                  <div className="flex items-center h-10 px-3 bg-surface-container rounded-lg text-xs text-on-surface-variant">
+                    {selectedVoiceId ? (
+                      <span className="font-mono truncate">{selectedVoiceId}</span>
+                    ) : (
+                      <span className="text-zinc-500 italic">Configure in Advanced → Voice ID</span>
                     )}
                   </div>
+                ) : (
+                  <select
+                    value={selectedVoiceId}
+                    onChange={(e) => {
+                      setSelectedVoiceId(e.target.value);
+                      storageSet(`tts_voice_id_${selectedTtsProvider}`, e.target.value);
+                    }}
+                    className="w-full bg-surface-container border-none text-xs text-on-surface h-10 px-3 rounded-lg focus:ring-1 focus:ring-primary"
+                  >
+                    {ttsVoices.length === 0 && <option value="">No voices loaded (check API key)</option>}
+                    {ttsVoices.map((v) => (
+                      <option key={v.name} value={v.name}>
+                        {v.friendly_name || v.name} ({v.gender}) — {v.language}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
 
-                  {/* Running progress bar (inline) */}
-                  {isRunning && isPipeline && (
-                    <div className="pl-[56px] pr-3 pb-3 space-y-1.5">
-                      <div className="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
-                        <div className="bg-primary h-full transition-all duration-500 shadow-[0_0_8px_rgba(208,188,255,0.4)]"
-                          style={{ width: `${step.key === 'download' && isDownloading ? downloadProgress : pipelineProgress}%` }} />
-                      </div>
-                      <p className="text-[10px] font-mono text-on-surface-variant whitespace-pre-line">{pipelineMessage}</p>
-                    </div>
-                  )}
+            {/* Inline voice preview, when a voice is selected */}
+            {selectedVoiceId && (
+              <div className="flex items-center gap-3">
+                <TTSPreview
+                  voice={selectedVoiceId}
+                  provider={selectedTtsProvider}
+                  speed="+0%"
+                  pitch="+0Hz"
+                  apiKey={ttsApiKey || undefined}
+                  playbackSpeed={playbackSpeed}
+                  sampleText={
+                    profiles.find((p) => p.name === selectedProfile)?.target_language === 'en'
+                      ? 'Hello everyone, today we will talk about a very interesting topic.'
+                      : 'Xin chào các bạn, hôm nay chúng ta sẽ nói về một chủ đề rất thú vị.'
+                  }
+                />
+                <span className="font-mono text-[9px] text-on-surface-variant truncate">
+                  {selectedVoiceId}
+                </span>
+              </div>
+            )}
 
-                  {/* Expanded config panel */}
-                  {isExpanded && !isPipeline && (
-                    <div className="ml-[56px] mr-3 mb-4 mt-1 p-4 bg-surface-container-lowest rounded-lg border border-outline-variant/10 space-y-4">
-                      {step.key === 'download' && (
-                        <p className="text-xs text-on-surface-variant">
-                          No configuration needed. Videos are downloaded from Douyin via API with yt-dlp as fallback.
-                        </p>
-                      )}
+            {/* Advanced toggle */}
+            <button
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="flex items-center gap-2 text-xs text-on-surface-variant hover:text-on-surface transition-colors"
+            >
+              <span className="material-symbols-outlined text-sm">settings</span>
+              <span>Advanced settings</span>
+              <span className="material-symbols-outlined text-sm">
+                {showAdvanced ? 'expand_less' : 'expand_more'}
+              </span>
+            </button>
 
-                      {step.key === 'transcribe' && (
-                        <div className="space-y-2">
-                          <div>
-                            <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold block mb-1.5">Method</label>
-                            <div className="flex items-center h-10 px-4 bg-surface-container rounded-lg text-xs text-on-surface w-fit">
-                              <span className="material-symbols-outlined text-sm mr-2 text-primary">document_scanner</span>
-                              OCR via PaddleOCR — auto-detects Chinese subtitles
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {step.key === 'translate' && (
-                        <div className="space-y-3">
-                          <div>
-                            <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold block mb-1.5">Translation Profile</label>
-                            <select value={selectedProfile} onChange={(e) => setSelectedProfile(e.target.value)}
-                              className="w-full bg-surface-container border-none text-xs text-on-surface h-10 px-3 rounded-lg focus:ring-1 focus:ring-primary">
-                              <option value="">Skip translation</option>
-                              {profiles.map((p) => <option key={p.name} value={p.name}>{p.name} ({p.target_language})</option>)}
-                            </select>
-                          </div>
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold block mb-1.5">LLM Backend</label>
-                              <select value={llmBackend} onChange={(e) => {
-                                const val = e.target.value; setLlmBackend(val);
-                                const m = MODEL_OPTIONS[val]; if (m?.length) { setLlmModel(m[0].value); saveLLMPrefs(val, m[0].value); }
-                              }} className="w-full bg-surface-container border-none text-xs text-on-surface h-10 px-3 rounded-lg focus:ring-1 focus:ring-primary">
-                                <option value="deepseek">DeepSeek</option>
-                                <option value="anthropic">Anthropic</option>
-                                <option value="openai">OpenAI</option>
-                              </select>
-                            </div>
-                            <div>
-                              <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold block mb-1.5">Model</label>
-                              <select value={llmModel} onChange={(e) => { setLlmModel(e.target.value); saveLLMPrefs(llmBackend, e.target.value); }}
-                                className="w-full bg-surface-container border-none text-xs text-on-surface h-10 px-3 rounded-lg focus:ring-1 focus:ring-primary">
-                                {(MODEL_OPTIONS[llmBackend] || []).map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-                              </select>
-                            </div>
-                          </div>
-                          {selectedProfile && !llmApiKey && (
-                            <div className="flex items-center gap-2 text-amber-400 bg-amber-500/10 p-3 rounded-lg">
-                              <span className="material-symbols-outlined text-sm">warning</span>
-                              <span className="text-xs">No <strong>{llmBackend}</strong> API key configured</span>
-                              <button onClick={() => navigate('/settings#apikeys')} className="text-xs font-bold underline ml-auto">Settings</button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {step.key === 'tts' && (
-                        <div className="space-y-3">
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold block mb-1.5">Provider</label>
-                              <select value={selectedTtsProvider} onChange={(e) => { setSelectedTtsProvider(e.target.value); storageSet('tts_selected_provider', e.target.value); }}
-                                className="w-full bg-surface-container border-none text-xs text-on-surface h-10 px-3 rounded-lg focus:ring-1 focus:ring-primary">
-                                {ttsProviders.map((p) => <option key={p.id} value={p.id}>{p.name}{p.free ? ' (Free)' : ''}</option>)}
-                              </select>
-                            </div>
-                            <div>
-                              <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold block mb-1.5">Voice Profile</label>
-                              <select value={selectedTtsProfile} onChange={(e) => setSelectedTtsProfile(e.target.value)}
-                                className="w-full bg-surface-container border-none text-xs text-on-surface h-10 px-3 rounded-lg focus:ring-1 focus:ring-primary">
-                                {Object.entries(ttsProfiles).map(([name, p]) => (
-                                  <option key={name} value={name}>{name} ({p.language})</option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-
-                          {/* Missing API key warning for paid providers */}
-                          {ttsProviders.find(p => p.id === selectedTtsProvider)?.requires_key && !ttsApiKey && (
-                            <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs p-3 rounded-lg flex items-center gap-2">
-                              <span className="material-symbols-outlined text-sm">warning</span>
-                              <span>No API key configured for <strong>{selectedTtsProvider}</strong>.</span>
-                              <button
-                                onClick={() => navigate('/settings#apikeys')}
-                                className="ml-auto text-[10px] font-bold uppercase tracking-wider text-amber-300 hover:text-amber-200 flex items-center gap-1 whitespace-nowrap"
-                              >
-                                <span className="material-symbols-outlined text-xs">settings</span>
-                                Configure
-                              </button>
-                            </div>
-                          )}
-
-                          {/* ElevenLabs: Voice ID input */}
-                          {selectedTtsProvider === 'elevenlabs' && (
-                            <div className="space-y-2">
-                              <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block">Voice ID</label>
-                              <div className="flex gap-2">
-                                <input
-                                  type="text"
-                                  value={voiceIdInput}
-                                  onChange={(e) => { setVoiceIdInput(e.target.value); setVoiceIdSaved(false); }}
-                                  placeholder="Paste ElevenLabs voice ID"
-                                  className="flex-1 bg-surface-container border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary placeholder:text-zinc-600 font-mono"
-                                />
-                                <button
-                                  onClick={() => {
-                                    setSelectedVoiceId(voiceIdInput);
-                                    storageSet('tts_voice_id_elevenlabs', voiceIdInput);
-                                    setVoiceIdSaved(true);
-                                    setTimeout(() => setVoiceIdSaved(false), 2000);
-                                  }}
-                                  disabled={!voiceIdInput}
-                                  className="px-3 py-2 rounded text-[10px] font-bold uppercase bg-primary/20 text-primary hover:bg-primary/30 disabled:opacity-50 transition-colors"
-                                >
-                                  {voiceIdSaved ? 'Saved' : 'Save'}
-                                </button>
-                              </div>
-                            </div>
-                          )}
-
-                          {selectedTtsProvider === 'elevenlabs' && selectedVoiceId && (
-                            <div className="flex items-center gap-3">
-                              <TTSPreview
-                                voice={selectedVoiceId}
-                                provider={selectedTtsProvider}
-                                speed="+0%"
-                                pitch="+0Hz"
-                                apiKey={ttsApiKey || undefined}
-                                playbackSpeed={playbackSpeed}
-                                sampleText={
-                                  ttsProfiles[selectedTtsProfile]?.language === 'en'
-                                    ? 'Hello everyone, today we will talk about a very interesting topic.'
-                                    : 'Xin chào các bạn, hôm nay chúng ta sẽ nói về một chủ đề rất thú vị.'
-                                }
-                              />
-                              <span className="font-mono text-[9px] text-on-surface-variant truncate">
-                                {selectedVoiceId}
-                              </span>
-                            </div>
-                          )}
-
-                          {/* Google / OpenAI: voice dropdown */}
-                          {selectedTtsProvider !== 'elevenlabs' && (
-                            <div className="space-y-1">
-                              <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block">Voice</label>
-                              <select
-                                value={selectedVoiceId}
-                                onChange={(e) => {
-                                  setSelectedVoiceId(e.target.value);
-                                  storageSet(`tts_voice_id_${selectedTtsProvider}`, e.target.value);
-                                }}
-                                className="w-full bg-surface-container border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
-                              >
-                                {ttsVoices.length === 0 && <option value="">No voices loaded (check API key)</option>}
-                                {ttsVoices.map((v) => (
-                                  <option key={v.name} value={v.name}>
-                                    {v.friendly_name || v.name} ({v.gender}) — {v.language}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          )}
-
-                          {selectedTtsProvider !== 'elevenlabs' && selectedVoiceId && (
-                            <div className="flex items-center gap-3">
-                              <TTSPreview
-                                voice={selectedVoiceId}
-                                provider={selectedTtsProvider}
-                                speed="+0%"
-                                pitch="+0Hz"
-                                apiKey={ttsApiKey || undefined}
-                                playbackSpeed={playbackSpeed}
-                                sampleText={
-                                  ttsProfiles[selectedTtsProfile]?.language === 'en'
-                                    ? 'Hello everyone, today we will talk about a very interesting topic.'
-                                    : 'Xin chào các bạn, hôm nay chúng ta sẽ nói về một chủ đề rất thú vị.'
-                                }
-                              />
-                              <span className="font-mono text-[9px] text-on-surface-variant truncate">
-                                {selectedVoiceId}
-                              </span>
-                            </div>
-                          )}
-
-                          <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-container">
-                            <span className="material-symbols-outlined text-sm text-on-surface-variant">speed</span>
-                            <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold flex-1">Dub Playback Speed</label>
-                            <input
-                              type="number"
-                              min={1.0}
-                              max={2.0}
-                              step={0.1}
-                              value={playbackSpeed}
-                              onChange={(e) => {
-                                const v = parseFloat(e.target.value);
-                                if (Number.isFinite(v) && v >= 1.0 && v <= 2.0) {
-                                  setPlaybackSpeed(v);
-                                  storageSet('tts_playback_speed', String(v));
-                                }
-                              }}
-                              className="w-16 px-2 py-1 text-xs font-mono text-on-surface bg-surface-container-low border border-outline-variant/30 rounded focus:outline-none focus:border-primary"
-                            />
-                            <span className="text-[10px] text-on-surface-variant font-mono">×</span>
-                          </div>
-                          <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-container">
-                            <span className="material-symbols-outlined text-sm text-on-surface-variant">graphic_eq</span>
-                            <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold flex-1">Original Underlay</label>
-                            <select
-                              value={String(underlayDb)}
-                              onChange={(e) => {
-                                const v = parseFloat(e.target.value);
-                                setUnderlayDb(v);
-                                storageSet('tts_underlay_db', String(v));
-                              }}
-                              className="px-2 py-1 text-xs font-mono text-on-surface bg-surface-container-low border border-outline-variant/30 rounded focus:outline-none focus:border-primary"
-                            >
-                              <option value="0">Off</option>
-                              <option value="-24">-24</option>
-                              <option value="-18">-18</option>
-                              <option value="-12">-12</option>
-                              <option value="-6">-6</option>
-                            </select>
-                            <span className="text-[10px] text-on-surface-variant font-mono">dB</span>
-                          </div>
-                          <p className="text-[10px] text-on-surface-variant flex items-center gap-1.5">
-                            <span className="material-symbols-outlined text-xs text-primary">info</span>
-                            Every dub sentence plays at this speed. Pipeline and Video Studio share the same setting.
-                          </p>
-                        </div>
-                      )}
-
-                      {step.key === 'process' && (
-                        <div className="space-y-3">
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-2 p-3 bg-surface-container rounded-lg">
-                              <span className="material-symbols-outlined text-sm text-primary">blur_on</span>
-                              <div className="flex-1">
-                                <p className="text-xs text-on-surface font-medium">Original Subtitle Removal</p>
-                                <p className="text-[10px] text-on-surface-variant">Auto-detects OCR region and blurs original Chinese subtitles before burning translated subs</p>
-                              </div>
-                              <button
-                                onClick={() => setBlurEnabled(!blurEnabled)}
-                                className={`w-8 h-4 rounded-full relative cursor-pointer transition-colors ${blurEnabled ? 'bg-primary' : 'bg-surface-container-highest'}`}
-                              >
-                                <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${blurEnabled ? 'right-0.5' : 'left-0.5'}`} />
-                              </button>
-                            </div>
-                            <div className="flex items-center gap-2 p-3 bg-surface-container rounded-lg">
-                              <span className="material-symbols-outlined text-sm text-primary">subtitles</span>
-                              <div>
-                                <p className="text-xs text-on-surface font-medium">Subtitle Burn-in</p>
-                                <p className="text-[10px] text-on-surface-variant">Burns translated subtitles with auto-matched position and font size</p>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2 p-3 bg-surface-container rounded-lg">
-                              <span className="material-symbols-outlined text-sm text-primary">devices</span>
-                              <div>
-                                <p className="text-xs text-on-surface font-medium">Platform Reformat</p>
-                                <p className="text-[10px] text-on-surface-variant">Reformats video per platform specs (resolution, bitrate, duration limits)</p>
-                              </div>
-                            </div>
-                          </div>
-                          <p className="text-[10px] text-on-surface-variant flex items-center gap-1.5">
-                            <span className="material-symbols-outlined text-xs text-primary">info</span>
-                            Blur + burn + reformat run in a single ffmpeg pass to avoid double-encoding
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Spacer between steps */}
-                  {!isLast && !isExpanded && <div className="h-2" />}
+            {/* Advanced panel */}
+            {showAdvanced && (
+              <div className="bg-surface-container rounded-lg p-4 space-y-3">
+                {/* Playback Speed */}
+                <div className="flex items-center gap-3">
+                  <span className="material-symbols-outlined text-sm text-on-surface-variant">speed</span>
+                  <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold flex-1">
+                    Dub Playback Speed
+                  </label>
+                  <input
+                    type="number"
+                    min={1.0}
+                    max={2.0}
+                    step={0.1}
+                    value={playbackSpeed}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      if (Number.isFinite(v) && v >= 1.0 && v <= 2.0) {
+                        setPlaybackSpeed(v);
+                        storageSet('tts_playback_speed', String(v));
+                      }
+                    }}
+                    className="w-16 px-2 py-1 text-xs font-mono text-on-surface bg-surface-container-low border border-outline-variant/30 rounded focus:outline-none focus:border-primary"
+                  />
+                  <span className="text-[10px] text-on-surface-variant font-mono">×</span>
                 </div>
-              );
-            })}
+
+                {/* Original Underlay */}
+                <div className="flex items-center gap-3">
+                  <span className="material-symbols-outlined text-sm text-on-surface-variant">graphic_eq</span>
+                  <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold flex-1">
+                    Original Underlay
+                  </label>
+                  <select
+                    value={String(underlayDb)}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      setUnderlayDb(v);
+                      storageSet('tts_underlay_db', String(v));
+                    }}
+                    className="px-2 py-1 text-xs font-mono text-on-surface bg-surface-container-low border border-outline-variant/30 rounded focus:outline-none focus:border-primary"
+                  >
+                    <option value="0">Off</option>
+                    <option value="-24">-24</option>
+                    <option value="-18">-18</option>
+                    <option value="-12">-12</option>
+                    <option value="-6">-6</option>
+                  </select>
+                  <span className="text-[10px] text-on-surface-variant font-mono">dB</span>
+                </div>
+
+                {/* LLM Model */}
+                <div className="flex items-center gap-3">
+                  <span className="material-symbols-outlined text-sm text-on-surface-variant">model_training</span>
+                  <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold flex-1">
+                    LLM Model
+                  </label>
+                  <select
+                    value={llmModel}
+                    onChange={(e) => {
+                      setLlmModel(e.target.value);
+                      saveLLMPrefs(llmBackend, e.target.value);
+                    }}
+                    className="px-2 py-1 text-xs font-mono text-on-surface bg-surface-container-low border border-outline-variant/30 rounded focus:outline-none focus:border-primary"
+                  >
+                    {(MODEL_OPTIONS[llmBackend] || []).map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Blur toggle */}
+                <div className="flex items-center gap-3 pt-1">
+                  <span className="material-symbols-outlined text-sm text-primary">blur_on</span>
+                  <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold flex-1">
+                    Blur Original Subtitles
+                  </label>
+                  <button
+                    onClick={() => setBlurEnabled(!blurEnabled)}
+                    className={`w-8 h-4 rounded-full relative cursor-pointer transition-colors ${
+                      blurEnabled ? 'bg-primary' : 'bg-surface-container-highest'
+                    }`}
+                  >
+                    <div
+                      className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${
+                        blurEnabled ? 'right-0.5' : 'left-0.5'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {/* ElevenLabs Voice ID — only when EL provider is selected */}
+                {selectedTtsProvider === 'elevenlabs' && (
+                  <div className="space-y-2 pt-2 border-t border-outline-variant/10">
+                    <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold block">
+                      ElevenLabs Voice ID
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={voiceIdInput}
+                        onChange={(e) => {
+                          setVoiceIdInput(e.target.value);
+                          setVoiceIdSaved(false);
+                        }}
+                        placeholder="Paste ElevenLabs voice ID"
+                        className="flex-1 bg-surface-container-low border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary placeholder:text-zinc-600 font-mono"
+                      />
+                      <button
+                        onClick={() => {
+                          setSelectedVoiceId(voiceIdInput);
+                          storageSet('tts_voice_id_elevenlabs', voiceIdInput);
+                          setVoiceIdSaved(true);
+                          setTimeout(() => setVoiceIdSaved(false), 2000);
+                        }}
+                        disabled={!voiceIdInput}
+                        className="px-3 py-2 rounded text-[10px] font-bold uppercase bg-primary/20 text-primary hover:bg-primary/30 disabled:opacity-50 transition-colors"
+                      >
+                        {voiceIdSaved ? 'Saved' : 'Save'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Missing API key warning for TTS */}
+            {ttsProviders.find((p) => p.id === selectedTtsProvider)?.requires_key && !ttsApiKey && (
+              <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs p-3 rounded-lg flex items-center gap-2">
+                <span className="material-symbols-outlined text-sm">warning</span>
+                <span>
+                  No API key configured for <strong>{selectedTtsProvider}</strong>.
+                </span>
+                <button
+                  onClick={() => navigate('/settings#apikeys')}
+                  className="ml-auto text-[10px] font-bold uppercase tracking-wider text-amber-300 hover:text-amber-200 flex items-center gap-1 whitespace-nowrap"
+                >
+                  <span className="material-symbols-outlined text-xs">settings</span>
+                  Configure
+                </button>
+              </div>
+            )}
+
+            {/* LLM API key warning (when translation profile is selected) */}
+            {selectedProfile && !llmApiKey && (
+              <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs p-3 rounded-lg flex items-center gap-2">
+                <span className="material-symbols-outlined text-sm">warning</span>
+                <span>
+                  No <strong>{llmBackend}</strong> API key configured for translation.
+                </span>
+                <button
+                  onClick={() => navigate('/settings#apikeys')}
+                  className="ml-auto text-[10px] font-bold uppercase tracking-wider text-amber-300 hover:text-amber-200 flex items-center gap-1 whitespace-nowrap"
+                >
+                  <span className="material-symbols-outlined text-xs">settings</span>
+                  Configure
+                </button>
+              </div>
+            )}
           </div>
-        </div>
+        )}
 
         {/* Video Library */}
         <div className="space-y-4">
