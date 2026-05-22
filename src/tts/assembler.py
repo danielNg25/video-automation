@@ -427,6 +427,10 @@ class TTSAssembler:
         llm_caller: Callable | None = None,
         srt_path: Path | None = None,  # kept for back-compat; ignored
         playback_speed: float | None = None,
+        video_id: str | None = None,
+        language: str | None = None,
+        provider_name: str | None = None,
+        underlay_db: float | None = None,
     ) -> tuple[Path, list[dict]]:
         """Generate a full-length TTS audio track from subtitle segments.
 
@@ -568,6 +572,29 @@ class TTSAssembler:
                     window_end=sg.end,
                 ))
 
+            # === Stage 1.5: Persist natural-speed clips for dub-sync ===
+            # Copy each slot's natural-speed clip into the per-video cache so
+            # a future Sync-Dub run can reuse the unchanged segments without
+            # re-synthesising. Best-effort: cache write failures are logged
+            # and do not block the main dub.
+            if video_id and language:
+                from src.tts.segment_cache import save_segment_clip
+
+                tts_cache_dir = Path("data/tts")
+                for slot in slots:
+                    if slot.clip_path is None:
+                        continue
+                    try:
+                        save_segment_clip(
+                            tts_cache_dir,
+                            video_id,
+                            language,
+                            slot.index,
+                            slot.clip_path,
+                        )
+                    except OSError as e:
+                        logger.warning(f"Failed to cache segment {slot.index}: {e}")
+
             # === Stage 2: Build DubPlan (pure function, no I/O) ===
             from src.tts.planner import (
                 PLAYBACK_SPEED_DEFAULT,
@@ -693,17 +720,47 @@ class TTSAssembler:
             _concatenate_with_silence(fitted_clips, video_duration, output_path)
 
             # === Stage 6: Emit per-segment dubsync.srt ===
-            try:
-                from src.tts.dubsync_srt import write_dubsync_srt
+            # Derive the canonical (video_id, language) used by all downstream
+            # artefacts. Prefer the caller-supplied values; fall back to the
+            # historical derivation from output_path / voice_profile so
+            # back-compat is preserved when callers don't pass them.
+            if not language:
                 language = voice_profile.get("language") or "vi"
+            if not video_id:
                 stem = output_path.stem
                 video_id = stem.split("_")[0] if "_" in stem else stem
+            try:
+                from src.tts.dubsync_srt import write_dubsync_srt
                 dubsync_path = Path("data/srt") / f"{video_id}_{language}.dubsync.srt"
                 dubsync_path.parent.mkdir(parents=True, exist_ok=True)
                 write_dubsync_srt(segments, sentence_plan, dubsync_path)
                 logger.info(f"Wrote dubsync SRT: {dubsync_path}")
             except Exception as e:
                 logger.warning(f"Could not write dubsync SRT: {e}")
+
+            # === Stage 7: Persist dub metadata for future Sync-Dub ===
+            # Captures the parameters of this run + the per-segment texts so
+            # Sync-Dub can (a) detect which segments changed by diffing the
+            # new SRT against the recorded segment_texts, and (b) replay the
+            # same provider/voice/playback_speed for the cells it does need
+            # to re-synthesise.
+            try:
+                from src.tts.dub_meta import DubMeta, save_dub_meta
+
+                meta = DubMeta(
+                    video_id=video_id,
+                    language=language,
+                    provider=provider_name or "",
+                    voice_id=voice or "",
+                    playback_speed=effective_speed,
+                    underlay_db=underlay_db if underlay_db is not None else 0.0,
+                    segment_texts=[sg.text for sg in sentence_groups],
+                )
+                save_dub_meta(Path("data/tts"), meta)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to write dub_meta for {video_id}/{language}: {e}"
+                )
 
         overrun_count = sum(1 for s in sentence_plan if s.get("overrun_seconds", 0) > 0)
         logger.info(

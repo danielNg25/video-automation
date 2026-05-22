@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import subprocess
 import uuid
 from dataclasses import dataclass, field
@@ -227,6 +228,14 @@ class TaskManager:
                 tts.unlink()
             except OSError as e:
                 logger.warning(f"Failed to delete {tts}: {e}")
+
+        # TTS per-segment cache + dub_meta (data/tts/{video_id}/)
+        tts_cache_dir = tts_dir / video_id
+        if tts_cache_dir.exists():
+            try:
+                shutil.rmtree(tts_cache_dir)
+            except OSError as e:
+                logger.warning(f"Failed to delete TTS cache {tts_cache_dir}: {e}")
 
         # State + duplicate registry
         logs_dir = Path("data/logs")

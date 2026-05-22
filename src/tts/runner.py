@@ -210,6 +210,14 @@ async def run_tts_track(
     )
 
     # ── Assemble ────────────────────────────────────────────────────
+    # Pull the underlay_db default from config so dub_meta records the
+    # value the processor will actually use when mixing.
+    underlay_db_cfg = config.get("tts", {}).get("underlay_db")
+    try:
+        underlay_db_val = float(underlay_db_cfg) if underlay_db_cfg is not None else None
+    except (TypeError, ValueError):
+        underlay_db_val = None
+
     assembler = TTSAssembler(translator=translator)
     _, sentence_plan = await assembler.generate_full_track(
         provider=tts_provider,
@@ -222,6 +230,10 @@ async def run_tts_track(
         llm_caller=llm_caller,
         srt_path=srt_path,
         playback_speed=playback_speed,
+        video_id=video_id,
+        language=language,
+        provider_name=provider_name,
+        underlay_db=underlay_db_val,
     )
 
     # ── Output duration via ffprobe (informational) ────────────────
