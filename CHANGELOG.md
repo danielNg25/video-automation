@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Dub-sync + editor-as-default-view spec (`docs/superpowers/specs/2026-05-22-dub-sync-and-editor-default-design.md`). Two related shifts: (1) UX restructure — the per-video page (`/videos/:id`) defaults to an Editor tab instead of Overview, and the standalone `/editor/:id` route is removed (the editor moves into a tab inside VideoDetail); (2) new "Sync Dub" feature — server compares each saved SRT segment's text against the existing `dubsync.srt`, flags `dub_out_of_sync` when any differ, and exposes `POST /api/videos/{id}/dub/sync` for partial re-synthesis. Sync re-synthesises only the dirty segments at natural speed (reusing cached per-segment WAVs from a new `data/tts/{id}/segments/` cache populated on first dub generation), re-runs the existing planner with new texts, and re-assembles the WAV. Segment-count changes or > 50% dirty segments fall back to full dub regen. Provider/voice/speed changes also force full regen via metadata mismatch check. Banner UI in the Editor tab; explicit button trigger (not auto-sync).
+
 ### Fixed
 - VideoDetail TTS state: `selectedTtsProvider` now reads from `tts_selected_provider` localStorage on mount (defaulting to `'google'` to match DownloadTranscribe) instead of being hard-coded to `'elevenlabs'`. The `selectedVoiceId` and `voiceIdInput` initializers updated to use the same `'google'` fallback. `ttsLanguage` now reads from `tts_language` localStorage on mount (defaulting to `'vi'`) so DubTab's "Save as default" round-trips correctly.
 - Settings → Translation: Base URL input removed. The field was populated on mount via `getDefaultBaseUrl()` but `handleSave` never persisted it — user edits were silently discarded. The per-job base URL already lives in the VideoDetail / TranslateTab form (initialized inline from the selected backend); there is no localStorage key to write to from Settings.
