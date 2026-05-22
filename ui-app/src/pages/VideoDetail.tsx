@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
 import { TTSPreview } from '../components/TTSPreview';
 import { SubtitleEditorPanel } from '../components/SubtitleEditorPanel';
+import { OverviewTab } from './videoDetail/OverviewTab';
 import {
   getVideo, getSrt, postTranscribe, postTranslate, postTTS,
   subscribeSSE, getProfiles, getTTSProfiles, getTTSProviders, getTTSVoices,
-  getTTSAudioUrl, getTTSList, deleteTTSAudio, getRawVideoUrl,
+  getTTSAudioUrl, getTTSList, deleteTTSAudio,
   patchVideoTitle, postTTSPreview,
 } from '../api/client';
 import type { TTSAudioEntry } from '../api/client';
@@ -43,6 +44,9 @@ function migrateLegacyVoiceId(currentProvider: string): void {
 function VideoDetailPage() {
   const { videoId } = useParams<{ videoId: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = (searchParams.get('tab') as 'overview' | 'translate' | 'dub' | 'export') || 'overview';
+  const setActiveTab = (tab: string) => setSearchParams((p) => { p.set('tab', tab); return p; }, { replace: true });
 
   // Video state
   const [videoMeta, setVideoMeta] = useState<VideoMetadata | null>(null);
@@ -418,11 +422,25 @@ function VideoDetailPage() {
 
   return (
     <div className="flex flex-col h-full bg-surface">
-      <TopBar breadcrumb="Video Detail" />
+      <TopBar breadcrumb={videoMeta?.title || 'Video Detail'} />
+
+      <div className="px-6 pt-4">
+        <div className="flex gap-1 bg-surface-container-lowest p-1 rounded-md w-fit">
+          {(['overview', 'translate', 'dub', 'export'] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setActiveTab(t)}
+              className={`px-4 py-1.5 text-xs font-bold uppercase tracking-tighter rounded-sm ${
+                activeTab === t ? 'bg-surface-container-high text-primary' : 'text-on-surface-variant hover:text-on-surface'
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <section className="flex-1 overflow-y-auto p-6 space-y-6">
-        {/* Back button + title */}
-
         {/* Error Banner */}
         {error && (
           <div className="bg-error/10 border border-error/30 text-error text-xs p-3 rounded-lg flex items-center gap-2">
@@ -434,7 +452,24 @@ function VideoDetailPage() {
           </div>
         )}
 
+        {activeTab === 'overview' && videoMeta && (
+          <OverviewTab
+            video={videoMeta}
+            editingTitle={editingTitle}
+            titleDraft={titleDraft}
+            isTranscribing={isTranscribing}
+            transcribeMessage={transcribeMessage}
+            onStartTitleEdit={() => { setTitleDraft(videoMeta.title || ''); setEditingTitle(true); }}
+            onChangeTitleDraft={setTitleDraft}
+            onSaveTitle={handleSaveTitle}
+            onCancelTitleEdit={() => setEditingTitle(false)}
+            onTranscribe={handleTranscribe}
+          />
+        )}
+
+        {activeTab !== 'overview' && (
         <div className="space-y-6">
+          {/* === LEGACY BODY (Tasks 6, 7, 8 will replace these slices) === */}
           {/* Video Editor — main view */}
           {videoMeta && videoMeta.has_srt && (
             <div className="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/10">
@@ -447,21 +482,6 @@ function VideoDetailPage() {
                   <span className="text-[10px] font-mono text-zinc-500">
                     {videoMeta.resolution} · {videoMeta.size} · {videoMeta.codec}
                   </span>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                    videoMeta.status === 'exported' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                    : videoMeta.status === 'translated' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
-                    : 'bg-primary/10 text-primary border border-primary/20'
-                  }`}>
-                    {videoMeta.status === 'exported' ? 'EXPORTED' : videoMeta.status === 'translated' ? 'TRANSLATED' : 'TRANSCRIBED'}
-                  </span>
-                  <a
-                    href={getRawVideoUrl(videoMeta.video_id)}
-                    download
-                    className="p-1.5 hover:bg-surface-container-highest rounded transition-colors text-zinc-400"
-                    title="Download MP4"
-                  >
-                    <span className="material-symbols-outlined text-sm">save_alt</span>
-                  </a>
                 </div>
               </div>
               <div className="p-5">
@@ -473,53 +493,6 @@ function VideoDetailPage() {
                   onReload={handleEditorReload}
                 />
               </div>
-            </div>
-          )}
-
-          {/* Not transcribed yet — show extract button */}
-          {videoMeta && !videoMeta.has_srt && !isTranscribing && (
-            <div className="bg-surface-container-low rounded-xl p-8 border border-outline-variant/10 flex flex-col items-center gap-4 text-center">
-              <span className="material-symbols-outlined text-4xl text-zinc-600">subtitles_off</span>
-              <p className="text-sm text-zinc-400">No subtitles extracted yet</p>
-              <button
-                onClick={handleTranscribe}
-                className="bg-primary text-on-primary-fixed px-6 py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 active:scale-95 transition-all"
-              >
-                <span>Extract Subtitles</span>
-                <span className="material-symbols-outlined text-sm">document_scanner</span>
-              </button>
-            </div>
-          )}
-
-          {/* Transcription Progress */}
-          {isTranscribing && (
-            <div className="bg-surface-container-low rounded-xl p-5 border border-outline-variant/10">
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-full border-2 border-primary border-t-transparent animate-spin"></div>
-                <div className="flex-1">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-xs font-bold uppercase tracking-widest text-primary">Extracting Subtitles (OCR)...</span>
-                    <span className="text-[10px] font-mono text-zinc-500">PADDLEOCR</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] text-on-surface-variant font-mono">Current Stage:</span>
-                    <span className="text-[11px] font-medium text-emerald-400">{transcribeMessage}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Re-Extract button (below editor when already transcribed) */}
-          {videoMeta && videoMeta.has_srt && !isTranscribing && (
-            <div className="flex items-center gap-3">
-              <button
-                onClick={handleTranscribe}
-                className="bg-surface-container-highest text-on-surface px-4 py-2 rounded-md font-bold text-xs uppercase tracking-wider flex items-center gap-2 whitespace-nowrap active:scale-95 transition-all hover:bg-surface-container-high"
-              >
-                <span className="material-symbols-outlined text-sm">document_scanner</span>
-                <span>Re-Extract Subtitles (OCR)</span>
-              </button>
             </div>
           )}
 
@@ -987,6 +960,7 @@ function VideoDetailPage() {
             )}
 
         </div>
+        )}
       </section>
     </div>
   );

@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- VideoDetail tab shell + Overview tab (`ui-app/src/pages/videoDetail/OverviewTab.tsx`). Tab state lives in the `?tab=` query param (`overview` | `translate` | `dub` | `export`). Overview tab shows the video info card, status badge, Open Editor / Re-extract / Download MP4 actions, and the transcription progress card. Translate/Dub/Export tabs still render the legacy inline panels until Tasks 6–8 extract them.
 - `<PipelineRunsTable />` mounted at the bottom of the Pipeline page (`ui-app/src/pages/DownloadTranscribe.tsx`). The same expandable-rows table that Dashboard shows today now lives below the pipeline form on `/download`, paving the way for Dashboard's removal.
 - `ui-app/src/lib/usePipelineRuns.ts`: hook that polls `GET /api/pipeline/runs` every 30s with a fallback to `/api/pipeline/history` for legacy per-video data. Exports `PipelineRun` interface plus `relativeTime` and `stageFromStatus` helpers. Standalone file — not yet wired into any page.
 - `ui-app/src/components/PipelineRunsTable.tsx`: presentational component consuming `usePipelineRuns()`. Renders expandable rows (10 most recent) with All/Running/Completed/Failed filter tabs, View (single-video) and Retry (failed-run) actions matching today's Dashboard behavior. Standalone — mounted in Task 2.
