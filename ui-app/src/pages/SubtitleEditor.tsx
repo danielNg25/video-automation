@@ -44,6 +44,7 @@ function SubtitleEditorPage() {
   const [activeLang, setActiveLang] = useState(lang);
 
   // UI state
+  const [isDubsync, setIsDubsync] = useState(false);
   const [rightTab, setRightTab] = useState<RightTab>('segments');
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
@@ -122,10 +123,12 @@ function SubtitleEditorPage() {
       .then((res) => {
         setSegments(res.segments);
         setOriginalSegments(res.segments);
+        setIsDubsync(Boolean(res.is_dubsync));
       })
       .catch(() => {
         setSegments([]);
         setOriginalSegments([]);
+        setIsDubsync(false);
       });
   }, [videoId, activeLang]);
 
@@ -298,6 +301,7 @@ function SubtitleEditorPage() {
       ]);
       setSegments(res.segments);
       setOriginalSegments(res.segments);
+      setIsDubsync(Boolean(res.is_dubsync));
       setOriginalStyle({ ...style });
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 3000);
@@ -513,6 +517,24 @@ function SubtitleEditorPage() {
                 {segments.length} segments
               </span>
             </div>
+
+            {/* Dubsync warning banner */}
+            {isDubsync && (
+              <div className="bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs p-3 mx-4 mt-3 rounded-lg flex items-start gap-2">
+                <span className="material-symbols-outlined text-sm mt-0.5">warning</span>
+                <div className="flex-1">
+                  <p className="font-semibold">You're editing the dub-synced subtitle.</p>
+                  <p className="mt-1 text-amber-300/80">
+                    Re-running TTS will regenerate{' '}
+                    <code className="text-[10px] bg-amber-900/30 px-1 rounded">{'{video_id}_{lang}.dubsync.srt'}</code>{' '}
+                    and lose your manual edits.
+                    For changes that survive re-runs, edit the original translated subtitle (
+                    <code className="text-[10px] bg-amber-900/30 px-1 rounded">{'data/srt/{id}_{lang}.srt'}</code>
+                    ) instead.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Tab content */}
             <div className="flex-1 overflow-hidden p-4 flex flex-col">

@@ -38,6 +38,7 @@ export interface SrtResponse {
   video_id: string;
   segments: SubtitleSegment[];
   language: string;
+  is_dubsync?: boolean;
 }
 
 export interface DashboardStats {
