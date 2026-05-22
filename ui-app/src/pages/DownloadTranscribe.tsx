@@ -7,6 +7,7 @@ import type { VideoMetadata, TranslationProfileSummary, TTSProviderInfo, VoiceIn
 import { loadApiKeys, loadLLMPrefs, saveLLMPrefs, storageGet, storageSet } from '../utils/storage';
 import { usePipelineStatus } from '../lib/pipelineStatus';
 import { PipelineStageTracker } from '../components/PipelineStageTracker';
+import { PipelineRunsTable } from '../components/PipelineRunsTable';
 
 function PipelinePage() {
   const navigate = useNavigate();
@@ -769,6 +770,10 @@ function PipelinePage() {
               );
             })}
           </div>
+        </div>
+
+        <div className="mt-6">
+          <PipelineRunsTable />
         </div>
       </section>
     </div>
