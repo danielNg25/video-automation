@@ -20,6 +20,19 @@ from src.utils.state import (
 
 logger = setup_logger(__name__)
 
+# Per-stage progress ranges in the overall 0..1 pipeline.progress space.
+# These are the canonical values that emit() callsites use as boundaries.
+# Consumers that need to recover per-stage 0..1 progress from overall
+# progress can use these:
+#   stage_progress = (overall - lo) / (hi - lo)
+STAGE_RANGES: dict[str, tuple[float, float]] = {
+    "download":   (0.00, 0.20),
+    "transcribe": (0.20, 0.45),
+    "translate":  (0.45, 0.60),
+    "tts":        (0.60, 0.70),
+    "process":    (0.70, 1.00),
+}
+
 
 class Pipeline:
     """Full pipeline orchestrator with per-stage state tracking and crash recovery."""

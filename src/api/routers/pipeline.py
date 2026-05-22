@@ -17,9 +17,29 @@ from src.api.models import (
     PipelineRequest,
     TaskResponse,
 )
+from src.pipeline import STAGE_RANGES
 from src.utils.state import PipelineState, get_all_states, create_pipeline_run, update_pipeline_run, get_pipeline_runs
 
 router = APIRouter()
+
+
+def _stage_progress(current_stage: str, overall_progress: float) -> float:
+    """Recover per-stage 0..1 progress from overall pipeline progress.
+
+    Uses `STAGE_RANGES` (defined in src/pipeline.py) to invert emit()'s
+    forward mapping (overall = lo + stage_progress * (hi - lo)).
+
+    Returns 0.0 if the stage name isn't in STAGE_RANGES (e.g. 'skip',
+    empty string, or any new stage that hasn't been registered yet).
+    Clamps the result to [0.0, 1.0] in case of mild over/undershoot.
+    """
+    if current_stage not in STAGE_RANGES:
+        return 0.0
+    lo, hi = STAGE_RANGES[current_stage]
+    if hi == lo:
+        return 0.0
+    raw = (overall_progress - lo) / (hi - lo)
+    return max(0.0, min(1.0, raw))
 
 
 # --- Existing: download → transcribe → translate pipeline ---
@@ -517,6 +537,12 @@ async def get_pipeline_status(task_id: str):
         result["message"] = state.message or result["message"]
         result["completed_stages"] = state.completed_stages
 
+    # Derived per-stage progress (0..1 within the current stage's range).
+    result["stage_progress"] = _stage_progress(
+        result.get("current_stage", "") or "",
+        float(result.get("progress") or 0.0),
+    )
+
     # For batch tasks, aggregate child task states
     if task.task_type == "batch_pipeline" and task.result:
         child_task_ids = task.result.get("task_ids", [])
@@ -526,24 +552,36 @@ async def get_pipeline_status(task_id: str):
             if child and child.video_id:
                 from src.utils.state import PipelineState
                 cs = PipelineState.load(child.video_id)
+                child_stage = cs.current_stage or getattr(child, "current_stage", "")
+                child_progress = cs.progress or child.progress
                 children.append({
                     "task_id": cid,
                     "video_id": child.video_id,
                     "status": cs.status,
-                    "current_stage": cs.current_stage or getattr(child, "current_stage", ""),
-                    "progress": cs.progress or child.progress,
+                    "current_stage": child_stage,
+                    "progress": child_progress,
                     "message": cs.message or child.message,
                     "error": cs.error,
+                    "stage_progress": _stage_progress(
+                        child_stage or "",
+                        float(child_progress or 0.0),
+                    ),
                 })
             elif child:
+                child_stage = getattr(child, "current_stage", "")
+                child_progress = child.progress
                 children.append({
                     "task_id": cid,
                     "video_id": child.video_id,
                     "status": child.status,
-                    "current_stage": getattr(child, "current_stage", ""),
-                    "progress": child.progress,
+                    "current_stage": child_stage,
+                    "progress": child_progress,
                     "message": child.message,
                     "error": child.error,
+                    "stage_progress": _stage_progress(
+                        child_stage or "",
+                        float(child_progress or 0.0),
+                    ),
                 })
         result["children"] = children
 
