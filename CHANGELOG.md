@@ -48,6 +48,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Subtitle Editor warning banner: when the editor is displaying the dub-synced SRT (the new default served by GET `/api/videos/{id}/srt`), an amber banner at the top of the editor warns that re-running TTS will overwrite manual edits. Driven by the new `is_dubsync` field on `SrtResponse`.
 
 ### Changed
+- Settings page (`/settings`) re-structured as a two-level sidebar: SOURCES (Douyin API / API Keys), PROCESSING (Subtitles / Translation / Dubbing / Export & Video), SYSTEM (Pipeline). Right pane shows only the active category — no more infinite scroll. URL deep-link `?category=` replaces the previous `#hash` pattern. Translation category is currently a placeholder; LLM defaults migrate in Task 11. The legacy "Platforms" inline section (YouTube / TikTok / Facebook / X privacy / upload-mode cards driven by `defaultChecked` + `defaultValue` placeholders, with no server wiring) was deleted entirely — auto-posting is out of scope and the per-platform video specs that the pipeline actually uses live in `config/platforms.yaml`, not the UI. Existing category sections still inline in `Settings.tsx`; Task 10 extracts each into its own file.
 - VideoDetail tab type tightening + Re-extract subtitles button now disabled while transcription is in progress.
 
 ### Fixed

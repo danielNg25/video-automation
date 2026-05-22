@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
 import {
   getCookieStatus,
@@ -10,8 +11,19 @@ import {
 import type { CookieStatus, CookieTestResult } from '../api/client';
 import { loadApiKeys, saveApiKey, storageGet, storageSet } from '../utils/storage';
 
+type CategoryId = 'douyin' | 'apikeys' | 'ocr' | 'translation' | 'tts' | 'video' | 'pipeline';
+
 function SettingsPage() {
-  const [activeSection, setActiveSection] = useState('douyin');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeCategory = (searchParams.get('category') as CategoryId) || 'douyin';
+  const setActiveCategory = (id: CategoryId) =>
+    setSearchParams(
+      (p) => {
+        p.set('category', id);
+        return p;
+      },
+      { replace: true },
+    );
   const [skipExisting, setSkipExisting] = useState(true);
 
   // Cookie management state
@@ -96,29 +108,31 @@ function SettingsPage() {
       if (p.retry_delay) setPipelineRetryDelay(Number(p.retry_delay));
       if (p.skip_existing !== undefined) setSkipExisting(Boolean(p.skip_existing));
     }).catch(() => {});
-    // Scroll to section if navigated with hash (e.g., /settings#apikeys)
-    const hash = window.location.hash.replace('#', '');
-    if (hash) {
-      setTimeout(() => {
-        setActiveSection(hash);
-        document.getElementById(hash)?.scrollIntoView({ behavior: 'smooth' });
-      }, 100);
-    }
   }, []);
 
-  const scrollToSection = (id: string) => {
-    setActiveSection(id);
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  const sidebarItems = [
-    { id: 'douyin', icon: 'api', label: 'Douyin API' },
-    { id: 'apikeys', icon: 'key', label: 'API Keys' },
-    { id: 'ocr', icon: 'document_scanner', label: 'OCR Subtitles' },
-    { id: 'video', icon: 'movie_filter', label: 'Video Processing' },
-    { id: 'tts', icon: 'record_voice_over', label: 'TTS Dubbing' },
-    { id: 'platforms', icon: 'hub', label: 'Platforms' },
-    { id: 'pipeline', icon: 'account_tree', label: 'Pipeline' },
+  const categoryGroups: { group: string; items: { id: CategoryId; icon: string; label: string }[] }[] = [
+    {
+      group: 'SOURCES',
+      items: [
+        { id: 'douyin', icon: 'api', label: 'Douyin API' },
+        { id: 'apikeys', icon: 'key', label: 'API Keys' },
+      ],
+    },
+    {
+      group: 'PROCESSING',
+      items: [
+        { id: 'ocr', icon: 'document_scanner', label: 'Subtitles (OCR)' },
+        { id: 'translation', icon: 'translate', label: 'Translation' },
+        { id: 'tts', icon: 'record_voice_over', label: 'Dubbing (TTS)' },
+        { id: 'video', icon: 'movie_filter', label: 'Export & Video' },
+      ],
+    },
+    {
+      group: 'SYSTEM',
+      items: [
+        { id: 'pipeline', icon: 'account_tree', label: 'Pipeline' },
+      ],
+    },
   ];
 
   return (
@@ -128,31 +142,32 @@ function SettingsPage() {
       {/* Settings Workspace */}
       <div className="flex flex-1 overflow-hidden">
         {/* Settings Sidebar (Sub-nav) */}
-        <nav className="w-56 bg-surface-container-lowest flex flex-col p-2 gap-1 border-r border-zinc-800/10">
-          {sidebarItems.map((item) => (
-            <a
-              key={item.id}
-              href={`#${item.id}`}
-              onClick={(e) => {
-                e.preventDefault();
-                scrollToSection(item.id);
-              }}
-              className={`flex items-center gap-3 px-4 py-2.5 rounded text-sm font-medium transition-colors ${
-                activeSection === item.id
-                  ? 'bg-surface-container-high text-primary'
-                  : 'text-zinc-400 hover:bg-surface-container-low'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[18px]">{item.icon}</span>
-              {item.label}
-            </a>
+        <nav className="w-56 bg-surface-container-lowest flex flex-col p-2 gap-2 border-r border-zinc-800/10 overflow-y-auto">
+          {categoryGroups.map((g) => (
+            <div key={g.group} className="space-y-0.5">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 px-3 pt-2 pb-1">{g.group}</div>
+              {g.items.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveCategory(item.id)}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded text-sm font-medium transition-colors text-left ${
+                    activeCategory === item.id
+                      ? 'bg-surface-container-high text-primary'
+                      : 'text-zinc-400 hover:bg-surface-container-low'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">{item.icon}</span>
+                  {item.label}
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
 
         {/* Settings Content */}
         <div className="flex-1 overflow-y-auto p-8">
-          <div className="max-w-4xl mx-auto space-y-12 pb-24">
-            {/* Douyin API */}
+          <div className="max-w-3xl mx-auto pb-12">
+            {activeCategory === 'douyin' && (
             <section className="space-y-6" id="douyin">
               <div className="border-b border-zinc-800/30 pb-4">
                 <h2 className="text-xl font-semibold text-on-surface">Douyin API</h2>
@@ -258,8 +273,9 @@ function SettingsPage() {
                 )}
               </div>
             </section>
+            )}
 
-            {/* API Keys */}
+            {activeCategory === 'apikeys' && (
             <section className="space-y-6" id="apikeys">
               <div className="border-b border-zinc-800/30 pb-4">
                 <h2 className="text-xl font-semibold text-on-surface">API Keys</h2>
@@ -329,8 +345,9 @@ function SettingsPage() {
                 )}
               </div>
             </section>
+            )}
 
-            {/* OCR Subtitle Extraction */}
+            {activeCategory === 'ocr' && (
             <section className="space-y-6" id="ocr">
               <div className="border-b border-zinc-800/30 pb-4">
                 <h2 className="text-xl font-semibold text-on-surface">OCR Subtitle Extraction</h2>
@@ -431,8 +448,16 @@ function SettingsPage() {
                 </div>
               </div>
             </section>
+            )}
 
-            {/* Video Processing */}
+            {activeCategory === 'translation' && (
+              <div className="bg-surface-container-low rounded-xl p-6 text-center text-on-surface-variant">
+                <p className="text-sm">Translation defaults — coming in Task 11.</p>
+                <p className="text-xs mt-2">Manage translation style profiles on the <a href="/profiles" className="text-primary underline">Translation Profiles</a> page.</p>
+              </div>
+            )}
+
+            {activeCategory === 'video' && (
             <section className="space-y-6" id="video">
               <div className="border-b border-zinc-800/30 pb-4">
                 <h2 className="text-xl font-semibold text-on-surface">Video Processing</h2>
@@ -477,8 +502,9 @@ function SettingsPage() {
                 </div>
               </div>
             </section>
+            )}
 
-            {/* TTS Dubbing */}
+            {activeCategory === 'tts' && (
             <section className="space-y-6" id="tts">
               <div className="border-b border-zinc-800/30 pb-4">
                 <div className="flex items-center gap-2">
@@ -533,95 +559,9 @@ function SettingsPage() {
                 </div>
               </div>
             </section>
+            )}
 
-            {/* Platforms */}
-            <section className="space-y-6" id="platforms">
-              <div className="border-b border-zinc-800/30 pb-4">
-                <h2 className="text-xl font-semibold text-on-surface">Platforms</h2>
-                <p className="text-xs text-on-surface-variant font-mono mt-1 opacity-70">Destination specific publishing settings.</p>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* YouTube */}
-                <div className="bg-surface-container-low p-5 rounded border border-zinc-800/10">
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded bg-red-900/20 flex items-center justify-center">
-                        <span className="material-symbols-outlined text-red-500 text-sm">play_circle</span>
-                      </div>
-                      <span className="text-sm font-bold uppercase tracking-tight">YouTube</span>
-                    </div>
-                    <input defaultChecked className="w-4 h-4 text-primary bg-zinc-800 border-zinc-700 rounded focus:ring-0" type="checkbox" />
-                  </div>
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 block">Default Privacy</label>
-                    <select className="w-full bg-surface-container-lowest border border-outline-variant/20 text-xs py-2 px-3 rounded" defaultValue="Private">
-                      <option>Public</option>
-                      <option value="Private">Private</option>
-                      <option>Unlisted</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* TikTok */}
-                <div className="bg-surface-container-low p-5 rounded border border-zinc-800/10">
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded bg-cyan-900/20 flex items-center justify-center">
-                        <span className="material-symbols-outlined text-cyan-400 text-sm">music_note</span>
-                      </div>
-                      <span className="text-sm font-bold uppercase tracking-tight">TikTok</span>
-                    </div>
-                    <input defaultChecked className="w-4 h-4 text-primary bg-zinc-800 border-zinc-700 rounded focus:ring-0" type="checkbox" />
-                  </div>
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 block">Upload Mode</label>
-                    <select className="w-full bg-surface-container-lowest border border-outline-variant/20 text-xs py-2 px-3 rounded" defaultValue="API Direct">
-                      <option value="API Direct">API Direct</option>
-                      <option>Cookie Browser</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Facebook */}
-                <div className="bg-surface-container-low p-5 rounded border border-zinc-800/10">
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded bg-blue-900/20 flex items-center justify-center">
-                        <span className="material-symbols-outlined text-blue-500 text-sm">groups</span>
-                      </div>
-                      <span className="text-sm font-bold uppercase tracking-tight">Facebook</span>
-                    </div>
-                    <input className="w-4 h-4 text-primary bg-zinc-800 border-zinc-700 rounded focus:ring-0" type="checkbox" />
-                  </div>
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 block">Target Type</label>
-                    <select className="w-full bg-surface-container-lowest border border-outline-variant/20 text-xs py-2 px-3 rounded" defaultValue="Page Reels">
-                      <option value="Page Reels">Page Reels</option>
-                      <option>Personal Feed</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* X (Twitter) */}
-                <div className="bg-surface-container-low p-5 rounded border border-zinc-800/10">
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded bg-zinc-900 flex items-center justify-center">
-                        <span className="material-symbols-outlined text-zinc-100 text-sm">close</span>
-                      </div>
-                      <span className="text-sm font-bold uppercase tracking-tight">X (Twitter)</span>
-                    </div>
-                    <input className="w-4 h-4 text-primary bg-zinc-800 border-zinc-700 rounded focus:ring-0" type="checkbox" />
-                  </div>
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 block">Automation Note</label>
-                    <p className="text-[11px] text-zinc-500 italic">API integration requires Premium tier client ID.</p>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            {/* Pipeline */}
+            {activeCategory === 'pipeline' && (
             <section className="space-y-6" id="pipeline">
               <div className="border-b border-zinc-800/30 pb-4">
                 <h2 className="text-xl font-semibold text-on-surface">Pipeline</h2>
@@ -668,6 +608,7 @@ function SettingsPage() {
                 </div>
               </div>
             </section>
+            )}
           </div>
         </div>
       </div>
