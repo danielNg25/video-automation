@@ -82,3 +82,55 @@ class TestDownloadSrtDubsyncPreference:
         resp = client.get("/api/videos/vid001/srt/download?language=vi")
         assert resp.status_code == 200
         assert "legacy only" in resp.text
+
+
+class TestPutSrtDubsyncPreference:
+    def test_put_writes_to_dubsync_when_present(self, tmp_path, monkeypatch):
+        _write_srt(tmp_path / "data" / "srt" / "vid001_vi.srt", "legacy text")
+        _write_srt(tmp_path / "data" / "srt" / "vid001_vi.dubsync.srt", "dubsync text")
+        client = _make_client(tmp_path, monkeypatch)
+
+        body = {
+            "language": "vi",
+            "segments": [
+                {
+                    "id": 1,
+                    "startTime": "00:00:00,000",
+                    "endTime": "00:00:01,000",
+                    "text": "edited text",
+                }
+            ],
+        }
+        resp = client.put("/api/videos/vid001/srt", json=body)
+        assert resp.status_code == 200
+        # Editor saves went to the dubsync file (since it existed)
+        dubsync_path = tmp_path / "data" / "srt" / "vid001_vi.dubsync.srt"
+        dubsync_contents = dubsync_path.read_text(encoding="utf-8")
+        assert "edited text" in dubsync_contents
+        # Legacy SRT was NOT touched
+        legacy_contents = (tmp_path / "data" / "srt" / "vid001_vi.srt").read_text(encoding="utf-8")
+        assert "legacy text" in legacy_contents
+        assert "edited" not in legacy_contents
+        # Response reflects is_dubsync
+        assert resp.json()["is_dubsync"] is True
+
+    def test_put_writes_to_legacy_when_no_dubsync(self, tmp_path, monkeypatch):
+        _write_srt(tmp_path / "data" / "srt" / "vid001_vi.srt", "legacy text")
+        client = _make_client(tmp_path, monkeypatch)
+
+        body = {
+            "language": "vi",
+            "segments": [
+                {
+                    "id": 1,
+                    "startTime": "00:00:00,000",
+                    "endTime": "00:00:01,000",
+                    "text": "edited text",
+                }
+            ],
+        }
+        resp = client.put("/api/videos/vid001/srt", json=body)
+        assert resp.status_code == 200
+        legacy_contents = (tmp_path / "data" / "srt" / "vid001_vi.srt").read_text(encoding="utf-8")
+        assert "edited text" in legacy_contents
+        assert resp.json()["is_dubsync"] is False

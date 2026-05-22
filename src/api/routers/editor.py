@@ -21,6 +21,7 @@ from src.api.models import (
     SubtitleSegment,
     TaskResponse,
 )
+from src.api.routers.transcribe import _resolve_srt_path
 from src.processor.subtitle import (
     _timestamp_to_seconds,
     parse_srt,
@@ -135,8 +136,8 @@ async def save_srt(video_id: str, request: SaveSrtRequest):
     if not video:
         raise HTTPException(status_code=404, detail=f"Video {video_id} not found")
 
-    data_dir = get_data_dir()
-    srt_path = data_dir / "srt" / f"{video_id}_{request.language}.srt"
+    # Resolve where to write: dubsync.srt when present, legacy otherwise.
+    srt_path, is_dubsync = _resolve_srt_path(video_id, request.language)
 
     # Convert SubtitleSegment timestamps (HH:MM:SS,mmm) to seconds
     segments = []
@@ -176,6 +177,7 @@ async def save_srt(video_id: str, request: SaveSrtRequest):
         video_id=video_id,
         segments=response_segments,
         language=request.language,
+        is_dubsync=is_dubsync,
     )
 
 
