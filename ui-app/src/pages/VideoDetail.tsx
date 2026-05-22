@@ -1,31 +1,24 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
-import { SubtitleEditorPanel } from '../components/SubtitleEditorPanel';
 import { OverviewTab } from './videoDetail/OverviewTab';
 import { TranslateTab } from './videoDetail/TranslateTab';
 import { DubTab } from './videoDetail/DubTab';
+import { ExportTab } from './videoDetail/ExportTab';
 import {
-  getVideo, getSrt, postTranscribe, postTranslate, postTTS,
+  getVideo, postTranscribe, postTranslate, postTTS, postExport, deleteExport,
   subscribeSSE, getProfiles, getTTSProfiles, getTTSProviders, getTTSVoices,
   getTTSList,
   patchVideoTitle,
 } from '../api/client';
 import type { TTSAudioEntry } from '../api/client';
 import type {
-  VideoMetadata, SubtitleSegment, TranslationProfileSummary,
+  VideoMetadata, TranslationProfileSummary,
   VoiceProfileConfig, TTSProviderInfo, VoiceInfo,
 } from '../api/types';
 import { loadApiKeys, loadLLMPrefs, storageGet, storageSet } from '../utils/storage';
 
 type Tab = 'overview' | 'translate' | 'dub' | 'export';
-
-const PLATFORM_INFO: Record<string, { label: string; subLangLabel: string; constraint: string }> = {
-  tiktok: { label: 'TikTok', subLangLabel: 'Vietnamese', constraint: '9:16 / 10min / 4GB' },
-  youtube: { label: 'YouTube', subLangLabel: 'English', constraint: '9:16 / Shorts / 256GB' },
-  facebook: { label: 'Facebook', subLangLabel: 'Vietnamese', constraint: '9:16 / 15min / 4GB' },
-  x: { label: 'X / Twitter', subLangLabel: 'English', constraint: '9:16 / 2:20 / 512MB' },
-};
 
 /**
  * One-time migration: the old shared `tts_voice_id` localStorage key holds a
@@ -55,10 +48,6 @@ function VideoDetailPage() {
   const [error, setError] = useState('');
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
-
-  // SRT state
-  const [srtSegments, setSrtSegments] = useState<SubtitleSegment[]>([]);
-  const [previewLanguage, setPreviewLanguage] = useState('');
 
   // Transcribe state
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -108,7 +97,12 @@ function VideoDetailPage() {
   const [ttsError, setTtsError] = useState('');
   const [ttsList, setTtsList] = useState<TTSAudioEntry[]>([]);
 
-  // Export state (managed by SubtitleEditorPanel, just need previewLanguage for pass-through)
+  // Export state
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState<{ pct: number; message: string }>({ pct: 0, message: '' });
+  const [exportDone, setExportDone] = useState(false);
+  const [exportError, setExportError] = useState('');
+  const [exportTimestamp, setExportTimestamp] = useState(0);
 
   // Load API key from localStorage when backend changes
   useEffect(() => {
@@ -124,31 +118,6 @@ function VideoDetailPage() {
     const keys = loadApiKeys();
     setTtsApiKey(keys[selectedTtsProvider] || '');
   }, [selectedTtsProvider]);
-
-  const loadSrt = useCallback(async (vid: string, lang: string) => {
-    try {
-      const srt = await getSrt(vid, lang);
-      setSrtSegments(srt.segments);
-      setPreviewLanguage(lang);
-    } catch {
-      setSrtSegments([]);
-    }
-  }, []);
-
-  const handleEditorReload = useCallback(async () => {
-    if (!videoId) return;
-    try {
-      const video = await getVideo(videoId);
-      setVideoMeta(video);
-      if (video.srt_languages.length > 0 && !previewLanguage) {
-        setPreviewLanguage(video.srt_languages[0]);
-      }
-    } catch { /* ignore */ }
-    try {
-      const list = await getTTSList(videoId);
-      setTtsList(list);
-    } catch { /* ignore */ }
-  }, [videoId, previewLanguage]);
 
   const loadVoicesForProvider = useCallback(async (provider: string, apiKey?: string, language?: string) => {
     try {
@@ -186,10 +155,6 @@ function VideoDetailPage() {
       try {
         const video = await getVideo(videoId);
         setVideoMeta(video);
-        if (video.srt_languages.length > 0) {
-          loadSrt(videoId, video.srt_languages[0]);
-          setPreviewLanguage(video.srt_languages[0]);
-        }
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load video');
       }
@@ -215,13 +180,7 @@ function VideoDetailPage() {
     };
 
     loadAll();
-  }, [videoId, loadSrt]);
-
-  const formatDuration = (seconds: number) => {
-    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-    const s = Math.floor(seconds % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
-  };
+  }, [videoId]);
 
   // ── Handlers ──
 
@@ -230,7 +189,6 @@ function VideoDetailPage() {
     setError('');
     setIsTranscribing(true);
     setTranscribeMessage('Initializing OCR engine...');
-    setSrtSegments([]);
 
     try {
       const { task_id } = await postTranscribe(videoMeta.video_id, 'zh', 'transcribe');
@@ -240,8 +198,6 @@ function VideoDetailPage() {
         } else if (eventType === 'complete') {
           setIsTranscribing(false);
           setTranscribeMessage('Transcription complete');
-          const srtLang = (data.language as string) || 'zh';
-          loadSrt(videoMeta.video_id, srtLang);
           getVideo(videoMeta.video_id).then((updated) => setVideoMeta(updated));
           es.close();
         } else if (eventType === 'error') {
@@ -295,11 +251,7 @@ function VideoDetailPage() {
           setIsTranslating(false);
           setTranslateProgress(100);
           setTranslateMessage('Translation complete');
-          const targetLang = data.target_language as string;
-          getVideo(videoMeta.video_id).then((updated) => {
-            setVideoMeta(updated);
-            if (targetLang) loadSrt(videoMeta.video_id, targetLang);
-          });
+          getVideo(videoMeta.video_id).then((updated) => setVideoMeta(updated));
           es.close();
         } else if (eventType === 'error') {
           setIsTranslating(false);
@@ -389,6 +341,51 @@ function VideoDetailPage() {
       } else if (key) {
         loadVoicesForProvider(provider, key);
       }
+    }
+  };
+
+  const handleExport = async (params: {
+    subtitleLanguage: string | null;
+    ttsFile: string | null;
+    videoVolume: number;
+    ttsVolume: number;
+  }) => {
+    if (!videoMeta) return;
+    setIsExporting(true);
+    setExportError('');
+    setExportDone(false);
+    setExportProgress({ pct: 0, message: 'Starting...' });
+    try {
+      await deleteExport(videoMeta.video_id).catch(() => {});
+      const { task_id } = await postExport(
+        videoMeta.video_id,
+        params.subtitleLanguage,
+        params.ttsFile,
+        params.videoVolume,
+        params.ttsVolume,
+      );
+      const es = subscribeSSE(task_id, (eventType, data) => {
+        if (eventType === 'progress') {
+          setExportProgress({
+            pct: Math.round((data.progress as number) * 100),
+            message: data.message as string,
+          });
+        } else if (eventType === 'complete') {
+          setIsExporting(false);
+          setExportDone(true);
+          setExportTimestamp(Date.now());
+          setExportProgress({ pct: 100, message: 'Export complete' });
+          getVideo(videoMeta.video_id).then(setVideoMeta).catch(() => {});
+          es.close();
+        } else if (eventType === 'error') {
+          setIsExporting(false);
+          setExportError(data.message as string);
+          es.close();
+        }
+      });
+    } catch (e) {
+      setIsExporting(false);
+      setExportError(e instanceof Error ? e.message : 'Export failed');
     }
   };
 
@@ -516,36 +513,19 @@ function VideoDetailPage() {
           />
         )}
 
-        {activeTab === 'export' && (
-        <div className="space-y-6">
-          {/* === LEGACY BODY (Task 8 will replace this) === */}
-          {/* Video Editor — main view */}
-          {videoMeta && videoMeta.has_srt && (
-            <div className="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/10">
-              <div className="p-4 border-b border-outline-variant/10 flex justify-between items-center">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary text-lg">edit_note</span>
-                  <span className="text-xs font-bold uppercase tracking-widest">Video Editor</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-[10px] font-mono text-zinc-500">
-                    {videoMeta.resolution} · {videoMeta.size} · {videoMeta.codec}
-                  </span>
-                </div>
-              </div>
-              <div className="p-5">
-                <SubtitleEditorPanel
-                  videoId={videoMeta.video_id}
-                  srtLanguages={videoMeta.srt_languages}
-                  defaultLang={previewLanguage || videoMeta.srt_languages.find(l => l !== 'zh') || videoMeta.srt_languages[0]}
-                  ttsList={ttsList}
-                  onReload={handleEditorReload}
-                />
-              </div>
-            </div>
-          )}
-
-        </div>
+        {activeTab === 'export' && videoMeta && (
+          <ExportTab
+            video={videoMeta}
+            ttsList={ttsList}
+            onExport={handleExport}
+            isExporting={isExporting}
+            exportProgress={exportProgress}
+            exportDone={exportDone}
+            exportError={exportError}
+            exportTimestamp={exportTimestamp}
+            onExportTimestampSync={setExportTimestamp}
+            onExportDoneSync={setExportDone}
+          />
         )}
       </section>
     </div>
