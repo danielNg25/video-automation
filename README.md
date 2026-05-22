@@ -377,6 +377,13 @@ douyin-automation/
 
 ---
 
+### UI App Overhaul + Dub-Sync Planning (2026-05-22)
+
+- [x] UI app overhaul (Phases 1–3 of `docs/superpowers/plans/2026-05-22-ui-app-overhaul.md`): remove Upload + Dashboard pages, rebuild VideoDetail as 4-tab layout, rebuild Settings as two-level sidebar, single source of truth for TTS settings
+- [x] Dub-sync feature: design + implementation plan committed (`docs/superpowers/specs/2026-05-22-dub-sync-and-editor-default-design.md` + `docs/superpowers/plans/2026-05-22-dub-sync-and-editor-default.md`)
+
+---
+
 ### Phase 5 — Orchestration + Batch Processing (Week 5-6)
 
 > Detailed plan: [`plans/phase5-orchestration-batch.md`](plans/phase5-orchestration-batch.md)
