@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
-- `ui-app/src/pages/videoDetail/EditorTab.tsx`: zero-prop tab component containing the subtitle editor body (timeline, segment list, style panel, preview burn-in, language picker, save). Migrated from the standalone `SubtitleEditor.tsx` page. Default language picker now prefers languages that have a `dubsync.srt` on disk (preferring `vi` over `en`), falling back to first non-Chinese SRT. The standalone page is still on disk; Task A2 wires this tab as VideoDetail's default and deletes the standalone editor + OverviewTab.
+- `ui-app/src/pages/videoDetail/EditorTab.tsx`: zero-prop tab component containing the subtitle editor body (timeline, segment list, style panel, preview burn-in, language picker, save). Migrated from the standalone `SubtitleEditor.tsx` page. Default language picker now prefers languages that have a `dubsync.srt` on disk (preferring `vi` over `en`), falling back to first non-Chinese SRT.
 - Dub-sync + editor-as-default-view spec (`docs/superpowers/specs/2026-05-22-dub-sync-and-editor-default-design.md`). Two related shifts: (1) UX restructure — the per-video page (`/videos/:id`) defaults to an Editor tab instead of Overview, and the standalone `/editor/:id` route is removed (the editor moves into a tab inside VideoDetail); (2) new "Sync Dub" feature — server compares each saved SRT segment's text against the existing `dubsync.srt`, flags `dub_out_of_sync` when any differ, and exposes `POST /api/videos/{id}/dub/sync` for partial re-synthesis. Sync re-synthesises only the dirty segments at natural speed (reusing cached per-segment WAVs from a new `data/tts/{id}/segments/` cache populated on first dub generation), re-runs the existing planner with new texts, and re-assembles the WAV. Segment-count changes or > 50% dirty segments fall back to full dub regen. Provider/voice/speed changes also force full regen via metadata mismatch check. Banner UI in the Editor tab; explicit button trigger (not auto-sync).
 
 ### Fixed
@@ -15,6 +15,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Settings → Translation: Base URL input removed. The field was populated on mount via `getDefaultBaseUrl()` but `handleSave` never persisted it — user edits were silently discarded. The per-job base URL already lives in the VideoDetail / TranslateTab form (initialized inline from the selected backend); there is no localStorage key to write to from Settings.
 - Settings sections: save-confirmation span styling standardized to `text-xs font-mono` (TranslationSection was using `text-[10px]`).
 - Settings → Translation: convert bare `setTimeout` save-message auto-clear into the standard `useEffect`-with-cleanup pattern matching the other Settings sections.
+
+### Changed
+- VideoDetail default tab flipped from `overview` to `editor`. The subtitle editor is now the default per-video landing experience. Editor tab mounts inline inside VideoDetail.
+
+### Removed
+- `ui-app/src/pages/SubtitleEditor.tsx` (611 lines): standalone editor page. Its body lives in `EditorTab.tsx` now.
+- `ui-app/src/pages/videoDetail/OverviewTab.tsx`: replaced by EditorTab as VideoDetail's default tab.
+- `/editor/:videoId` route. `/videos/:id` (default `?tab=editor`) replaces it.
+- VideoDetail's title-edit + re-extract handlers and their state (`editingTitle`, `titleDraft`, `handleSaveTitle`, `isTranscribing`, `transcribeMessage`, `handleTranscribe`) — only OverviewTab consumed them. Re-extracting subtitles now happens via the Pipeline page.
 
 ### Added
 - `ui-app/src/pages/settings/TranslationSection.tsx`. New Settings category for global LLM defaults (backend / model / API key / base URL). Other surfaces (VideoDetail Translate tab, future Pipeline form fields) pre-fill from these values; per-job overrides remain possible. Replaces the Task 9 placeholder. Link to `/profiles` for style-profile management.

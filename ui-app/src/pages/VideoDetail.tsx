@@ -1,15 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
-import { OverviewTab } from './videoDetail/OverviewTab';
+import { EditorTab } from './videoDetail/EditorTab';
 import { TranslateTab } from './videoDetail/TranslateTab';
 import { DubTab } from './videoDetail/DubTab';
 import { ExportTab } from './videoDetail/ExportTab';
 import {
-  getVideo, postTranscribe, postTranslate, postTTS, postExport, deleteExport,
+  getVideo, postTranslate, postTTS, postExport, deleteExport,
   subscribeSSE, getProfiles, getTTSProfiles, getTTSProviders, getTTSVoices,
   getTTSList,
-  patchVideoTitle,
 } from '../api/client';
 import type { TTSAudioEntry } from '../api/client';
 import type {
@@ -18,7 +17,7 @@ import type {
 } from '../api/types';
 import { loadApiKeys, loadLLMPrefs, storageGet, storageSet } from '../utils/storage';
 
-type Tab = 'overview' | 'translate' | 'dub' | 'export';
+type Tab = 'editor' | 'translate' | 'dub' | 'export';
 
 /**
  * One-time migration: the old shared `tts_voice_id` localStorage key holds a
@@ -40,18 +39,12 @@ function migrateLegacyVoiceId(currentProvider: string): void {
 function VideoDetailPage() {
   const { videoId } = useParams<{ videoId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = (searchParams.get('tab') as Tab) || 'overview';
+  const activeTab = (searchParams.get('tab') as Tab) || 'editor';
   const setActiveTab = (tab: Tab) => setSearchParams((p) => { p.set('tab', tab); return p; }, { replace: true });
 
   // Video state
   const [videoMeta, setVideoMeta] = useState<VideoMetadata | null>(null);
   const [error, setError] = useState('');
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [titleDraft, setTitleDraft] = useState('');
-
-  // Transcribe state
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const [transcribeMessage, setTranscribeMessage] = useState('');
 
   // Translation state
   const [profiles, setProfiles] = useState<TranslationProfileSummary[]>([]);
@@ -187,45 +180,6 @@ function VideoDetailPage() {
   }, [videoId]);
 
   // ── Handlers ──
-
-  const handleTranscribe = async () => {
-    if (!videoMeta) return;
-    setError('');
-    setIsTranscribing(true);
-    setTranscribeMessage('Initializing OCR engine...');
-
-    try {
-      const { task_id } = await postTranscribe(videoMeta.video_id, 'zh', 'transcribe');
-      const es = subscribeSSE(task_id, (eventType, data) => {
-        if (eventType === 'progress') {
-          setTranscribeMessage(data.message as string);
-        } else if (eventType === 'complete') {
-          setIsTranscribing(false);
-          setTranscribeMessage('Transcription complete');
-          getVideo(videoMeta.video_id).then((updated) => setVideoMeta(updated));
-          es.close();
-        } else if (eventType === 'error') {
-          setIsTranscribing(false);
-          setError(data.message as string);
-          es.close();
-        }
-      });
-    } catch (e) {
-      setIsTranscribing(false);
-      setError(e instanceof Error ? e.message : 'Transcription failed');
-    }
-  };
-
-  const handleSaveTitle = async () => {
-    if (!videoMeta || !titleDraft.trim()) return;
-    try {
-      const updated = await patchVideoTitle(videoMeta.video_id, titleDraft.trim());
-      setVideoMeta(updated);
-      setEditingTitle(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to update title');
-    }
-  };
 
   const handleTranslate = async () => {
     if (!videoMeta || !selectedProfile) return;
@@ -400,7 +354,7 @@ function VideoDetailPage() {
 
       <div className="px-6 pt-4">
         <div className="flex gap-1 bg-surface-container-lowest p-1 rounded-md w-fit">
-          {(['overview', 'translate', 'dub', 'export'] as const).map((t) => (
+          {(['editor', 'translate', 'dub', 'export'] as const).map((t) => (
             <button
               key={t}
               onClick={() => setActiveTab(t)}
@@ -426,19 +380,8 @@ function VideoDetailPage() {
           </div>
         )}
 
-        {activeTab === 'overview' && videoMeta && (
-          <OverviewTab
-            video={videoMeta}
-            editingTitle={editingTitle}
-            titleDraft={titleDraft}
-            isTranscribing={isTranscribing}
-            transcribeMessage={transcribeMessage}
-            onStartTitleEdit={() => { setTitleDraft(videoMeta.title || ''); setEditingTitle(true); }}
-            onChangeTitleDraft={setTitleDraft}
-            onSaveTitle={handleSaveTitle}
-            onCancelTitleEdit={() => setEditingTitle(false)}
-            onTranscribe={handleTranscribe}
-          />
+        {activeTab === 'editor' && videoMeta && (
+          <EditorTab videoId={videoMeta.video_id} initialVideo={videoMeta} />
         )}
 
         {activeTab === 'translate' && videoMeta && (
