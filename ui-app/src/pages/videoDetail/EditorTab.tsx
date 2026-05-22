@@ -19,7 +19,9 @@ import {
   getVideoStyle,
   putVideoStyle,
   putSubtitleStyleDefault,
+  postDubSync,
 } from '../../api/client';
+import { storageGet, loadApiKeys, loadLLMPrefs } from '../../utils/storage';
 import type { VideoMetadata, SubtitleSegment } from '../../api/types';
 
 type RightTab = 'segments' | 'style';
@@ -56,6 +58,11 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete }: Props) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [useProxy, setUseProxy] = useState(true);
   const [videoLoading, setVideoLoading] = useState(true);
+
+  // Sync-Dub state
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState({ pct: 0, message: '' });
+  const [syncError, setSyncError] = useState<string>('');
 
   // Style
   const [style, setStyle] = useState<SubtitleStyle>({
@@ -123,9 +130,7 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete }: Props) {
     if (!video) return;
 
     // Priority 1: language with a dubsync.srt (preferring vi over en)
-    const dubLangs = (
-      (video.dub_status as unknown as Array<{ language: string }> | undefined) ?? []
-    ).map((d) => d.language);
+    const dubLangs = (video.dub_status ?? []).map((d) => d.language);
     for (const candidate of ['vi', 'en']) {
       if (dubLangs.includes(candidate)) {
         setActiveLang(candidate);
@@ -361,6 +366,66 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete }: Props) {
     return () => window.removeEventListener('keydown', handler);
   }, [playerControls, playerState.currentTime, handleSave]);
 
+  // --- Sync-Dub ---
+
+  const dubStatusForActive = (video?.dub_status ?? []).find(
+    (d) => d.language === activeLang,
+  );
+  const isOutOfSync = Boolean(dubStatusForActive?.out_of_sync);
+
+  const handleSyncDub = useCallback(async () => {
+    if (!video || !activeLang) return;
+    setSyncError('');
+    setIsSyncing(true);
+    setSyncProgress({ pct: 0, message: 'Starting sync…' });
+
+    const provider = storageGet('tts_selected_provider') || 'google';
+    const voiceId = storageGet(`tts_voice_id_${provider}`) || '';
+    const playbackSpeed = parseFloat(storageGet('tts_playback_speed') || '1.5');
+    const underlayDb = parseFloat(storageGet('tts_underlay_db') || '-18');
+
+    const apiKeys = loadApiKeys();
+    const apiKey = apiKeys[provider] || undefined;
+
+    const llmPrefs = loadLLMPrefs();
+    const llmBackend = llmPrefs.backend;
+    const llmApiKey = apiKeys[llmBackend] || undefined;
+
+    try {
+      const { task_id } = await postDubSync(video.video_id, {
+        language: activeLang,
+        provider,
+        voice_id: voiceId,
+        playback_speed: playbackSpeed,
+        underlay_db: underlayDb,
+        api_key: apiKey,
+        llm_api_key: llmApiKey,
+        llm_backend: llmBackend,
+      });
+
+      const es = subscribeSSE(task_id, (eventType, data) => {
+        if (eventType === 'progress') {
+          const pct = typeof data.progress === 'number' ? Math.round(data.progress * 100) : 0;
+          const msg = typeof data.message === 'string' ? data.message : 'Syncing…';
+          setSyncProgress({ pct, message: msg });
+        } else if (eventType === 'complete') {
+          setIsSyncing(false);
+          setSyncProgress({ pct: 100, message: 'Dub synced.' });
+          es.close();
+          // Task C2 will wire onSyncComplete here
+        } else if (eventType === 'error') {
+          setIsSyncing(false);
+          const errMsg = typeof data.message === 'string' ? data.message : 'Sync failed';
+          setSyncError(errMsg);
+          es.close();
+        }
+      });
+    } catch (e) {
+      setIsSyncing(false);
+      setSyncError(e instanceof Error ? e.message : 'Sync failed');
+    }
+  }, [video, activeLang]);
+
   // --- Preview burn-in ---
   const handlePreviewBurnIn = useCallback(async () => {
     if (!videoId || previewLoading) return;
@@ -561,6 +626,46 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete }: Props) {
                 </div>
               </div>
             )}
+
+            {/* Sync-Dub banner */}
+            <div className="mx-4 mt-3 space-y-2">
+              {isOutOfSync && !isSyncing && !syncError && (
+                <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs p-3 rounded-md flex items-center gap-3">
+                  <span className="material-symbols-outlined text-sm">sync_problem</span>
+                  <span className="flex-1">
+                    Dub for <code className="font-mono">{activeLang}</code> is out of sync with current subtitles.
+                  </span>
+                  <button
+                    onClick={handleSyncDub}
+                    className="bg-amber-500 text-zinc-900 px-3 py-1.5 rounded font-bold text-[10px] uppercase tracking-wider hover:bg-amber-400 transition-colors"
+                  >
+                    Sync Dub
+                  </button>
+                </div>
+              )}
+
+              {isSyncing && (
+                <div className="bg-amber-500/10 border border-amber-500/30 p-3 rounded-md space-y-1">
+                  <div className="flex justify-between text-[10px] font-mono text-amber-300">
+                    <span>{syncProgress.message}</span>
+                    <span>{syncProgress.pct}%</span>
+                  </div>
+                  <div className="w-full bg-amber-500/20 h-1.5 rounded-full overflow-hidden">
+                    <div className="h-full bg-amber-400 transition-all" style={{ width: `${syncProgress.pct}%` }} />
+                  </div>
+                </div>
+              )}
+
+              {syncError && (
+                <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-xs p-3 rounded-md flex items-center gap-2">
+                  <span className="material-symbols-outlined text-sm">error</span>
+                  <span className="flex-1">Sync failed: {syncError}</span>
+                  <button onClick={() => setSyncError('')} className="text-red-300 hover:text-red-200">
+                    <span className="material-symbols-outlined text-sm">close</span>
+                  </button>
+                </div>
+              )}
+            </div>
 
             {/* Tab content */}
             <div className="flex-1 overflow-hidden p-4 flex flex-col">

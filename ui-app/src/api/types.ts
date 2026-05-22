@@ -3,6 +3,12 @@ export interface TaskResponse {
   status: string;
 }
 
+export interface DubStatusEntry {
+  language: string;
+  out_of_sync: boolean;
+  last_synced_at: string;
+}
+
 export interface VideoMetadata {
   video_id: string;
   title: string;
@@ -19,6 +25,7 @@ export interface VideoMetadata {
   has_srt: boolean;
   srt_languages: string[];
   status: string;
+  dub_status?: DubStatusEntry[];
 }
 
 export interface VideoListResponse {

@@ -505,6 +505,30 @@ export async function postPreviewBlur(
   return res.blob();
 }
 
+export interface SyncDubBody {
+  language: string;
+  provider: string;
+  voice_id: string;
+  playback_speed?: number;
+  underlay_db?: number;
+  api_key?: string;
+  llm_api_key?: string;
+  llm_backend?: string;
+}
+
+export async function postDubSync(videoId: string, body: SyncDubBody): Promise<{ task_id: string }> {
+  const res = await fetch(`${BASE}/videos/${videoId}/dub/sync`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '');
+    throw new Error(`Sync Dub failed: ${res.status} ${errBody}`);
+  }
+  return res.json();
+}
+
 export function subscribeSSE(
   taskId: string,
   onEvent: (eventType: string, data: Record<string, unknown>) => void,
