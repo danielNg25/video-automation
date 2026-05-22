@@ -194,6 +194,7 @@ class SrtResponse(BaseModel):
     video_id: str
     segments: list[SubtitleSegment]
     language: str
+    is_dubsync: bool = False
 
 
 class ProcessResult(BaseModel):

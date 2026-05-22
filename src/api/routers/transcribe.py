@@ -16,6 +16,25 @@ from src.transcriber.base import BaseTranscriber
 router = APIRouter()
 
 
+def _resolve_srt_path(video_id: str, language: str) -> tuple[Path, bool]:
+    """Return the SRT path to read for this video+language plus whether it
+    is the dub-synced derivative.
+
+    Prefers `{video_id}_{language}.dubsync.srt` when present. Falls back to
+    the legacy `{video_id}_{language}.srt`. The dubsync file is written by
+    the TTS assembler at Stage 6 with text and timings synced to the actual
+    dub; consumers should prefer it whenever available.
+
+    Returns (path, is_dubsync). The returned path is NOT guaranteed to
+    exist — callers must check with `.exists()`.
+    """
+    srt_dir = Path("data/srt")
+    dubsync = srt_dir / f"{video_id}_{language}.dubsync.srt"
+    if dubsync.exists():
+        return dubsync, True
+    return srt_dir / f"{video_id}_{language}.srt", False
+
+
 @router.post("/api/transcribe", response_model=TaskResponse)
 async def start_transcribe(request: TranscribeRequest):
     tm = get_task_manager()
@@ -84,7 +103,7 @@ async def get_srt(video_id: str, language: str = "zh"):
     if video_id not in tm.video_index:
         raise HTTPException(status_code=404, detail=f"Video {video_id} not found")
 
-    srt_path = Path("data/srt") / f"{video_id}_{language}.srt"
+    srt_path, is_dubsync = _resolve_srt_path(video_id, language)
     if not srt_path.exists():
         raise HTTPException(
             status_code=404, detail=f"SRT file not found for {video_id} ({language})"
@@ -101,21 +120,29 @@ async def get_srt(video_id: str, language: str = "zh"):
         for seg in parsed
     ]
 
-    return SrtResponse(video_id=video_id, segments=segments, language=language)
+    return SrtResponse(
+        video_id=video_id, segments=segments,
+        language=language, is_dubsync=is_dubsync,
+    )
 
 
 @router.get("/api/videos/{video_id}/srt/download")
 async def download_srt(video_id: str, language: str = "zh"):
-    """Download SRT file as attachment."""
-    srt_path = Path("data/srt") / f"{video_id}_{language}.srt"
+    """Download SRT file as attachment.
+
+    Serves the dub-synced SRT when present (with a clean `{id}_{lang}.srt`
+    download filename — no `.dubsync` infix in the filename the user sees),
+    falling back to the legacy SRT otherwise."""
+    srt_path, _is_dubsync = _resolve_srt_path(video_id, language)
     if not srt_path.exists():
         raise HTTPException(
             status_code=404, detail=f"SRT file not found for {video_id} ({language})"
         )
 
+    download_name = f"{video_id}_{language}.srt"
     return FileResponse(
         path=str(srt_path),
         media_type="text/plain",
-        filename=f"{video_id}_{language}.srt",
-        headers={"Content-Disposition": f'attachment; filename="{video_id}_{language}.srt"'},
+        filename=download_name,
+        headers={"Content-Disposition": f'attachment; filename="{download_name}"'},
     )
