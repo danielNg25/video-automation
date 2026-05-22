@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { loadLLMPrefs, saveLLMPrefs, loadApiKeys, saveApiKey } from '../../utils/storage';
 
 const MODEL_OPTIONS: Record<string, { label: string; value: string }[]> = {
@@ -34,6 +34,12 @@ export function TranslationSection() {
   const [baseUrl, setBaseUrl] = useState(() => getDefaultBaseUrl(loadLLMPrefs().backend));
   const [savedMsg, setSavedMsg] = useState('');
 
+  useEffect(() => {
+    if (!savedMsg) return;
+    const t = setTimeout(() => setSavedMsg(''), 2000);
+    return () => clearTimeout(t);
+  }, [savedMsg]);
+
   const handleBackendChange = useCallback((newBackend: string) => {
     setPrefs((prev) => ({ ...prev, backend: newBackend }));
     setApiKey(getApiKeyForBackend(newBackend));
@@ -50,10 +56,8 @@ export function TranslationSection() {
         saveApiKey(prefs.backend, apiKey);
       }
       setSavedMsg('Saved.');
-      setTimeout(() => setSavedMsg(''), 2000);
     } catch (e) {
       setSavedMsg(`Save failed: ${e instanceof Error ? e.message : 'unknown error'}`);
-      setTimeout(() => setSavedMsg(''), 2000);
     }
   }, [prefs.backend, prefs.model, apiKey]);
 

@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- Settings → Translation: convert bare `setTimeout` save-message auto-clear into the standard `useEffect`-with-cleanup pattern matching the other Settings sections.
+
 ### Added
 - `ui-app/src/pages/settings/TranslationSection.tsx`. New Settings category for global LLM defaults (backend / model / API key / base URL). Other surfaces (VideoDetail Translate tab, future Pipeline form fields) pre-fill from these values; per-job overrides remain possible. Replaces the Task 9 placeholder. Link to `/profiles` for style-profile management.
 - 6 new Settings section files under `ui-app/src/pages/settings/`: `DouyinSection`, `ApiKeysSection`, `OcrSection`, `TtsSection`, `VideoExportSection`, `PipelineSection`. Each owns its own form state and save handler; the parent `Settings.tsx` is now a thin shell + sidebar that routes between them via `?category=`.
