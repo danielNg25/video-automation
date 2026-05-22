@@ -383,6 +383,12 @@ douyin-automation/
 - [x] Dub-sync feature: design + implementation plan committed (`docs/superpowers/specs/2026-05-22-dub-sync-and-editor-default-design.md` + `docs/superpowers/plans/2026-05-22-dub-sync-and-editor-default.md`)
 - [x] Dub-sync Task B1: per-segment WAV cache (`src/tts/segment_cache.py`) + dub metadata persistence (`src/tts/dub_meta.py`), wired into `assembler.generate_full_track()` and `task_manager.delete_video`
 - [x] Dub-sync Task B3: `POST /api/videos/{id}/dub/sync` endpoint + `src/tts/sync_runner.py` + `Assembler.run_partial(...)` — partial-regen path with > 50% / segment-count / provider-voice-speed-underlay-mismatch fallbacks to full regen via `src.tts.runner.run_tts_track`
+- [x] Editor as default video view (`feature/phase4-dubbing-redesign-spec` Phase A): `/videos/:id` defaults to the Editor tab; standalone `/editor/:id` route removed; the per-video Overview tab is gone.
+- [x] Per-segment WAV cache + dub metadata (`data/tts/{id}/segments/`, `dub_meta_*.json`) persisted on every full dub generation. Foundation for partial regen.
+- [x] Sync-Dub detection on SRT save: comparing cleaned text against recorded `segment_texts`; flag persists on `PipelineState.dub_out_of_sync_languages`.
+- [x] `POST /api/videos/{id}/dub/sync` partial-regen endpoint with fallback to full regen (> 50% dirty / count change / provider-voice-speed-underlay mismatch). LLM shortening preserved via Stage 3 translator construction.
+- [x] `VideoResponse.dub_status` field for editor banner UX.
+- [x] EditorTab Sync-Dub banner + explicit "Sync Dub" button + SSE progress + auto-refresh on completion.
 
 ---
 
