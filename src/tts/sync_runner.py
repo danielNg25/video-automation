@@ -289,7 +289,18 @@ async def _run_partial_regen(
         / f"{video_id}_{language}_{provider_name}_{safe_profile}.wav"
     )
 
-    assembler = TTSAssembler()
+    # Build a translator for Stage 3 LLM shortening, mirroring runner.py's
+    # _build_llm_translator so the partial path is behaviorally equivalent
+    # to the full dub path.
+    from src.tts.runner import _build_llm_translator
+
+    translator = _build_llm_translator(
+        config,
+        llm_api_key=current_params.get("llm_api_key"),
+        llm_backend=current_params.get("llm_backend"),
+    )
+
+    assembler = TTSAssembler(translator=translator)
     await assembler.run_partial(
         provider=tts_provider,
         video_id=video_id,

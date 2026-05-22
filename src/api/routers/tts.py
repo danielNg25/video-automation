@@ -84,6 +84,8 @@ async def sync_dub(video_id: str, request: SyncDubRequest):
         "playback_speed": request.playback_speed,
         "underlay_db": request.underlay_db,
         "api_key": request.api_key,
+        "llm_api_key": request.llm_api_key,
+        "llm_backend": request.llm_backend,
     }
 
     task = tm.create_task("dub_sync")

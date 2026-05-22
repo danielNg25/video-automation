@@ -101,6 +101,39 @@ class TestSyncDubEndpoint:
         )
         assert r.status_code == 404
 
+    def test_sync_dub_accepts_llm_fields(self, tmp_path, monkeypatch):
+        """The endpoint accepts optional llm_api_key + llm_backend fields and
+        forwards them to run_dub_sync via current_params."""
+        _write_srt(
+            tmp_path / "data" / "srt" / "vid001_vi.srt",
+            ["hello", "world"],
+        )
+        client = _make_client(tmp_path, monkeypatch)
+
+        payload = {
+            "language": "vi",
+            "provider": "google",
+            "voice_id": "vi-VN-Standard-A",
+            "playback_speed": 1.5,
+            "underlay_db": -18.0,
+            "llm_api_key": "sk-test-llm-key",
+            "llm_backend": "anthropic",
+        }
+        with patch(
+            "src.tts.sync_runner.run_dub_sync", new_callable=AsyncMock
+        ) as mock_run:
+            mock_run.return_value = {"mode": "partial", "dirty_count": 1}
+            r = client.post(
+                "/api/videos/vid001/dub/sync", json=payload
+            )
+        assert r.status_code == 200, r.text
+        # Verify llm fields were forwarded to run_dub_sync's current_params arg.
+        mock_run.assert_called_once()
+        call_kwargs = mock_run.call_args.kwargs
+        params = call_kwargs["current_params"]
+        assert params["llm_api_key"] == "sk-test-llm-key"
+        assert params["llm_backend"] == "anthropic"
+
 
 # ───── identify_dirty_segments ──────────────────────────────────────────
 
