@@ -75,6 +75,37 @@ def _detect_video_status(video_id: str, has_srt: bool, srt_langs: list[str]) -> 
     return "downloaded"
 
 
+def _build_dub_status(video_id: str) -> list[dict]:
+    """Enumerate languages with a persisted dub; flag which are out-of-sync.
+
+    Reads ``data/tts/{video_id}/dub_meta_*.json`` to find languages with a dub,
+    then cross-references ``PipelineState.dub_out_of_sync_languages`` to flag
+    which are stale relative to the current SRT.
+    """
+    import datetime as dt
+
+    from src.utils.state import PipelineState
+
+    tts_data_dir = Path("data/tts") / video_id
+    if not tts_data_dir.exists():
+        return []
+
+    state = PipelineState.load(video_id)
+    out_of_sync = set(state.dub_out_of_sync_languages)
+
+    entries = []
+    for meta_file in tts_data_dir.glob("dub_meta_*.json"):
+        lang = meta_file.stem.replace("dub_meta_", "", 1)
+        mtime = meta_file.stat().st_mtime
+        last_synced_at = dt.datetime.utcfromtimestamp(mtime).isoformat() + "Z"
+        entries.append({
+            "language": lang,
+            "out_of_sync": lang in out_of_sync,
+            "last_synced_at": last_synced_at,
+        })
+    return sorted(entries, key=lambda e: e["language"])
+
+
 class TaskManager:
     def __init__(self):
         self.tasks: dict[str, Task] = {}
@@ -145,6 +176,7 @@ class TaskManager:
                 has_srt=has_srt,
                 srt_languages=srt_langs,
                 status=_detect_video_status(video_id, has_srt, srt_langs),
+                dub_status=_build_dub_status(video_id),
             )
 
         logger.info(f"Scanned {len(self.video_index)} existing videos")
@@ -351,6 +383,7 @@ class TaskManager:
                 thumbnail=thumbnail,
                 has_srt=False,
                 status="downloaded",
+                dub_status=_build_dub_status(video_id),
             )
             self.video_index[video_id] = video_resp
 
@@ -838,6 +871,7 @@ class TaskManager:
                 thumbnail=thumbnail,
                 has_srt=False,
                 status="downloaded",
+                dub_status=_build_dub_status(video_id),
             )
             self.video_index[video_id] = video_resp
             task.video_id = video_id

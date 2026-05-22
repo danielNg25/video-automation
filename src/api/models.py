@@ -167,6 +167,12 @@ class TaskResponse(BaseModel):
     status: str
 
 
+class DubStatusEntry(BaseModel):
+    language: str
+    out_of_sync: bool
+    last_synced_at: str = ""   # ISO 8601 UTC; empty if never generated
+
+
 class VideoResponse(BaseModel):
     video_id: str
     title: str = ""
@@ -183,6 +189,7 @@ class VideoResponse(BaseModel):
     has_srt: bool = False
     srt_languages: list[str] = []
     status: str = "downloaded"
+    dub_status: list[DubStatusEntry] = []
 
 
 class VideoListResponse(BaseModel):
