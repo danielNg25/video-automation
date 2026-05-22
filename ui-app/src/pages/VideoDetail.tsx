@@ -67,21 +67,25 @@ function VideoDetailPage() {
 
   // TTS state
   const [ttsProviders, setTtsProviders] = useState<TTSProviderInfo[]>([]);
-  const [selectedTtsProvider, setSelectedTtsProvider] = useState('elevenlabs');
+  const [selectedTtsProvider, setSelectedTtsProvider] = useState(
+    () => storageGet('tts_selected_provider') || 'google'
+  );
   const [ttsProfiles, setTtsProfiles] = useState<Record<string, VoiceProfileConfig>>({});
   const [selectedTtsProfile, setSelectedTtsProfile] = useState('female-vi-natural');
   const [ttsVoices, setTtsVoices] = useState<VoiceInfo[]>([]);
   const [selectedVoiceId, setSelectedVoiceId] = useState(() => {
-    const provider = storageGet('tts_selected_provider') || 'elevenlabs';
+    const provider = storageGet('tts_selected_provider') || 'google';
     return storageGet(`tts_voice_id_${provider}`) || storageGet('tts_voice_id') || '';
   });
   const [voiceIdInput, setVoiceIdInput] = useState(() => {
-    const provider = storageGet('tts_selected_provider') || 'elevenlabs';
+    const provider = storageGet('tts_selected_provider') || 'google';
     return storageGet(`tts_voice_id_${provider}`) || storageGet('tts_voice_id') || '';
   });
   const [voiceIdSaved, setVoiceIdSaved] = useState(false);
   const [ttsApiKey, setTtsApiKey] = useState('');
-  const [ttsLanguage, setTtsLanguage] = useState('vi');
+  const [ttsLanguage, setTtsLanguage] = useState(
+    () => storageGet('tts_language') || 'vi'
+  );
   const [playbackSpeed, setPlaybackSpeed] = useState(() => {
     const saved = parseFloat(storageGet('tts_playback_speed') || '');
     return Number.isFinite(saved) && saved >= 1.0 && saved <= 2.0 ? saved : 1.5;

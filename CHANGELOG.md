@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- VideoDetail TTS state: `selectedTtsProvider` now reads from `tts_selected_provider` localStorage on mount (defaulting to `'google'` to match DownloadTranscribe) instead of being hard-coded to `'elevenlabs'`. The `selectedVoiceId` and `voiceIdInput` initializers updated to use the same `'google'` fallback. `ttsLanguage` now reads from `tts_language` localStorage on mount (defaulting to `'vi'`) so DubTab's "Save as default" round-trips correctly.
 - Settings → Translation: Base URL input removed. The field was populated on mount via `getDefaultBaseUrl()` but `handleSave` never persisted it — user edits were silently discarded. The per-job base URL already lives in the VideoDetail / TranslateTab form (initialized inline from the selected backend); there is no localStorage key to write to from Settings.
 - Settings sections: save-confirmation span styling standardized to `text-xs font-mono` (TranslationSection was using `text-[10px]`).
 - Settings → Translation: convert bare `setTimeout` save-message auto-clear into the standard `useEffect`-with-cleanup pattern matching the other Settings sections.
