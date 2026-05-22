@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- Settings → Translation: Base URL input removed. The field was populated on mount via `getDefaultBaseUrl()` but `handleSave` never persisted it — user edits were silently discarded. The per-job base URL already lives in the VideoDetail / TranslateTab form (initialized inline from the selected backend); there is no localStorage key to write to from Settings.
+- Settings sections: save-confirmation span styling standardized to `text-xs font-mono` (TranslationSection was using `text-[10px]`).
 - Settings → Translation: convert bare `setTimeout` save-message auto-clear into the standard `useEffect`-with-cleanup pattern matching the other Settings sections.
 
 ### Added

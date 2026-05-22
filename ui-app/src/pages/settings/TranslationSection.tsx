@@ -19,10 +19,6 @@ const MODEL_OPTIONS: Record<string, { label: string; value: string }[]> = {
   ],
 };
 
-function getDefaultBaseUrl(backend: string): string {
-  return backend === 'deepseek' ? 'https://api.deepseek.com' : '';
-}
-
 function getApiKeyForBackend(backend: string): string {
   const keys = loadApiKeys();
   return keys[backend] || '';
@@ -31,7 +27,6 @@ function getApiKeyForBackend(backend: string): string {
 export function TranslationSection() {
   const [prefs, setPrefs] = useState(loadLLMPrefs);
   const [apiKey, setApiKey] = useState(() => getApiKeyForBackend(loadLLMPrefs().backend));
-  const [baseUrl, setBaseUrl] = useState(() => getDefaultBaseUrl(loadLLMPrefs().backend));
   const [savedMsg, setSavedMsg] = useState('');
 
   useEffect(() => {
@@ -43,7 +38,6 @@ export function TranslationSection() {
   const handleBackendChange = useCallback((newBackend: string) => {
     setPrefs((prev) => ({ ...prev, backend: newBackend }));
     setApiKey(getApiKeyForBackend(newBackend));
-    setBaseUrl(getDefaultBaseUrl(newBackend));
   }, []);
 
   const handleSave = useCallback(() => {
@@ -113,17 +107,6 @@ export function TranslationSection() {
           <p className="text-[10px] text-on-surface-variant mt-1">Stored in browser only. Never sent to the server config.</p>
         </div>
 
-        <div>
-          <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 block mb-1">Base URL (optional)</label>
-          <input
-            type="text"
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder="https://api.openai.com"
-            className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0 font-mono"
-          />
-        </div>
-
         <div className="flex items-center gap-3 pt-2 border-t border-outline-variant/10">
           <button
             onClick={handleSave}
@@ -133,7 +116,7 @@ export function TranslationSection() {
           </button>
           {savedMsg && (
             <span
-              className={`text-[10px] font-mono ${
+              className={`text-xs font-mono ${
                 savedMsg.toLowerCase().startsWith('save failed') || savedMsg.toLowerCase().includes('error')
                   ? 'text-red-400'
                   : 'text-emerald-400'
