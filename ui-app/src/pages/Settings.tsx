@@ -6,6 +6,7 @@ import { OcrSection } from './settings/OcrSection';
 import { TtsSection } from './settings/TtsSection';
 import { VideoExportSection } from './settings/VideoExportSection';
 import { PipelineSection } from './settings/PipelineSection';
+import { TranslationSection } from './settings/TranslationSection';
 
 type CategoryId = 'douyin' | 'apikeys' | 'ocr' | 'translation' | 'tts' | 'video' | 'pipeline';
 
@@ -33,15 +34,6 @@ const categoryGroups: { group: string; items: { id: CategoryId; icon: string; la
     ],
   },
 ];
-
-function TranslationPlaceholder() {
-  return (
-    <div className="bg-surface-container-low rounded-xl p-6 text-center text-on-surface-variant">
-      <p className="text-sm">Translation defaults — coming in Task 11.</p>
-      <p className="text-xs mt-2">Manage translation style profiles on the <a href="/profiles" className="text-primary underline">Translation Profiles</a> page.</p>
-    </div>
-  );
-}
 
 function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -90,7 +82,7 @@ function SettingsPage() {
             {activeCategory === 'douyin' && <DouyinSection />}
             {activeCategory === 'apikeys' && <ApiKeysSection />}
             {activeCategory === 'ocr' && <OcrSection />}
-            {activeCategory === 'translation' && <TranslationPlaceholder />}
+            {activeCategory === 'translation' && <TranslationSection />}
             {activeCategory === 'tts' && <TtsSection />}
             {activeCategory === 'video' && <VideoExportSection />}
             {activeCategory === 'pipeline' && <PipelineSection />}
