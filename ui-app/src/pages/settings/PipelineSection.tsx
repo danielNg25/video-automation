@@ -11,6 +11,12 @@ export function PipelineSection() {
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
+    if (!saveMsg) return;
+    const t = setTimeout(() => setSaveMsg(''), 2000);
+    return () => clearTimeout(t);
+  }, [saveMsg]);
+
+  useEffect(() => {
     getConfig().then((cfg) => {
       const p = (cfg.pipeline || {}) as Record<string, unknown>;
       if (p.data_dir) setPipelineDataDir(String(p.data_dir));
@@ -34,7 +40,6 @@ export function PipelineSection() {
         },
       });
       setSaveMsg('Saved.');
-      setTimeout(() => setSaveMsg(''), 2000);
     } catch (e) {
       setSaveMsg(`Save failed: ${e instanceof Error ? e.message : 'unknown error'}`);
     } finally {
@@ -96,7 +101,11 @@ export function PipelineSection() {
         >
           {isSaving ? 'Saving...' : 'Save Pipeline Settings'}
         </button>
-        {saveMsg && <span className="text-xs font-mono text-emerald-400">{saveMsg}</span>}
+        {saveMsg && (
+          <span className={`text-xs font-mono ${saveMsg.toLowerCase().startsWith('save failed') || saveMsg.toLowerCase().includes('error') ? 'text-red-400' : 'text-emerald-400'}`}>
+            {saveMsg}
+          </span>
+        )}
       </div>
     </section>
   );

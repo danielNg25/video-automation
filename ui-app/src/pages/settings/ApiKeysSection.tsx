@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { loadApiKeys, saveApiKey } from '../../utils/storage';
 
 const PROVIDERS: { key: string; label: string; placeholder: string; icon: string }[] = [
@@ -13,17 +13,21 @@ export function ApiKeysSection() {
   const [apiKeys, setApiKeys] = useState(loadApiKeys);
   const [apiKeySaveMsg, setApiKeySaveMsg] = useState('');
 
+  useEffect(() => {
+    if (!apiKeySaveMsg) return;
+    const t = setTimeout(() => setApiKeySaveMsg(''), 3000);
+    return () => clearTimeout(t);
+  }, [apiKeySaveMsg]);
+
   const handleSave = (providerKey: string, providerLabel: string) => {
     saveApiKey(providerKey, apiKeys[providerKey]);
     setApiKeySaveMsg(`${providerLabel} key saved`);
-    setTimeout(() => setApiKeySaveMsg(''), 3000);
   };
 
   const handleClear = (providerKey: string, providerLabel: string) => {
     saveApiKey(providerKey, '');
     setApiKeys({ ...apiKeys, [providerKey]: '' });
     setApiKeySaveMsg(`${providerLabel} key removed`);
-    setTimeout(() => setApiKeySaveMsg(''), 3000);
   };
 
   return (
@@ -74,7 +78,7 @@ export function ApiKeysSection() {
         ))}
 
         {apiKeySaveMsg && (
-          <div className="flex items-center gap-2 text-xs font-mono text-emerald-400">
+          <div className={`flex items-center gap-2 text-xs font-mono ${apiKeySaveMsg.toLowerCase().startsWith('save failed') || apiKeySaveMsg.toLowerCase().includes('error') ? 'text-red-400' : 'text-emerald-400'}`}>
             <span className="material-symbols-outlined text-sm">check_circle</span>
             {apiKeySaveMsg}
           </div>

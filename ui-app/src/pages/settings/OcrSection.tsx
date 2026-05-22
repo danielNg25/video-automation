@@ -22,6 +22,12 @@ export function OcrSection() {
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
+    if (!saveMsg) return;
+    const t = setTimeout(() => setSaveMsg(''), 2000);
+    return () => clearTimeout(t);
+  }, [saveMsg]);
+
+  useEffect(() => {
     getConfig().then((cfg) => {
       const o = (cfg.ocr || {}) as Record<string, unknown>;
       const sr = (o.subtitle_region || {}) as Record<string, unknown>;
@@ -56,7 +62,6 @@ export function OcrSection() {
         },
       });
       setSaveMsg('Saved.');
-      setTimeout(() => setSaveMsg(''), 2000);
     } catch (e) {
       setSaveMsg(`Save failed: ${e instanceof Error ? e.message : 'unknown error'}`);
     } finally {
@@ -172,7 +177,11 @@ export function OcrSection() {
         >
           {isSaving ? 'Saving...' : 'Save OCR Settings'}
         </button>
-        {saveMsg && <span className="text-xs font-mono text-emerald-400">{saveMsg}</span>}
+        {saveMsg && (
+          <span className={`text-xs font-mono ${saveMsg.toLowerCase().startsWith('save failed') || saveMsg.toLowerCase().includes('error') ? 'text-red-400' : 'text-emerald-400'}`}>
+            {saveMsg}
+          </span>
+        )}
       </div>
     </section>
   );

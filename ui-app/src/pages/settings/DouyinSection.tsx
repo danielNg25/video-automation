@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getCookieStatus, putCookie, testCookie } from '../../api/client';
+import { getCookieStatus, getConfig, putCookie, testCookie } from '../../api/client';
 import type { CookieStatus, CookieTestResult } from '../../api/client';
 
 export function DouyinSection() {
@@ -9,10 +9,21 @@ export function DouyinSection() {
   const [cookieTesting, setCookieTesting] = useState(false);
   const [cookieTestResult, setCookieTestResult] = useState<CookieTestResult | null>(null);
   const [cookieSaveMsg, setCookieSaveMsg] = useState('');
+  const [serviceUrl, setServiceUrl] = useState<string>('');
 
   useEffect(() => {
     getCookieStatus().then(setCookie).catch(() => {});
+    getConfig().then((cfg) => {
+      const d = (cfg.douyin || {}) as Record<string, unknown>;
+      if (d.api_base) setServiceUrl(String(d.api_base));
+    }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!cookieSaveMsg) return;
+    const t = setTimeout(() => setCookieSaveMsg(''), 3000);
+    return () => clearTimeout(t);
+  }, [cookieSaveMsg]);
 
   const handleCookieSave = async () => {
     setCookieSaving(true);
@@ -23,7 +34,6 @@ export function DouyinSection() {
       setCookieInput('');
       setCookieSaveMsg('Saved');
       setCookieTestResult(null);
-      setTimeout(() => setCookieSaveMsg(''), 3000);
     } catch (e: unknown) {
       setCookieSaveMsg(e instanceof Error ? e.message : 'Save failed');
     } finally {
@@ -54,7 +64,10 @@ export function DouyinSection() {
       {/* Service URL */}
       <div className="space-y-2">
         <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Service URL</label>
-        <input className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono text-primary" type="text" defaultValue="http://localhost:8080" />
+        <div className="w-full bg-surface-container-lowest border border-outline-variant/10 rounded p-3 text-sm font-mono text-on-surface-variant flex items-center justify-between">
+          <span>{serviceUrl || 'Not configured'}</span>
+          <span className="text-[10px] text-zinc-500">configured in config/config.yaml</span>
+        </div>
       </div>
 
       {/* Cookie Management */}
@@ -109,7 +122,9 @@ export function DouyinSection() {
             {cookieTesting ? 'Testing...' : 'Test Cookie'}
           </button>
           {cookieSaveMsg && (
-            <span className="text-xs font-mono text-emerald-400">{cookieSaveMsg}</span>
+            <span className={`text-xs font-mono ${cookieSaveMsg.toLowerCase().startsWith('save failed') || cookieSaveMsg.toLowerCase().includes('error') ? 'text-red-400' : 'text-emerald-400'}`}>
+              {cookieSaveMsg}
+            </span>
           )}
         </div>
 

@@ -53,6 +53,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - VideoDetail tab type tightening + Re-extract subtitles button now disabled while transcription is in progress.
 
 ### Fixed
+- Settings sections: save-failure messages now render in red (previously rendered in the same emerald-green as success, which was misleading).
+- Settings → Douyin API: "Service URL" field is now a read-only display showing the actual configured value from `config.yaml`, replacing the uncontrolled input that silently discarded any typed input.
+- Settings sections: convert `setTimeout` save-message auto-clear into a `useEffect`-with-cleanup pattern so the timer is properly cancelled if the section unmounts mid-clear.
 - VideoDetail Dub tab: changing the selected voice now resets the "TTS Generated" badge so the Generate button correctly returns to its "Generate" state. (Regression introduced when the TTS panel was migrated into DubTab in commit 0d34361.)
 - Eliminated the "Chinese voice played twice" bug: the assembler was reading the source MP4's audio and baking a -18 dB underlay into the TTS WAV, while the processor's audio-mix stage independently mixed the source MP4 audio at its own `original_volume` (default 0.3 / ~-10 dB). The user heard both. Removed the assembler's underlay logic entirely — `_concatenate_with_silence` no longer accepts `video_path`, `underlay_db`, or `failure_windows`; the TTS WAV now contains only the Vietnamese dub on silence. The user's `underlay_db` setting (still configurable in Settings / VideoDetail / DownloadTranscribe) now routes to the processor's `original_volume` parameter via a dB→linear conversion at the pipeline boundary. Per-platform `original_volume` defaults in `tts_voices.yaml` remain as fallback when no `underlay_db` is set.
 

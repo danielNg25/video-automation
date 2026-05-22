@@ -9,6 +9,12 @@ export function VideoExportSection() {
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
+    if (!saveMsg) return;
+    const t = setTimeout(() => setSaveMsg(''), 2000);
+    return () => clearTimeout(t);
+  }, [saveMsg]);
+
+  useEffect(() => {
     getConfig().then((cfg) => {
       const f = (cfg.ffmpeg || {}) as Record<string, unknown>;
       if (f.default_crf) setFfmpegCrf(Number(f.default_crf));
@@ -28,7 +34,6 @@ export function VideoExportSection() {
         },
       });
       setSaveMsg('Saved.');
-      setTimeout(() => setSaveMsg(''), 2000);
     } catch (e) {
       setSaveMsg(`Save failed: ${e instanceof Error ? e.message : 'unknown error'}`);
     } finally {
@@ -88,7 +93,11 @@ export function VideoExportSection() {
         >
           {isSaving ? 'Saving...' : 'Save Video Settings'}
         </button>
-        {saveMsg && <span className="text-xs font-mono text-emerald-400">{saveMsg}</span>}
+        {saveMsg && (
+          <span className={`text-xs font-mono ${saveMsg.toLowerCase().startsWith('save failed') || saveMsg.toLowerCase().includes('error') ? 'text-red-400' : 'text-emerald-400'}`}>
+            {saveMsg}
+          </span>
+        )}
       </div>
     </section>
   );
