@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { lazy, Suspense } from 'react';
 import { PipelineStatusProvider } from './lib/pipelineStatus';
@@ -10,6 +10,8 @@ const SubtitleEditorPage = lazy(() => import('./pages/SubtitleEditor'));
 const TranslationProfilesPage = lazy(() => import('./pages/TranslationProfiles'));
 const VideoListPage = lazy(() => import('./pages/VideoList'));
 const VideoDetailPage = lazy(() => import('./pages/VideoDetail'));
+
+void DashboardPage; // Removed in Task 4; kept lazy-imported so the bundler still finds the file until then.
 
 function LoadingFallback() {
   return (
@@ -26,8 +28,8 @@ function App() {
         <Suspense fallback={<LoadingFallback />}>
           <Routes>
             <Route element={<Layout />}>
-              <Route index element={<DashboardPage />} />
-              <Route path="/download" element={<DownloadTranscribePage />} />
+              <Route index element={<DownloadTranscribePage />} />
+              <Route path="/download" element={<Navigate to="/" replace />} />
               <Route path="/videos" element={<VideoListPage />} />
               <Route path="/videos/:videoId" element={<VideoDetailPage />} />
               <Route path="/editor/:videoId" element={<SubtitleEditorPage />} />
