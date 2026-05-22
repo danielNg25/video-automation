@@ -1,15 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
-import { TTSPreview } from '../components/TTSPreview';
 import { SubtitleEditorPanel } from '../components/SubtitleEditorPanel';
 import { OverviewTab } from './videoDetail/OverviewTab';
 import { TranslateTab } from './videoDetail/TranslateTab';
+import { DubTab } from './videoDetail/DubTab';
 import {
   getVideo, getSrt, postTranscribe, postTranslate, postTTS,
   subscribeSSE, getProfiles, getTTSProfiles, getTTSProviders, getTTSVoices,
-  getTTSAudioUrl, getTTSList, deleteTTSAudio,
-  patchVideoTitle, postTTSPreview,
+  getTTSList,
+  patchVideoTitle,
 } from '../api/client';
 import type { TTSAudioEntry } from '../api/client';
 import type {
@@ -17,6 +17,8 @@ import type {
   VoiceProfileConfig, TTSProviderInfo, VoiceInfo,
 } from '../api/types';
 import { loadApiKeys, loadLLMPrefs, storageGet, storageSet } from '../utils/storage';
+
+type Tab = 'overview' | 'translate' | 'dub' | 'export';
 
 const PLATFORM_INFO: Record<string, { label: string; subLangLabel: string; constraint: string }> = {
   tiktok: { label: 'TikTok', subLangLabel: 'Vietnamese', constraint: '9:16 / 10min / 4GB' },
@@ -44,9 +46,7 @@ function migrateLegacyVoiceId(currentProvider: string): void {
 
 function VideoDetailPage() {
   const { videoId } = useParams<{ videoId: string }>();
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  type Tab = 'overview' | 'translate' | 'dub' | 'export';
   const activeTab = (searchParams.get('tab') as Tab) || 'overview';
   const setActiveTab = (tab: Tab) => setSearchParams((p) => { p.set('tab', tab); return p; }, { replace: true });
 
@@ -107,19 +107,8 @@ function VideoDetailPage() {
   const [ttsGenerated, setTtsGenerated] = useState(false);
   const [ttsError, setTtsError] = useState('');
   const [ttsList, setTtsList] = useState<TTSAudioEntry[]>([]);
-  const [playingTts, setPlayingTts] = useState<string | null>(null);
 
   // Export state (managed by SubtitleEditorPanel, just need previewLanguage for pass-through)
-
-  // Panel collapse state — editor open by default
-  const [openPanels, setOpenPanels] = useState<Set<string>>(new Set(['editor']));
-  const togglePanel = useCallback((key: string) => {
-    setOpenPanels(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      return next;
-    });
-  }, []);
 
   // Load API key from localStorage when backend changes
   useEffect(() => {
@@ -471,9 +460,65 @@ function VideoDetailPage() {
           />
         )}
 
-        {(activeTab === 'dub' || activeTab === 'export') && (
+        {activeTab === 'dub' && videoMeta && (
+          <DubTab
+            videoId={videoMeta.video_id}
+            ttsProviders={ttsProviders}
+            selectedTtsProvider={selectedTtsProvider}
+            onChangeTtsProvider={handleTtsProviderChange}
+            ttsProfiles={ttsProfiles}
+            selectedTtsProfile={selectedTtsProfile}
+            onChangeTtsProfile={handleTtsProfileChange}
+            ttsVoices={ttsVoices}
+            selectedVoiceId={selectedVoiceId}
+            onChangeSelectedVoiceId={setSelectedVoiceId}
+            voiceIdInput={voiceIdInput}
+            onChangeVoiceIdInput={(v) => { setVoiceIdInput(v); setVoiceIdSaved(false); }}
+            voiceIdSaved={voiceIdSaved}
+            onSaveVoiceId={() => {
+              storageSet(`tts_voice_id_${selectedTtsProvider}`, voiceIdInput);
+              setSelectedVoiceId(voiceIdInput);
+              setVoiceIdSaved(true);
+              setTtsGenerated(false);
+              setTimeout(() => setVoiceIdSaved(false), 2000);
+            }}
+            ttsApiKey={ttsApiKey}
+            onChangeTtsApiKey={setTtsApiKey}
+            ttsLanguage={ttsLanguage}
+            onChangeTtsLanguage={(lang) => {
+              setTtsLanguage(lang);
+              setTtsGenerated(false);
+              setTtsVoices([]);
+              loadVoicesForProvider(selectedTtsProvider, ttsApiKey || undefined, lang);
+            }}
+            availableTtsLanguages={(videoMeta.srt_languages || []).filter((l) => l !== 'zh')}
+            playbackSpeed={playbackSpeed}
+            onChangePlaybackSpeed={setPlaybackSpeed}
+            underlayDb={underlayDb}
+            onChangeUnderlayDb={setUnderlayDb}
+            useDirectVoice={useDirectVoice}
+            onChangeUseDirectVoice={setUseDirectVoice}
+            isGeneratingTts={isGeneratingTts}
+            ttsProgress={ttsProgress}
+            ttsGenerated={ttsGenerated}
+            ttsError={ttsError}
+            ttsList={ttsList}
+            onReloadTtsList={async () => {
+              if (!videoMeta) return;
+              try {
+                const list = await getTTSList(videoMeta.video_id);
+                setTtsList(list);
+              } catch { /* ignore */ }
+            }}
+            onGenerate={handleGenerateTts}
+            llmBackend={llmBackend}
+            llmApiKey={llmApiKey}
+          />
+        )}
+
+        {activeTab === 'export' && (
         <div className="space-y-6">
-          {/* === LEGACY BODY (Tasks 7, 8 will replace these slices) === */}
+          {/* === LEGACY BODY (Task 8 will replace this) === */}
           {/* Video Editor — main view */}
           {videoMeta && videoMeta.has_srt && (
             <div className="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/10">
@@ -499,326 +544,6 @@ function VideoDetailPage() {
               </div>
             </div>
           )}
-
-            {/* TTS Dubbing Panel */}
-            {videoMeta && videoMeta.has_srt && videoMeta.srt_languages.some(l => l !== 'zh') && (
-              <div className="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/10">
-                <button
-                  onClick={() => togglePanel('tts')}
-                  className="w-full p-4 border-b border-outline-variant/10 flex justify-between items-center hover:bg-surface-container/50 transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-primary text-lg">record_voice_over</span>
-                    <span className="text-xs font-bold uppercase tracking-widest">TTS Dubbing</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-[10px] text-primary bg-primary/10 px-2 py-0.5 rounded uppercase">
-                      {selectedTtsProvider}
-                    </span>
-                    <span className={`material-symbols-outlined text-sm text-zinc-500 transition-transform ${openPanels.has('tts') ? 'rotate-180' : ''}`}>expand_more</span>
-                  </div>
-                </button>
-                {openPanels.has('tts') && <div className="p-5 space-y-4">
-                  {/* Provider + Language */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">Provider</label>
-                      <select
-                        value={selectedTtsProvider}
-                        onChange={(e) => handleTtsProviderChange(e.target.value)}
-                        className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
-                      >
-                        {ttsProviders.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name} {p.free ? '(Free)' : ''}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">Language</label>
-                      <select
-                        value={ttsLanguage}
-                        onChange={(e) => { const lang = e.target.value; setTtsLanguage(lang); setTtsGenerated(false); setTtsVoices([]); loadVoicesForProvider(selectedTtsProvider, ttsApiKey || undefined, lang); }}
-                        className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
-                      >
-                        {videoMeta?.srt_languages.filter(l => l !== 'zh').map((lang) => (
-                          <option key={lang} value={lang}>
-                            {lang === 'vi' ? 'Vietnamese' : lang === 'en' ? 'English' : lang.toUpperCase()}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* API Key Warning for paid providers */}
-                  {ttsProviders.find(p => p.id === selectedTtsProvider)?.requires_key && !ttsApiKey && (
-                    <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs p-3 rounded-lg flex items-center gap-2">
-                      <span className="material-symbols-outlined text-sm">warning</span>
-                      <span>No API key configured for <strong>{selectedTtsProvider}</strong>.</span>
-                      <button
-                        onClick={() => navigate('/settings#apikeys')}
-                        className="ml-auto text-[10px] font-bold uppercase tracking-wider text-amber-300 hover:text-amber-200 flex items-center gap-1 whitespace-nowrap"
-                      >
-                        <span className="material-symbols-outlined text-xs">settings</span>
-                        Configure
-                      </button>
-                    </div>
-                  )}
-
-                  {/* ElevenLabs: Voice ID input */}
-                  {selectedTtsProvider === 'elevenlabs' && (
-                    <div className="space-y-2">
-                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block">Voice ID</label>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={voiceIdInput}
-                          onChange={(e) => { setVoiceIdInput(e.target.value); setVoiceIdSaved(false); }}
-                          placeholder="Paste ElevenLabs voice ID"
-                          className="flex-1 bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary placeholder:text-zinc-600 font-mono"
-                        />
-                        <button
-                          onClick={() => {
-                            setSelectedVoiceId(voiceIdInput);
-                            storageSet(`tts_voice_id_${selectedTtsProvider}`, voiceIdInput);
-                            setVoiceIdSaved(true);
-                            setTtsGenerated(false);
-                            setTimeout(() => setVoiceIdSaved(false), 2000);
-                          }}
-                          disabled={!voiceIdInput}
-                          className="px-3 py-2 rounded text-[10px] font-bold uppercase bg-primary/20 text-primary hover:bg-primary/30 disabled:opacity-50 transition-colors"
-                        >
-                          {voiceIdSaved ? 'Saved' : 'Save'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Other providers: Browse voices dropdown */}
-                  {selectedTtsProvider !== 'elevenlabs' && (
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block">Voice</label>
-                      <select
-                        value={selectedVoiceId}
-                        onChange={(e) => {
-                          setSelectedVoiceId(e.target.value);
-                          storageSet(`tts_voice_id_${selectedTtsProvider}`, e.target.value);
-                          setTtsGenerated(false);
-                        }}
-                        className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
-                      >
-                        {ttsVoices.length === 0 && <option value="">Loading voices...</option>}
-                        {ttsVoices.map((v) => (
-                          <option key={v.name} value={v.name}>
-                            {v.friendly_name || v.name} ({v.gender}) — {v.language}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {/* Dub playback speed — applied uniformly to every sentence,
-                      and also applied to the preview below so the user can hear
-                      the chosen speed before generating. */}
-                  <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-container-highest">
-                    <span className="material-symbols-outlined text-sm text-on-surface-variant">speed</span>
-                    <label className="text-xs text-on-surface-variant flex-1">
-                      Dub playback speed
-                    </label>
-                    <input
-                      type="number"
-                      min={1.0}
-                      max={2.0}
-                      step={0.1}
-                      value={playbackSpeed}
-                      onChange={(e) => {
-                        const v = parseFloat(e.target.value);
-                        if (Number.isFinite(v) && v >= 1.0 && v <= 2.0) {
-                          setPlaybackSpeed(v);
-                          storageSet('tts_playback_speed', String(v));
-                        }
-                      }}
-                      className="w-16 px-2 py-1 text-xs font-mono text-on-surface bg-surface-container-low border border-outline-variant/30 rounded focus:outline-none focus:border-primary"
-                    />
-                    <span className="text-[10px] text-on-surface-variant font-mono">×</span>
-                  </div>
-
-                  {/* Original-language underlay */}
-                  <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-container-highest">
-                    <span className="material-symbols-outlined text-sm text-on-surface-variant">graphic_eq</span>
-                    <label className="text-xs text-on-surface-variant flex-1">
-                      Original underlay
-                    </label>
-                    <select
-                      value={String(underlayDb)}
-                      onChange={(e) => {
-                        const v = parseFloat(e.target.value);
-                        setUnderlayDb(v);
-                        storageSet('tts_underlay_db', String(v));
-                      }}
-                      className="px-2 py-1 text-xs font-mono text-on-surface bg-surface-container-low border border-outline-variant/30 rounded focus:outline-none focus:border-primary"
-                    >
-                      <option value="0">Off</option>
-                      <option value="-24">-24</option>
-                      <option value="-18">-18</option>
-                      <option value="-12">-12</option>
-                      <option value="-6">-6</option>
-                    </select>
-                    <span className="text-[10px] text-on-surface-variant font-mono">dB</span>
-                  </div>
-
-                  {/* Voice Preview */}
-                  {(() => {
-                    const previewVoice = selectedVoiceId;
-                    const previewProvider = selectedTtsProvider;
-                    return previewVoice ? (
-                      <div className="flex items-center gap-3">
-                        <TTSPreview
-                          voice={previewVoice}
-                          provider={previewProvider}
-                          speed="+0%"
-                          pitch="+0Hz"
-                          apiKey={ttsApiKey || undefined}
-                          playbackSpeed={playbackSpeed}
-                          underlayDb={underlayDb}
-                          sampleText={
-                            ttsLanguage === 'vi'
-                              ? 'Xin chào các bạn, hôm nay chúng ta sẽ nói về một chủ đề rất thú vị.'
-                              : 'Hello everyone, today we will talk about a very interesting topic.'
-                          }
-                        />
-                        <span className="font-mono text-[9px] text-on-surface-variant truncate">
-                          {previewVoice}
-                        </span>
-                      </div>
-                    ) : null;
-                  })()}
-
-                  {/* Generate TTS Button */}
-                  <button
-                    disabled={isGeneratingTts}
-                    onClick={handleGenerateTts}
-                    className={`w-full py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
-                      ttsGenerated
-                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20'
-                        : isGeneratingTts
-                          ? 'bg-surface-container-highest text-on-surface-variant cursor-wait'
-                          : 'bg-primary text-on-primary-fixed hover:brightness-110 active:scale-95'
-                    }`}
-                  >
-                    {isGeneratingTts ? (
-                      <>
-                        <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
-                        {ttsProgress.message || 'Generating...'}
-                      </>
-                    ) : ttsGenerated ? (
-                      <>
-                        <span className="material-symbols-outlined text-sm">check_circle</span>
-                        TTS Generated — Regenerate
-                      </>
-                    ) : (
-                      <>
-                        <span className="material-symbols-outlined text-sm">record_voice_over</span>
-                        Generate TTS Audio
-                      </>
-                    )}
-                  </button>
-
-                  {/* TTS Progress */}
-                  {isGeneratingTts && (
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between items-center">
-                        <span className="text-[10px] font-mono text-zinc-500 uppercase">{ttsProgress.message}</span>
-                        <span className="text-xs font-bold font-mono text-primary">{ttsProgress.pct}%</span>
-                      </div>
-                      <div className="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
-                        <div
-                          className="bg-primary h-full transition-all duration-500 shadow-[0_0_8px_rgba(208,188,255,0.4)]"
-                          style={{ width: `${ttsProgress.pct}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* TTS Audio Library */}
-                  {ttsList.length > 0 && videoMeta && (
-                    <div className="space-y-2">
-                      <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold">
-                        Generated Dubs ({ttsList.length})
-                      </label>
-                      <div className="space-y-1">
-                        {ttsList.map((entry) => {
-                          const isPlaying = playingTts === entry.filename;
-                          const audioUrl = getTTSAudioUrl(videoMeta.video_id, entry.language, entry.filename);
-                          const ago = (() => {
-                            const diff = (Date.now() / 1000) - entry.created_at;
-                            if (diff < 60) return 'just now';
-                            if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-                            if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-                            return `${Math.floor(diff / 86400)}d ago`;
-                          })();
-                          const sizeMb = (entry.size / 1024 / 1024).toFixed(1);
-                          return (
-                            <div key={entry.filename} className="flex items-center gap-2 px-3 py-2 bg-surface-container-lowest rounded-lg group">
-                              <button
-                                onClick={() => {
-                                  if (isPlaying) {
-                                    document.querySelectorAll<HTMLAudioElement>('audio.tts-player').forEach(a => { a.pause(); a.currentTime = 0; });
-                                    setPlayingTts(null);
-                                  } else {
-                                    document.querySelectorAll<HTMLAudioElement>('audio.tts-player').forEach(a => { a.pause(); a.currentTime = 0; });
-                                    setPlayingTts(entry.filename);
-                                  }
-                                }}
-                                className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${isPlaying ? 'bg-primary text-on-primary-fixed' : 'bg-surface-container-high text-on-surface-variant hover:bg-primary/20'}`}
-                              >
-                                <span className="material-symbols-outlined text-sm">{isPlaying ? 'stop' : 'play_arrow'}</span>
-                              </button>
-                              <div className="flex-1 min-w-0">
-                                <span className="text-[11px] font-semibold text-on-surface">{entry.profile}</span>
-                                <span className="text-[9px] text-zinc-500 ml-2">{entry.provider} · {entry.language} · {sizeMb}MB</span>
-                              </div>
-                              <span className="text-[9px] font-mono text-zinc-600">{ago}</span>
-                              <button
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  if (!confirm(`Delete dub "${entry.profile}"?`)) return;
-                                  try {
-                                    await deleteTTSAudio(videoMeta.video_id, entry.filename);
-                                    setTtsList(prev => prev.filter(e => e.filename !== entry.filename));
-                                  } catch { /* ignore */ }
-                                }}
-                                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 text-zinc-600 hover:text-red-400 transition-all"
-                                title="Delete dub"
-                              >
-                                <span className="material-symbols-outlined text-sm">delete</span>
-                              </button>
-                              {isPlaying && (
-                                <audio
-                                  className="tts-player"
-                                  autoPlay
-                                  src={audioUrl}
-                                  onEnded={() => setPlayingTts(null)}
-                                  style={{ display: 'none' }}
-                                />
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {ttsError && (
-                    <div className="bg-error/10 border border-error/30 text-error text-xs p-3 rounded-lg flex items-center gap-2">
-                      <span className="material-symbols-outlined text-sm">error</span>
-                      {ttsError}
-                    </div>
-                  )}
-                </div>}
-              </div>
-            )}
 
         </div>
         )}
