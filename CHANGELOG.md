@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `_check_dub_sync_against_meta(data_dir, video_id, language, new_texts)` helper in `src/api/routers/editor.py`. Compares saved SRT segment texts against `dub_meta_{lang}.json`'s recorded `segment_texts` (using `_clean_text` to ignore trivial whitespace), returning `True` if any segment differs or the count changed.
+- `PipelineState.dub_out_of_sync_languages: list[str]` field, persisted in `data/logs/{video_id}_state.json`. Updated by `save_srt` on every save — adds the language when text differs from the recorded dub, removes it when text matches again.
 - `src/tts/segment_cache.py`: per-video, per-language natural-speed WAV cache under `data/tts/{video_id}/segments/`. Populated by `assembler.generate_full_track()` after Stage 1 synth and before atempo/concatenation. Consumed by the future Sync-Dub flow.
 - `src/tts/dub_meta.py`: per-language `dub_meta_{lang}.json` capturing provider + voice + playback_speed + underlay_db + per-segment texts. Written at end of `assembler.generate_full_track()`; the source of truth for "what text was last spoken" used by Sync-Dub detection.
 - `task_manager.delete_video` extended to clean up `data/tts/{video_id}/` (segments + metadata).

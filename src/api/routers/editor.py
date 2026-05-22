@@ -27,6 +27,8 @@ from src.processor.subtitle import (
     parse_srt,
     write_srt,
 )
+from src.tts.base import _clean_text
+from src.tts.dub_meta import load_dub_meta
 
 router = APIRouter()
 
@@ -103,6 +105,26 @@ def _load_video_style(video_id: str) -> dict:
     return {}
 
 
+def _check_dub_sync_against_meta(
+    data_dir: Path, video_id: str, language: str, new_texts: list[str]
+) -> bool:
+    """Return True if the dub is out of sync with the new SRT texts.
+
+    Compares cleaned per-segment text against the recorded ``segment_texts``
+    in ``dub_meta_{language}.json``. If no metadata exists, the dub has not
+    been generated for this language yet — no sync needed, return False.
+    """
+    meta = load_dub_meta(data_dir, video_id, language)
+    if meta is None:
+        return False
+    if len(meta.segment_texts) != len(new_texts):
+        return True
+    for old, new in zip(meta.segment_texts, new_texts):
+        if _clean_text(old) != _clean_text(new):
+            return True
+    return False
+
+
 @router.get("/api/videos/{video_id}/style")
 async def get_video_style(video_id: str):
     """Get subtitle style for a specific video (per-video or global default)."""
@@ -157,6 +179,28 @@ async def save_srt(video_id: str, request: SaveSrtRequest):
         video.srt_languages.append(request.language)
         video.srt_languages.sort()
         video.has_srt = True
+
+    # Check if this edit puts the dub out of sync with the saved dub_meta.
+    from src.utils.state import PipelineState
+
+    tts_data_dir = Path("data/tts")
+    new_texts = [seg["text"] for seg in segments]
+    is_dub_out_of_sync = _check_dub_sync_against_meta(
+        tts_data_dir, video_id, request.language, new_texts
+    )
+
+    state = PipelineState.load(video_id)
+    state_changed = False
+    if is_dub_out_of_sync:
+        if request.language not in state.dub_out_of_sync_languages:
+            state.dub_out_of_sync_languages.append(request.language)
+            state_changed = True
+    else:
+        if request.language in state.dub_out_of_sync_languages:
+            state.dub_out_of_sync_languages.remove(request.language)
+            state_changed = True
+    if state_changed:
+        state.save()
 
     # Re-parse to return fresh data
     parsed = parse_srt(srt_path)
