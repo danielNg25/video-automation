@@ -1,32 +1,39 @@
-"""Tests for the per-segment WAV cache + dub metadata."""
+"""Tests for the per-segment clip cache + dub metadata."""
 from __future__ import annotations
 
 from src.tts.dub_meta import DubMeta, load_dub_meta, save_dub_meta
 from src.tts.segment_cache import (
+    cache_basename_for_segment,
     cache_dir_for_video,
-    cache_path_for_segment,
     load_segment_clip,
     save_segment_clip,
+    segments_dir_for_video,
 )
 
 
-def test_cache_path_format(tmp_path):
-    """cache_path_for_segment returns deterministic per-(video, lang, idx) paths."""
-    p = cache_path_for_segment(tmp_path, "abc123", "vi", 0)
-    assert p == tmp_path / "abc123" / "segments" / "vi_000.wav"
+def test_cache_basename_format():
+    """cache_basename_for_segment returns deterministic stem strings."""
+    assert cache_basename_for_segment("vi", 0) == "vi_000"
+    assert cache_basename_for_segment("vi", 42) == "vi_042"
+    assert cache_basename_for_segment("en", 5) == "en_005"
 
-    p2 = cache_path_for_segment(tmp_path, "abc123", "vi", 42)
-    assert p2 == tmp_path / "abc123" / "segments" / "vi_042.wav"
+
+def test_segments_dir_for_video(tmp_path):
+    """segments_dir_for_video returns the expected path."""
+    d = segments_dir_for_video(tmp_path, "abc123")
+    assert d == tmp_path / "abc123" / "segments"
 
 
 def test_save_and_load_segment_clip(tmp_path):
-    """save_segment_clip copies a source WAV into the cache; load returns the cached path."""
-    source = tmp_path / "src.wav"
-    source.write_bytes(b"RIFF....fake-wav-data")
+    """save_segment_clip copies a source MP3 into the cache preserving extension;
+    load returns the cached path."""
+    source = tmp_path / "src.mp3"
+    source.write_bytes(b"MP3-DATA")
 
     cached = save_segment_clip(tmp_path, "abc123", "vi", 5, source)
     assert cached.exists()
-    assert cached.read_bytes() == b"RIFF....fake-wav-data"
+    assert cached.suffix == ".mp3"
+    assert cached.read_bytes() == b"MP3-DATA"
 
     loaded = load_segment_clip(tmp_path, "abc123", "vi", 5)
     assert loaded == cached
@@ -42,6 +49,40 @@ def test_load_segment_clip_missing_returns_none(tmp_path):
 def test_cache_dir_for_video(tmp_path):
     cache = cache_dir_for_video(tmp_path, "abc123")
     assert cache == tmp_path / "abc123"
+
+
+def test_save_replaces_stale_extension(tmp_path):
+    """If a cached clip exists with a different extension, save removes it."""
+    # First save as .wav
+    src_wav = tmp_path / "first.wav"
+    src_wav.write_bytes(b"WAV-DATA")
+    save_segment_clip(tmp_path, "vid", "vi", 0, src_wav)
+
+    # Save again as .mp3
+    src_mp3 = tmp_path / "second.mp3"
+    src_mp3.write_bytes(b"MP3-DATA")
+    saved = save_segment_clip(tmp_path, "vid", "vi", 0, src_mp3)
+
+    # Only the .mp3 should remain
+    assert saved.suffix == ".mp3"
+    assert saved.read_bytes() == b"MP3-DATA"
+
+    segments_dir = segments_dir_for_video(tmp_path, "vid")
+    cached_files = list(segments_dir.glob("vi_000.*"))
+    assert len(cached_files) == 1
+    assert cached_files[0].suffix == ".mp3"
+
+
+def test_load_returns_any_extension(tmp_path):
+    """load_segment_clip finds the cached file regardless of extension."""
+    src = tmp_path / "clip.mp3"
+    src.write_bytes(b"MP3")
+    save_segment_clip(tmp_path, "vid", "vi", 5, src)
+
+    found = load_segment_clip(tmp_path, "vid", "vi", 5)
+    assert found is not None
+    assert found.suffix == ".mp3"
+    assert found.read_bytes() == b"MP3"
 
 
 def test_dub_meta_round_trip(tmp_path):
