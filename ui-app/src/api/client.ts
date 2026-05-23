@@ -159,6 +159,10 @@ export function getProxyVideoUrl(videoId: string): string {
   return `${BASE}/videos/${videoId}/proxy`;
 }
 
+export function getPreviewMixUrl(videoId: string, language: string): string {
+  return `${BASE}/videos/${videoId}/preview-mix?language=${encodeURIComponent(language)}`;
+}
+
 // --- Translation + Profiles ---
 
 export function getProfiles(): Promise<TranslationProfileSummary[]> {
@@ -223,6 +227,8 @@ export function postPipeline(
     llm_api_key?: string;
     llm_backend?: string;
     playback_speed?: number;
+    underlay_db?: number;
+    subtitle_style?: Record<string, unknown> | null;
   },
 ): Promise<TaskResponse> {
   return request('/pipeline/full', {
@@ -242,6 +248,8 @@ export function postPipeline(
       llm_api_key: ttsOverrides?.llm_api_key ?? null,
       llm_backend: ttsOverrides?.llm_backend ?? null,
       playback_speed: ttsOverrides?.playback_speed ?? null,
+      underlay_db: ttsOverrides?.underlay_db ?? null,
+      subtitle_style: ttsOverrides?.subtitle_style ?? null,
     }),
   });
 }
@@ -272,6 +280,7 @@ export function postTTS(
   llmApiKey?: string,
   llmBackend?: string,
   playbackSpeed?: number,
+  underlayDb?: number,
 ): Promise<TaskResponse> {
   return request('/tts', {
     method: 'POST',
@@ -286,6 +295,7 @@ export function postTTS(
       llm_api_key: llmApiKey ?? null,
       llm_backend: llmBackend ?? null,
       playback_speed: playbackSpeed ?? null,
+      underlay_db: underlayDb ?? null,
     }),
   });
 }
@@ -351,11 +361,12 @@ export async function postTTSPreview(
   pitch: string = '+0Hz',
   apiKey?: string,
   playbackSpeed: number = 1.0,
+  underlayDb: number = 0,
 ): Promise<Blob> {
   const res = await fetch(`${BASE}/tts/preview`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, voice, provider, speed, pitch, api_key: apiKey ?? null, playback_speed: playbackSpeed }),
+    body: JSON.stringify({ text, voice, provider, speed, pitch, api_key: apiKey ?? null, playback_speed: playbackSpeed, underlay_db: underlayDb }),
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
@@ -496,6 +507,30 @@ export async function postPreviewBlur(
     throw new Error(text || `Blur preview failed (${res.status})`);
   }
   return res.blob();
+}
+
+export interface SyncDubBody {
+  language: string;
+  provider: string;
+  voice_id: string;
+  playback_speed?: number;
+  underlay_db?: number;
+  api_key?: string;
+  llm_api_key?: string;
+  llm_backend?: string;
+}
+
+export async function postDubSync(videoId: string, body: SyncDubBody): Promise<{ task_id: string }> {
+  const res = await fetch(`${BASE}/videos/${videoId}/dub/sync`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '');
+    throw new Error(`Sync Dub failed: ${res.status} ${errBody}`);
+  }
+  return res.json();
 }
 
 export function subscribeSSE(

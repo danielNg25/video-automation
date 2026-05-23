@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-import subprocess
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -61,19 +60,19 @@ class TestBaseTTSProvider:
 
 
 class TestTTSFactory:
-    def test_get_edge_provider(self):
+    def test_default_provider_is_google(self):
         from src.tts import get_tts_provider
-        from src.tts.edge import EdgeTTSProvider
-
-        provider = get_tts_provider({}, provider="edge")
-        assert isinstance(provider, EdgeTTSProvider)
-
-    def test_default_provider_is_edge(self):
-        from src.tts import get_tts_provider
-        from src.tts.edge import EdgeTTSProvider
+        from src.tts.google_tts import GoogleTTSProvider
 
         provider = get_tts_provider({})
-        assert isinstance(provider, EdgeTTSProvider)
+        assert isinstance(provider, GoogleTTSProvider)
+
+    def test_explicit_google_provider(self):
+        from src.tts import get_tts_provider
+        from src.tts.google_tts import GoogleTTSProvider
+
+        provider = get_tts_provider({}, provider="google")
+        assert isinstance(provider, GoogleTTSProvider)
 
     def test_unknown_provider_raises(self):
         from src.tts import get_tts_provider
@@ -81,13 +80,21 @@ class TestTTSFactory:
         with pytest.raises(ValueError, match="Unknown TTS provider"):
             get_tts_provider({}, provider="nonexistent")
 
+    def test_removed_providers_raise(self):
+        """Edge, gtts, and piper were deleted and now must raise."""
+        from src.tts import get_tts_provider
+
+        for removed in ("edge", "gtts", "piper"):
+            with pytest.raises(ValueError, match="Unknown TTS provider"):
+                get_tts_provider({}, provider=removed)
+
     def test_config_default_provider(self):
         from src.tts import get_tts_provider
-        from src.tts.edge import EdgeTTSProvider
+        from src.tts.google_tts import GoogleTTSProvider
 
-        config = {"tts": {"default_provider": "edge"}}
+        config = {"tts": {"default_provider": "google"}}
         provider = get_tts_provider(config)
-        assert isinstance(provider, EdgeTTSProvider)
+        assert isinstance(provider, GoogleTTSProvider)
 
 
 # ── Voice profiles tests ──
@@ -107,7 +114,7 @@ class TestVoiceProfiles:
 
         config = {"tts": {"voices_config": str(tmp_path / "nonexistent.yaml")}}
         profiles = load_voice_profiles(config)
-        assert profiles["default_provider"] == "edge"
+        assert profiles["default_provider"] == "google"
         assert profiles["profiles"] == {}
 
     def test_save_and_load_profiles(self, tmp_path):
@@ -115,13 +122,13 @@ class TestVoiceProfiles:
 
         config = {"tts": {"voices_config": str(tmp_path / "test_voices.yaml")}}
         data = {
-            "default_provider": "edge",
-            "profiles": {"test-voice": {"provider": "edge", "voice": "en-US-Test", "language": "en"}},
+            "default_provider": "google",
+            "profiles": {"test-voice": {"provider": "google", "voice": "en-US-Neural2-A", "language": "en"}},
             "platforms": {},
         }
         save_voice_profiles(data, config)
         loaded = load_voice_profiles(config)
-        assert loaded["profiles"]["test-voice"]["voice"] == "en-US-Test"
+        assert loaded["profiles"]["test-voice"]["voice"] == "en-US-Neural2-A"
 
 
 # ── Assembler duration fitting tests ──
@@ -219,8 +226,7 @@ class TestNaturalSpeedAnchoring:
     def test_redistribute_and_split_back_helpers_are_gone(self):
         """Borrow/redistribute and SRT-split-back helpers are deleted. The
         atempo helpers (_speed_up_audio / _build_atempo_filter) stay
-        because Stage 2 applies playback_speed; SHORTENING_MAX_PASSES
-        stays because Stage 1.5's LLM shortening uses it."""
+        because Stage 2 applies playback_speed."""
         import src.tts.assembler as A
         for name in (
             "_redistribute_slots", "GAP_BORROW_FRACTION",
@@ -228,12 +234,12 @@ class TestNaturalSpeedAnchoring:
             "_fallback_split_subtitles", "_segments_from_chunks",
             "DEFAULT_DUB_PLAYBACK_SPEED",
             "MAX_SAFE_SPEED_RATIO",
+            "SHORTENING_MAX_PASSES",
         ):
             assert not hasattr(A, name), f"{name!r} should be removed"
         # Surfaces that stay (used downstream).
         assert hasattr(A, "_speed_up_audio")
         assert hasattr(A, "_build_atempo_filter")
-        assert hasattr(A, "SHORTENING_MAX_PASSES")
 
     def test_atempo_filter_chain(self):
         """Sanity: atempo chain handles ratios in (0, ∞) — chains for >2×."""
@@ -242,47 +248,6 @@ class TestNaturalSpeedAnchoring:
         assert _build_atempo_filter(1.5) == "atempo=1.5000"
         # Above 2.0 chains: 2.5 → atempo=2.0,atempo=1.25
         assert _build_atempo_filter(2.5) == "atempo=2.0,atempo=1.2500"
-
-
-class TestSentenceShortening:
-    """Stage 1.5: when a clip would overrun its source span at the chosen
-    playback_speed, the LLM is asked to shorten the text. Up to
-    SHORTENING_MAX_PASSES passes; each tightens target_pct by 5pp; floor 30%."""
-
-    def test_max_passes_constant(self):
-        from src.tts.assembler import SHORTENING_MAX_PASSES
-        assert SHORTENING_MAX_PASSES == 3
-
-    def test_target_pct_calibrates_to_fit_at_playback_speed(self):
-        """target_pct = source_span * speed / clip_duration * 100.
-        The shortened text, played at `speed`, should land inside source_span."""
-        clip, span, speed = 6.0, 3.0, 1.5
-        natural_pct = (span * speed / clip) * 100
-        assert natural_pct == 75.0
-
-    def test_target_pct_tightens_per_pass(self):
-        """Each subsequent pass drops 5 percentage points."""
-        clip, span, speed = 6.0, 3.0, 1.5
-        natural_pct = (span * speed / clip) * 100
-        targets = [max(30, int(natural_pct) - 5 * (p - 1)) for p in range(1, 4)]
-        assert targets == [75, 70, 65]
-
-    def test_floor_clamp_at_30(self):
-        """Aggressive overflow (10s clip in 1s span at 1.5x) clamps every
-        pass at 30%; we never ask the LLM for impossibly tight cuts."""
-        clip, span, speed = 10.0, 1.0, 1.5
-        natural_pct = max(30, int((span * speed / clip) * 100))
-        targets = [max(30, natural_pct - 5 * (p - 1)) for p in range(1, 4)]
-        assert all(t == 30 for t in targets)
-
-    def test_overflow_trigger_uses_fitted_duration(self):
-        """A clip is only flagged when fitted_duration > source_span,
-        so atempo-friendly clips skip shortening even with a long natural."""
-        # 4s natural at 1.5x = 2.67s fitted → fits 3s span → no shortening.
-        clip, span, speed = 4.0, 3.0, 1.5
-        assert clip / speed <= span
-        # 6s natural at 1.5x = 4s fitted → exceeds 3s span → shorten.
-        assert 6.0 / speed > span
 
 
 # ── shorten_texts_batch per-item floor (Fix 4) ──
@@ -350,7 +315,7 @@ class TestRunTtsTrack:
         """Bug fix: pipeline previously hardcoded model='deepseek-chat' regardless
         of backend, causing API calls to anthropic/openai to fail and the
         translator to silently disappear."""
-        from src.tts.runner import _DEFAULT_LLM_MODELS, _build_llm_translator
+        from src.tts.runner import _DEFAULT_LLM_MODELS
 
         captured = {}
 
@@ -361,7 +326,6 @@ class TestRunTtsTrack:
         # Patch LLMTranslator inside the module so _build_llm_translator
         # constructs our fake.
         import src.tts.runner as runner_mod
-        original = __import__("src.translator.llm", fromlist=["LLMTranslator"]).LLMTranslator
 
         # Use direct monkey-patch on the imported symbol the helper uses
         with patch.object(runner_mod, "_build_llm_translator", wraps=runner_mod._build_llm_translator):
@@ -570,3 +534,126 @@ class TestBatchProcessorTTS:
             mock_proc.burn_reformat_and_dub.assert_not_called()
         finally:
             srt_path.unlink(missing_ok=True)
+
+
+
+
+class TestDubsyncSrtWriter:
+    """The dubsync writer redistributes shortened text and final timings
+    proportionally across the original source segments."""
+
+    def test_redistributes_text_at_word_boundaries(self, tmp_path):
+        from src.tts.dubsync_srt import write_dubsync_srt
+        # One merged sentence covering 3 source segments; target text is
+        # shorter than the joined originals.
+        source_segments = [
+            {"start": 0.0, "end": 1.0, "text": "one two three"},
+            {"start": 1.0, "end": 2.0, "text": "four five six seven"},
+            {"start": 2.0, "end": 3.0, "text": "eight nine"},
+        ]
+        sentence_plans = [
+            {
+                "segment_indices": [0, 1, 2],
+                "target_text": "alpha beta gamma delta",
+                "final_start": 0.0, "final_duration": 3.0,
+            }
+        ]
+        out = tmp_path / "out.dubsync.srt"
+        write_dubsync_srt(source_segments, sentence_plans, out)
+        from src.processor.subtitle import parse_srt
+        rewritten = parse_srt(out)
+        assert len(rewritten) == 3
+        joined = " ".join(r["text"] for r in rewritten).replace("  ", " ").strip()
+        assert joined == "alpha beta gamma delta"
+
+    def test_timing_is_proportional_to_original_durations(self, tmp_path):
+        from src.processor.subtitle import parse_srt
+        from src.tts.dubsync_srt import write_dubsync_srt
+        source_segments = [
+            {"start": 0.0, "end": 0.5, "text": "a"},   # 0.5s
+            {"start": 0.5, "end": 2.5, "text": "b"},   # 2.0s
+        ]
+        sentence_plans = [
+            {
+                "segment_indices": [0, 1],
+                "target_text": "alpha beta",
+                "final_start": 10.0, "final_duration": 5.0,
+            }
+        ]
+        out = tmp_path / "out.dubsync.srt"
+        write_dubsync_srt(source_segments, sentence_plans, out)
+        rewritten = parse_srt(out)
+        # First segment: 0.5/2.5 of 5.0 = 1.0s; second: 4.0s
+        assert rewritten[0]["start"] == pytest.approx(10.0, abs=1e-3)
+        assert rewritten[0]["end"] == pytest.approx(11.0, abs=1e-3)
+        assert rewritten[1]["start"] == pytest.approx(11.0, abs=1e-3)
+        assert rewritten[1]["end"] == pytest.approx(15.0, abs=1e-3)
+
+    def test_writer_handles_actual_assembler_dict_shape(self, tmp_path):
+        """Regression: the assembler's sentence_plan dict shape must include
+        `segment_indices`, `target_text`, `final_start`, and `final_duration`.
+        If any are missing, the writer's main loop skips the sentence and the
+        defensive `preserve source unchanged` branch emits original segments.
+        This was a real bug shipped in the dubbing redesign and silently
+        masked by the defensive fallback.
+
+        The fix is in `src/tts/assembler.py`'s sentence_plan.append block.
+        This test pins the contract by constructing a sentence_plans list
+        using the EXACT keys the assembler emits and asserting the writer's
+        main loop runs (not the fallback)."""
+        from src.processor.subtitle import parse_srt
+        from src.tts.dubsync_srt import write_dubsync_srt
+
+        # Source segments — 3 entries with distinct timings
+        source_segments = [
+            {"start": 0.0, "end": 1.0, "text": "alpha original"},
+            {"start": 1.0, "end": 2.0, "text": "beta original"},
+            {"start": 2.0, "end": 3.5, "text": "gamma original"},
+        ]
+        # A single merged sentence covering all 3, with shortened text AND a
+        # pushed-back final_start to make the rewrite visible.
+        sentence_plans = [
+            {
+                "index": 0,
+                "segment_indices": [0, 1, 2],
+                "text": "shortened spoken text",
+                "target_text": "shortened spoken text",
+                "original_text": "alpha original beta original gamma original",
+                "start": 5.0,
+                "end": 7.5,
+                "final_start": 5.0,
+                "final_duration": 2.5,
+            }
+        ]
+        out = tmp_path / "test_id_vi.dubsync.srt"
+        write_dubsync_srt(source_segments, sentence_plans, out)
+        rewritten = parse_srt(out)
+
+        # The writer's main loop produced 3 entries (one per source segment).
+        assert len(rewritten) == 3, (
+            f"Expected 3 rewritten entries (one per source segment); got "
+            f"{len(rewritten)}. If 0 or unchanged-source, the writer's "
+            f"main loop didn't run — segment_indices key likely missing."
+        )
+
+        # CRITICAL: each rewritten entry's TEXT is a slice of the SHORTENED
+        # `target_text`, not the original segment text. If the writer fell
+        # through to the defensive branch, the text would equal the originals
+        # ("alpha original" etc.).
+        joined = " ".join(r["text"] for r in rewritten).replace("  ", " ").strip()
+        assert joined == "shortened spoken text", (
+            f"Rewritten text is not the redistributed target_text; got "
+            f"{joined!r}. The writer likely fell through to the defensive "
+            f"'preserve source unchanged' branch."
+        )
+
+        # CRITICAL: timings must be anchored at final_start=5.0, not the
+        # source's start=0.0. If the writer fell through, the first entry's
+        # start would be 0.0.
+        assert rewritten[0]["start"] == pytest.approx(5.0, abs=1e-3), (
+            f"First rewritten entry's start is {rewritten[0]['start']!r}; "
+            f"expected ~5.0 (from final_start). The writer likely fell "
+            f"through to the defensive branch."
+        )
+
+

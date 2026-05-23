@@ -109,6 +109,18 @@ async def run_tts_track(
     playback_speed: float | None = None,
     on_progress: Callable[[int, int, str], None] | None = None,
 ) -> dict:
+    # Coerce request-supplied playback_speed in case it arrived as a string
+    # (e.g. from config.yaml interpolation in some future use, or a misbehaving
+    # client). Runner is the boundary where types should be normalised.
+    if playback_speed is not None and not isinstance(playback_speed, (int, float)):
+        try:
+            playback_speed = float(playback_speed)
+        except (TypeError, ValueError):
+            logger.warning(
+                f"playback_speed is not numeric ({playback_speed!r}); "
+                f"falling back to assembler default"
+            )
+            playback_speed = None
     """Generate the TTS track for a video and return result metadata.
 
     Args:
@@ -198,6 +210,14 @@ async def run_tts_track(
     )
 
     # ── Assemble ────────────────────────────────────────────────────
+    # Pull the underlay_db default from config so dub_meta records the
+    # value the processor will actually use when mixing.
+    underlay_db_cfg = config.get("tts", {}).get("underlay_db")
+    try:
+        underlay_db_val = float(underlay_db_cfg) if underlay_db_cfg is not None else None
+    except (TypeError, ValueError):
+        underlay_db_val = None
+
     assembler = TTSAssembler(translator=translator)
     _, sentence_plan = await assembler.generate_full_track(
         provider=tts_provider,
@@ -210,6 +230,10 @@ async def run_tts_track(
         llm_caller=llm_caller,
         srt_path=srt_path,
         playback_speed=playback_speed,
+        video_id=video_id,
+        language=language,
+        provider_name=provider_name,
+        underlay_db=underlay_db_val,
     )
 
     # ── Output duration via ffprobe (informational) ────────────────

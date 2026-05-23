@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import subprocess
 import uuid
 from dataclasses import dataclass, field
@@ -31,6 +32,34 @@ class Task:
     events: list[dict] = field(default_factory=list)
 
 
+def _build_tts_mix_settings(
+    platforms_cfg: dict,
+    underlay_db: float | None,
+) -> dict:
+    """Build per-platform {original_volume, tts_volume} dict.
+
+    If underlay_db is provided (dB scale), it overrides original_volume for
+    ALL enabled platforms — the user's explicit preference wins over the
+    per-platform YAML defaults. The conversion is: linear = 10 ** (dB / 20).
+
+    When underlay_db is None the per-platform original_volume from
+    tts_voices.yaml is used as-is.
+    """
+    result: dict[str, dict] = {}
+    for platform_name, p in platforms_cfg.items():
+        if not p.get("enabled", False):
+            continue
+        if underlay_db is not None:
+            original_vol = 10 ** (underlay_db / 20)
+        else:
+            original_vol = p.get("original_volume", 0.3)
+        result[platform_name] = {
+            "original_volume": original_vol,
+            "tts_volume": p.get("tts_volume", 1.0),
+        }
+    return result
+
+
 def _detect_video_status(video_id: str, has_srt: bool, srt_langs: list[str]) -> str:
     """Detect video status from filesystem state."""
     from pathlib import Path
@@ -44,6 +73,74 @@ def _detect_video_status(video_id: str, has_srt: bool, srt_langs: list[str]) -> 
     if has_srt:
         return "transcribed"
     return "downloaded"
+
+
+def _build_dub_status(video_id: str) -> list[dict]:
+    """Enumerate languages with a persisted dub; flag which are out-of-sync.
+
+    Sources:
+    - ``data/tts/{video_id}/dub_meta_{lang}.json`` — populated by the dub-sync
+      feature on first dub. Carries last-synced timestamp.
+    - ``data/srt/{video_id}_{lang}.dubsync.srt`` — populated by every dub
+      generation (legacy included). Presence = a dub exists for {lang}.
+
+    A language is reported ``out_of_sync`` when:
+    - it's listed in ``PipelineState.dub_out_of_sync_languages`` (edits since
+      the last dub), OR
+    - it has a ``dubsync.srt`` but no ``dub_meta_{lang}.json`` (legacy dub —
+      we can't verify sync state without meta, so prompt the user to re-sync,
+      which populates the cache + meta).
+    """
+    import datetime as dt
+
+    from src.utils.state import PipelineState
+
+    tts_data_dir = Path("data/tts") / video_id
+    srt_dir = Path("data/srt")
+
+    state = PipelineState.load(video_id)
+    out_of_sync = set(state.dub_out_of_sync_languages)
+
+    # Languages with a dub_meta_*.json (modern dubs)
+    meta_languages: dict[str, float] = {}  # language → meta mtime
+    if tts_data_dir.exists():
+        for meta_file in tts_data_dir.glob("dub_meta_*.json"):
+            lang = meta_file.stem.replace("dub_meta_", "", 1)
+            meta_languages[lang] = meta_file.stat().st_mtime
+
+    # Languages with a dubsync.srt (covers legacy dubs too)
+    srt_languages: dict[str, float] = {}  # language → srt mtime
+    for srt_file in srt_dir.glob(f"{video_id}_*.dubsync.srt"):
+        # stem is like "{video_id}_vi.dubsync"
+        stem = srt_file.stem
+        if not stem.endswith(".dubsync"):
+            continue
+        lang_part = stem[: -len(".dubsync")]
+        prefix = f"{video_id}_"
+        if not lang_part.startswith(prefix):
+            continue
+        lang = lang_part[len(prefix):]
+        if lang:
+            srt_languages[lang] = srt_file.stat().st_mtime
+
+    # Union: a dub exists if EITHER meta OR dubsync.srt does
+    all_languages = set(meta_languages.keys()) | set(srt_languages.keys())
+
+    entries = []
+    for lang in all_languages:
+        # last_synced_at: prefer meta mtime, else dubsync.srt mtime
+        mtime = meta_languages.get(lang, srt_languages.get(lang, 0.0))
+        last_synced_at = (
+            dt.datetime.utcfromtimestamp(mtime).isoformat() + "Z" if mtime > 0 else ""
+        )
+        # Legacy (no meta) → always out of sync until user syncs
+        is_legacy_no_meta = lang not in meta_languages and lang in srt_languages
+        entries.append({
+            "language": lang,
+            "out_of_sync": (lang in out_of_sync) or is_legacy_no_meta,
+            "last_synced_at": last_synced_at,
+        })
+    return sorted(entries, key=lambda e: e["language"])
 
 
 class TaskManager:
@@ -68,10 +165,18 @@ class TaskManager:
             size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
 
             srt_dir = Path("data/srt")
-            srt_langs = sorted(
-                f.stem.split("_")[-1]
+
+            def _parse_srt_lang(stem: str) -> str:
+                """Extract language code from SRT filename stem, stripping .dubsync suffix."""
+                lang = stem.split("_")[-1]
+                if lang.endswith(".dubsync"):
+                    lang = lang[: -len(".dubsync")]
+                return lang
+
+            srt_langs = sorted({
+                _parse_srt_lang(f.stem)
                 for f in srt_dir.glob(f"{video_id}_*.srt")
-            )
+            })
             has_srt = len(srt_langs) > 0
 
             # Load saved metadata (title, author, etc.) if available
@@ -116,6 +221,7 @@ class TaskManager:
                 has_srt=has_srt,
                 srt_languages=srt_langs,
                 status=_detect_video_status(video_id, has_srt, srt_langs),
+                dub_status=_build_dub_status(video_id),
             )
 
         logger.info(f"Scanned {len(self.video_index)} existing videos")
@@ -199,6 +305,23 @@ class TaskManager:
                 tts.unlink()
             except OSError as e:
                 logger.warning(f"Failed to delete {tts}: {e}")
+
+        # TTS per-segment cache + dub_meta (data/tts/{video_id}/)
+        tts_cache_dir = tts_dir / video_id
+        if tts_cache_dir.exists():
+            try:
+                shutil.rmtree(tts_cache_dir)
+            except OSError as e:
+                logger.warning(f"Failed to delete TTS cache {tts_cache_dir}: {e}")
+
+        # Preview-mix cache (data/preview/{video_id}_*.mp4)
+        preview_dir = Path("data/preview")
+        if preview_dir.exists():
+            for preview in preview_dir.glob(f"{video_id}_*.mp4"):
+                try:
+                    preview.unlink()
+                except OSError as e:
+                    logger.warning(f"Failed to delete preview {preview}: {e}")
 
         # State + duplicate registry
         logs_dir = Path("data/logs")
@@ -314,6 +437,7 @@ class TaskManager:
                 thumbnail=thumbnail,
                 has_srt=False,
                 status="downloaded",
+                dub_status=_build_dub_status(video_id),
             )
             self.video_index[video_id] = video_resp
 
@@ -600,6 +724,7 @@ class TaskManager:
         tts_mix_settings: dict[str, dict] | None = None,
         blur_settings: dict | None = None,
         manual_region: dict | None = None,
+        underlay_db: float | None = None,
     ):
         """Execute a video processing task in the background."""
         from src.processor import process_for_all_platforms
@@ -643,6 +768,12 @@ class TaskManager:
                 profiles_data = load_voice_profiles(config)
                 tts_platforms = profiles_data.get("platforms", {})
 
+                # Build per-platform mix settings from underlay_db (dB→linear)
+                # or fall back to per-platform YAML defaults. The caller-supplied
+                # tts_mix_settings dict (from ProcessRequest) still wins for any
+                # platform it already contains — this only fills missing ones.
+                derived_mix = _build_tts_mix_settings(tts_platforms, underlay_db)
+
                 tts_audio_paths = {}
                 for platform in platforms:
                     plat_cfg = tts_platforms.get(platform, {})
@@ -656,14 +787,18 @@ class TaskManager:
                     if tts_path.exists():
                         tts_audio_paths[platform] = tts_path
 
-                        # Also set mix settings from platform config if not overridden
+                        # Fill mix settings: caller-supplied wins; derived_mix
+                        # (from underlay_db) is the fallback.
                         if tts_mix_settings is None:
                             tts_mix_settings = {}
                         if platform not in tts_mix_settings:
-                            tts_mix_settings[platform] = {
-                                "original_volume": plat_cfg.get("original_volume", 0.3),
-                                "tts_volume": plat_cfg.get("tts_volume", 1.0),
-                            }
+                            tts_mix_settings[platform] = derived_mix.get(
+                                platform,
+                                {
+                                    "original_volume": plat_cfg.get("original_volume", 0.3),
+                                    "tts_volume": plat_cfg.get("tts_volume", 1.0),
+                                },
+                            )
 
             # Load subtitle region for blur if blur is enabled
             subtitle_region = None
@@ -790,6 +925,7 @@ class TaskManager:
                 thumbnail=thumbnail,
                 has_srt=False,
                 status="downloaded",
+                dub_status=_build_dub_status(video_id),
             )
             self.video_index[video_id] = video_resp
             task.video_id = video_id

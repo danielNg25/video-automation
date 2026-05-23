@@ -9,6 +9,7 @@ interface TTSPreviewProps {
   sampleText?: string;
   apiKey?: string;
   playbackSpeed?: number;
+  underlayDb?: number;   // forwarded as underlay_db on the preview request; default 0 (off)
 }
 
 export function TTSPreview({
@@ -19,6 +20,7 @@ export function TTSPreview({
   sampleText = 'Xin chào các bạn, hôm nay chúng ta sẽ nói về một chủ đề rất thú vị.',
   apiKey,
   playbackSpeed = 1.0,
+  underlayDb = 0,
 }: TTSPreviewProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -38,7 +40,7 @@ export function TTSPreview({
     setError('');
 
     try {
-      const blob = await postTTSPreview(sampleText, voice, provider, speed, pitch, apiKey, playbackSpeed);
+      const blob = await postTTSPreview(sampleText, voice, provider, speed, pitch, apiKey, playbackSpeed, underlayDb);
       // Clean up previous URL
       if (urlRef.current) URL.revokeObjectURL(urlRef.current);
 
@@ -61,7 +63,7 @@ export function TTSPreview({
     } finally {
       setIsLoading(false);
     }
-  }, [voice, provider, speed, pitch, sampleText, apiKey, playbackSpeed, isPlaying]);
+  }, [voice, provider, speed, pitch, sampleText, apiKey, playbackSpeed, underlayDb, isPlaying]);
 
   return (
     <div className="flex items-center gap-2">

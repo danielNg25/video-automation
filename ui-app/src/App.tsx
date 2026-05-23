@@ -1,11 +1,10 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { lazy, Suspense } from 'react';
+import { PipelineStatusProvider } from './lib/pipelineStatus';
 
-const DashboardPage = lazy(() => import('./pages/Dashboard'));
 const DownloadTranscribePage = lazy(() => import('./pages/DownloadTranscribe'));
 const SettingsPage = lazy(() => import('./pages/Settings'));
-const SubtitleEditorPage = lazy(() => import('./pages/SubtitleEditor'));
 const TranslationProfilesPage = lazy(() => import('./pages/TranslationProfiles'));
 const VideoListPage = lazy(() => import('./pages/VideoList'));
 const VideoDetailPage = lazy(() => import('./pages/VideoDetail'));
@@ -21,19 +20,20 @@ function LoadingFallback() {
 function App() {
   return (
     <BrowserRouter>
-      <Suspense fallback={<LoadingFallback />}>
-        <Routes>
-          <Route element={<Layout />}>
-            <Route index element={<DashboardPage />} />
-            <Route path="/download" element={<DownloadTranscribePage />} />
-            <Route path="/videos" element={<VideoListPage />} />
-            <Route path="/videos/:videoId" element={<VideoDetailPage />} />
-            <Route path="/editor/:videoId" element={<SubtitleEditorPage />} />
-            <Route path="/profiles" element={<TranslationProfilesPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-          </Route>
-        </Routes>
-      </Suspense>
+      <PipelineStatusProvider>
+        <Suspense fallback={<LoadingFallback />}>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route index element={<DownloadTranscribePage />} />
+              <Route path="/download" element={<Navigate to="/" replace />} />
+              <Route path="/videos" element={<VideoListPage />} />
+              <Route path="/videos/:videoId" element={<VideoDetailPage />} />
+              <Route path="/profiles" element={<TranslationProfilesPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+            </Route>
+          </Routes>
+        </Suspense>
+      </PipelineStatusProvider>
     </BrowserRouter>
   );
 }

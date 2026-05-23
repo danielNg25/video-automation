@@ -1,27 +1,27 @@
-default_provider: edge
+default_provider: google
 
 profiles:
   female-vi-natural:
-    provider: edge
-    voice: "vi-VN-HoaiMyNeural"
+    provider: google
+    voice: "vi-VN-Wavenet-A"
     language: vi
     speed: "+0%"
     pitch: "+0Hz"
   male-vi-natural:
-    provider: edge
-    voice: "vi-VN-NamMinhNeural"
+    provider: google
+    voice: "vi-VN-Wavenet-B"
     language: vi
     speed: "+0%"
     pitch: "+0Hz"
-  female-en-edge:
-    provider: edge
-    voice: "en-US-JennyNeural"
+  female-en-natural:
+    provider: google
+    voice: "en-US-Wavenet-C"
     language: en
     speed: "+0%"
     pitch: "+0Hz"
-  male-en-edge:
-    provider: edge
-    voice: "en-US-GuyNeural"
+  male-en-natural:
+    provider: google
+    voice: "en-US-Wavenet-D"
     language: en
     speed: "+0%"
     pitch: "+0Hz"
@@ -34,7 +34,7 @@ platforms:
     tts_volume: 1.0
   youtube:
     enabled: true
-    profile: female-en-edge
+    profile: female-en-natural
     original_volume: 0.3
     tts_volume: 1.0
   facebook:

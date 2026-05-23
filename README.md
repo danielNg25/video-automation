@@ -31,7 +31,7 @@ Automated pipeline to download videos from Douyin, generate AI subtitles (Chines
 | Facebook      | Facebook Graph API (Page token)                |
 | X/Twitter     | X API v2 (OAuth 1.0a) — *stretch goal*         |
 | Translation   | Anthropic/OpenAI LLM (profile-guided)          |
-| TTS Dubbing   | Edge TTS (free), OpenAI, Google, ElevenLabs     |
+| TTS Dubbing   | Google Cloud TTS, OpenAI, ElevenLabs            |
 | CLI           | Click + Rich                                   |
 | Web UI        | React 19 + Tailwind CSS + Vite                 |
 | API           | FastAPI + SSE for real-time progress             |
@@ -170,9 +170,8 @@ douyin-automation/
 │   │   ├── llm.py             # LLM translator (Anthropic/OpenAI)
 │   │   └── profiles.py        # Translation profile system
 │   ├── tts/
-│   │   ├── edge.py            # Edge TTS (free, default)
+│   │   ├── google_tts.py      # Google Cloud TTS (default)
 │   │   ├── openai_tts.py      # OpenAI TTS
-│   │   ├── google_tts.py      # Google Cloud TTS
 │   │   ├── elevenlabs.py      # ElevenLabs TTS
 │   │   └── assembler.py       # Multi-segment TTS assembler
 │   └── utils/
@@ -344,7 +343,7 @@ douyin-automation/
 > Detailed plan: [`plans/phase4-tts-dubbing.md`](plans/phase4-tts-dubbing.md)
 
 - [x] **4.1** TTS base class — `src/tts/base.py`
-- [x] **4.2** Edge TTS provider — `src/tts/edge.py` (free, default)
+- [x] **4.2** ~~Edge TTS provider — `src/tts/edge.py` (free, default)~~ (removed — replaced by Google Cloud TTS as default)
 - [x] **4.3** OpenAI TTS provider — `src/tts/openai_tts.py`
 - [x] **4.4** Google Cloud TTS provider — `src/tts/google_tts.py`
 - [x] **4.5** TTS factory — `src/tts/__init__.py`
@@ -361,9 +360,12 @@ douyin-automation/
 - [x] **4.16** TTS API client
 - [x] **4.17** TTS section on Process page
 - [x] **4.18** TTS preview component
+- [x] **4.19** Dubbing redesign spec — `docs/superpowers/specs/2026-05-20-tts-dubbing-redesign.md` (plan-then-emit, Chinese underlay, no silent skips, dubsync.srt)
+- [x] **4.20** Dubbing redesign implementation (per spec §Algorithm and §Stage 5)
+- [x] **4.21** Dubbing redesign tests — planner unit tests + assembler integration tests + muting regression test
 
 **Verification:**
-- [x] V4.1 — Edge TTS installed and importable
+- [x] V4.1 — ~~Edge TTS installed and importable~~ (Edge TTS removed; Google Cloud TTS is default)
 - [ ] V4.2 — Voice list API returns Vietnamese voices
 - [ ] V4.3 — Voice preview returns playable audio
 - [ ] V4.4 — TTS generation produces WAV matching video duration (±0.5s)
@@ -372,6 +374,23 @@ douyin-automation/
 - [ ] V4.7 — UI: enable TTS → select voice → preview → generate → process
 - [x] V4.8 — Segment duration fitting: long TTS clips speed up to fit time window
 - [x] V4.9 — Unit tests pass
+
+---
+
+### UI App Overhaul + Dub-Sync Planning (2026-05-22)
+
+- [x] UI app overhaul (Phases 1–3 of `docs/superpowers/plans/2026-05-22-ui-app-overhaul.md`): remove Upload + Dashboard pages, rebuild VideoDetail as 4-tab layout, rebuild Settings as two-level sidebar, single source of truth for TTS settings
+- [x] Dub-sync feature: design + implementation plan committed (`docs/superpowers/specs/2026-05-22-dub-sync-and-editor-default-design.md` + `docs/superpowers/plans/2026-05-22-dub-sync-and-editor-default.md`)
+- [x] Dub-sync Task B1: per-segment WAV cache (`src/tts/segment_cache.py`) + dub metadata persistence (`src/tts/dub_meta.py`), wired into `assembler.generate_full_track()` and `task_manager.delete_video`
+- [x] Dub-sync Task B3: `POST /api/videos/{id}/dub/sync` endpoint + `src/tts/sync_runner.py` + `Assembler.run_partial(...)` — partial-regen path with > 50% / segment-count / provider-voice-speed-underlay-mismatch fallbacks to full regen via `src.tts.runner.run_tts_track`
+- [x] Editor as default video view (`feature/phase4-dubbing-redesign-spec` Phase A): `/videos/:id` defaults to the Editor tab; standalone `/editor/:id` route removed; the per-video Overview tab is gone.
+- [x] Per-segment WAV cache + dub metadata (`data/tts/{id}/segments/`, `dub_meta_*.json`) persisted on every full dub generation. Foundation for partial regen.
+- [x] Sync-Dub detection on SRT save: comparing cleaned text against recorded `segment_texts`; flag persists on `PipelineState.dub_out_of_sync_languages`.
+- [x] `POST /api/videos/{id}/dub/sync` partial-regen endpoint with fallback to full regen (> 50% dirty / count change / provider-voice-speed-underlay mismatch). LLM shortening preserved via Stage 3 translator construction.
+- [x] `VideoResponse.dub_status` field for editor banner UX.
+- [x] EditorTab Sync-Dub banner + explicit "Sync Dub" button + SSE progress + auto-refresh on completion.
+- [x] Legacy dubs surface in `dub_status` — `_build_dub_status` enumerates `dubsync.srt` files too, flags legacy entries (no `dub_meta`) as `out_of_sync` so the editor banner appears.
+- [x] EditorTab plays the dub mixed under the original audio via a new `GET /api/videos/{id}/preview-mix` endpoint (cached MP4 at `data/preview/{id}_{lang}_dub_mix.mp4`); raw / proxy used as fallback when no dub exists.
 
 ---
 

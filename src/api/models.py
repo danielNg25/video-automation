@@ -58,7 +58,7 @@ class FullPipelineRequest(BaseModel):
     force: bool = False
     metadata: dict | None = None
     tts_profile: str | None = None  # e.g. "female-vi-natural" — if set, generates TTS dub
-    blur_enabled: bool = True  # blur original subtitles before burn-in
+    blur_enabled: bool = False  # blur original subtitles before burn-in
     # Per-request overrides for TTS/LLM, mirroring TTSRequest so the pipeline
     # produces the same output as running TTS via the per-video flow.
     tts_provider: str | None = None  # override profile's provider
@@ -67,6 +67,14 @@ class FullPipelineRequest(BaseModel):
     llm_api_key: str | None = None  # for the TTS-shortening LLM
     llm_backend: str | None = None  # deepseek, openai, anthropic
     playback_speed: float | None = None  # fixed dub playback speed
+    # Underlay level (dB) for the original-language audio mixed under the dub.
+    # 0 disables the underlay entirely. When None, the runner falls back to
+    # config.yaml then the assembler default (-12 dB).
+    underlay_db: float | None = None
+    # ASS style overrides merged with per-platform styles in the processor.
+    # E.g. {"background_color": "&H80000000", "background_opacity": 128} for a
+    # semi-transparent black background behind subtitles.
+    subtitle_style: dict | None = None
 
 
 class BatchPipelineRequest(BaseModel):
@@ -78,13 +86,21 @@ class BatchPipelineRequest(BaseModel):
     source_language: str = "zh"
     force: bool = False
     tts_profile: str | None = None  # e.g. "female-vi-natural" — if set, generates TTS dub
-    blur_enabled: bool = True  # blur original subtitles before burn-in
+    blur_enabled: bool = False  # blur original subtitles before burn-in
     tts_provider: str | None = None
     tts_voice: str | None = None
     tts_api_key: str | None = None
     llm_api_key: str | None = None
     llm_backend: str | None = None
     playback_speed: float | None = None
+    # Underlay level (dB) for the original-language audio mixed under the dub.
+    # 0 disables the underlay entirely. When None, the runner falls back to
+    # config.yaml then the assembler default (-12 dB).
+    underlay_db: float | None = None
+    # ASS style overrides merged with per-platform styles in the processor.
+    # E.g. {"background_color": "&H80000000", "background_opacity": 128} for a
+    # semi-transparent black background behind subtitles.
+    subtitle_style: dict | None = None
 
 
 class PipelineHistoryEntry(BaseModel):
@@ -151,6 +167,12 @@ class TaskResponse(BaseModel):
     status: str
 
 
+class DubStatusEntry(BaseModel):
+    language: str
+    out_of_sync: bool
+    last_synced_at: str = ""   # ISO 8601 UTC; empty if never generated
+
+
 class VideoResponse(BaseModel):
     video_id: str
     title: str = ""
@@ -167,6 +189,7 @@ class VideoResponse(BaseModel):
     has_srt: bool = False
     srt_languages: list[str] = []
     status: str = "downloaded"
+    dub_status: list[DubStatusEntry] = []
 
 
 class VideoListResponse(BaseModel):
@@ -186,6 +209,7 @@ class SrtResponse(BaseModel):
     video_id: str
     segments: list[SubtitleSegment]
     language: str
+    is_dubsync: bool = False
 
 
 class ProcessResult(BaseModel):
@@ -224,10 +248,21 @@ class TTSRequest(BaseModel):
     playback_speed: float | None = None
 
 
+class SyncDubRequest(BaseModel):
+    language: str
+    provider: str
+    voice_id: str
+    playback_speed: float = 1.5
+    underlay_db: float = -18.0
+    api_key: str | None = None
+    llm_api_key: str | None = None    # for LLM shortening (Stage 3)
+    llm_backend: str | None = None    # anthropic / openai / deepseek
+
+
 class TTSPreviewRequest(BaseModel):
     text: str
     voice: str = "vi-VN-HoaiMyNeural"
-    provider: str = "edge"
+    provider: str = "google"
     # Apply atempo at this speed to the previewed sample so the user can
     # hear what the dub will sound like at their chosen playback speed.
     playback_speed: float = 1.0
@@ -245,7 +280,7 @@ class VoiceInfo(BaseModel):
 
 
 class VoiceProfileConfig(BaseModel):
-    provider: str = "edge"
+    provider: str = "google"
     voice: str
     language: str
     speed: str = "+0%"

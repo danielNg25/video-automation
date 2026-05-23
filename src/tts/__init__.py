@@ -17,30 +17,16 @@ def get_tts_provider(config: dict, provider: str | None = None) -> BaseTTSProvid
 
     Args:
         config: Full config dict (may contain 'tts' section).
-        provider: Override provider name ("edge", "openai", "google").
-            If None, reads from config or defaults to "edge".
+        provider: Override provider name ("google", "openai", "elevenlabs").
+            If None, reads from config or defaults to "google".
 
     Returns:
         Configured TTS provider instance.
     """
     tts_config = config.get("tts", {})
-    provider_name = provider or tts_config.get("default_provider", "edge")
+    provider_name = provider or tts_config.get("default_provider", "google")
 
-    if provider_name == "edge":
-        from src.tts.edge import EdgeTTSProvider
-
-        logger.info("Using Edge TTS provider")
-        return EdgeTTSProvider()
-
-    elif provider_name == "openai":
-        from src.tts.openai_tts import OpenAITTSProvider
-
-        api_key = tts_config.get("openai_api_key") or config.get("translation", {}).get("api_key")
-        model = tts_config.get("openai_model", "tts-1")
-        logger.info(f"Using OpenAI TTS provider (model={model})")
-        return OpenAITTSProvider(api_key=api_key, model=model)
-
-    elif provider_name == "google":
+    if provider_name == "google":
         from src.tts.google_tts import GoogleTTSProvider
 
         logger.info("Using Google Cloud TTS provider")
@@ -54,18 +40,13 @@ def get_tts_provider(config: dict, provider: str | None = None) -> BaseTTSProvid
         logger.info(f"Using ElevenLabs TTS provider (model={model})")
         return ElevenLabsTTSProvider(api_key=api_key, model=model)
 
-    elif provider_name == "gtts":
-        from src.tts.gtts_provider import GTTSProvider
+    elif provider_name == "openai":
+        from src.tts.openai_tts import OpenAITTSProvider
 
-        logger.info("Using gTTS provider (Google Translate)")
-        return GTTSProvider()
-
-    elif provider_name == "piper":
-        from src.tts.piper_tts import PiperTTSProvider
-
-        model_dir = tts_config.get("piper_model_dir")
-        logger.info("Using Piper TTS provider (local)")
-        return PiperTTSProvider(model_dir=model_dir)
+        api_key = tts_config.get("openai_api_key") or config.get("translation", {}).get("api_key")
+        model = tts_config.get("openai_model", "tts-1")
+        logger.info(f"Using OpenAI TTS provider (model={model})")
+        return OpenAITTSProvider(api_key=api_key, model=model)
 
     else:
         raise ValueError(f"Unknown TTS provider: {provider_name}")
@@ -88,7 +69,7 @@ def load_voice_profiles(config: dict | None = None) -> dict:
     path = Path(config_path)
     if not path.exists():
         logger.warning(f"Voice profiles not found at {config_path}, using defaults")
-        return {"default_provider": "edge", "profiles": {}, "platforms": {}}
+        return {"default_provider": "google", "profiles": {}, "platforms": {}}
 
     with open(path) as f:
         return yaml.safe_load(f) or {}

@@ -20,6 +20,19 @@ from src.utils.state import (
 
 logger = setup_logger(__name__)
 
+# Per-stage progress ranges in the overall 0..1 pipeline.progress space.
+# These are the canonical values that emit() callsites use as boundaries.
+# Consumers that need to recover per-stage 0..1 progress from overall
+# progress can use these:
+#   stage_progress = (overall - lo) / (hi - lo)
+STAGE_RANGES: dict[str, tuple[float, float]] = {
+    "download":   (0.00, 0.20),
+    "transcribe": (0.20, 0.45),
+    "translate":  (0.45, 0.60),
+    "tts":        (0.60, 0.70),
+    "process":    (0.70, 1.00),
+}
+
 
 class Pipeline:
     """Full pipeline orchestrator with per-stage state tracking and crash recovery."""
@@ -266,18 +279,24 @@ class Pipeline:
 
             # --- Stage: Process — skipped, export via Video Studio ---
             if not state.is_stage_complete("process"):
-                # Persist blur preference so Video Studio export respects it
+                # Persist blur preference and subtitle style overrides so Video
+                # Studio export respects them.
                 blur_enabled = options.get("blur_enabled", True)
+                subtitle_style = options.get("subtitle_style")
                 style_path = Path("data/srt") / f"{video_id}_style.json"
+                import json as _json
                 if style_path.exists():
-                    import json as _json
                     existing = _json.loads(style_path.read_text())
                     existing["blur_enabled"] = blur_enabled
+                    if subtitle_style:
+                        existing["subtitle_style"] = subtitle_style
                     style_path.write_text(_json.dumps(existing, indent=2))
                 else:
-                    import json as _json
                     style_path.parent.mkdir(parents=True, exist_ok=True)
-                    style_path.write_text(_json.dumps({"blur_enabled": blur_enabled}, indent=2))
+                    payload: dict = {"blur_enabled": blur_enabled}
+                    if subtitle_style:
+                        payload["subtitle_style"] = subtitle_style
+                    style_path.write_text(_json.dumps(payload, indent=2))
 
                 emit("process", 1.0, "Pipeline complete — use Video Studio to export")
                 state.mark_stage_complete("process", {

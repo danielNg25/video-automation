@@ -1,14 +1,12 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
-import { TopBar } from '../components/TopBar';
-import { VideoPlayer } from '../components/editor/VideoPlayer';
-import { SubtitleOverlay } from '../components/editor/SubtitleOverlay';
-import type { SubtitleStyle } from '../components/editor/SubtitleOverlay';
-import { SegmentList } from '../components/editor/SegmentList';
-import { Timeline } from '../components/editor/Timeline';
-import { StylePanel } from '../components/editor/StylePanel';
-import { useVideoPlayer } from '../hooks/useVideoPlayer';
-import { srtTimestampToSeconds, secondsToSrtTimestamp } from '../utils/srtTime';
+import { VideoPlayer } from '../../components/editor/VideoPlayer';
+import { SubtitleOverlay } from '../../components/editor/SubtitleOverlay';
+import type { SubtitleStyle } from '../../components/editor/SubtitleOverlay';
+import { SegmentList } from '../../components/editor/SegmentList';
+import { Timeline } from '../../components/editor/Timeline';
+import { StylePanel } from '../../components/editor/StylePanel';
+import { useVideoPlayer } from '../../hooks/useVideoPlayer';
+import { srtTimestampToSeconds, secondsToSrtTimestamp } from '../../utils/srtTime';
 import {
   getVideo,
   getSrt,
@@ -18,30 +16,36 @@ import {
   subscribeSSE,
   getProcessedVideoUrl,
   getProxyVideoUrl,
+  getPreviewMixUrl,
   getVideoStyle,
   putVideoStyle,
   putSubtitleStyleDefault,
-} from '../api/client';
-import type { VideoMetadata, SubtitleSegment } from '../api/types';
+  postDubSync,
+} from '../../api/client';
+import { storageGet, loadApiKeys, loadLLMPrefs } from '../../utils/storage';
+import type { VideoMetadata, SubtitleSegment } from '../../api/types';
 
 type RightTab = 'segments' | 'style';
 
-function SubtitleEditorPage() {
-  const { videoId } = useParams<{ videoId: string }>();
-  const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
-  const lang = searchParams.get('lang') || 'zh';
+interface Props {
+  videoId: string;
+  initialVideo?: VideoMetadata;
+  onSyncComplete?: () => void;
+}
 
+export function EditorTab({ videoId, initialVideo, onSyncComplete }: Props) {
   // Video player
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playerState, playerControls] = useVideoPlayer(videoRef);
 
   // Data
-  const [video, setVideo] = useState<VideoMetadata | null>(null);
+  const [video, setVideo] = useState<VideoMetadata | null>(initialVideo ?? null);
   const [segments, setSegments] = useState<SubtitleSegment[]>([]);
   const [originalSegments, setOriginalSegments] = useState<SubtitleSegment[]>([]);
-  const [availableLangs, setAvailableLangs] = useState<string[]>([]);
-  const [activeLang, setActiveLang] = useState(lang);
+  const [availableLangs, setAvailableLangs] = useState<string[]>(
+    initialVideo?.srt_languages ?? [],
+  );
+  const [activeLang, setActiveLang] = useState<string>('');
 
   // UI state
   const [rightTab, setRightTab] = useState<RightTab>('segments');
@@ -51,6 +55,11 @@ function SubtitleEditorPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [useProxy, setUseProxy] = useState(true);
   const [videoLoading, setVideoLoading] = useState(true);
+
+  // Sync-Dub state
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState({ pct: 0, message: '' });
+  const [syncError, setSyncError] = useState<string>('');
 
   // Style
   const [style, setStyle] = useState<SubtitleStyle>({
@@ -99,21 +108,49 @@ function SubtitleEditorPage() {
       .catch(() => {});
   }, [videoId]);
 
-  // Load video + SRT
+  // Refresh video metadata. `initialVideo` seeds the state synchronously so the
+  // editor renders immediately; this effect picks up any server-side changes.
   useEffect(() => {
     if (!videoId) return;
-
     getVideo(videoId)
       .then((v) => {
         setVideo(v);
         setAvailableLangs(v.srt_languages);
-        // If requested lang not available, fall back to first available
-        if (!v.srt_languages.includes(activeLang) && v.srt_languages.length > 0) {
-          setActiveLang(v.srt_languages[0]);
-        }
       })
       .catch(() => {});
   }, [videoId]);
+
+  // Default-language selection: prefer languages with a `dubsync.srt` on disk
+  // (vi > en), fall back to first non-Chinese SRT, then any SRT.
+  useEffect(() => {
+    if (activeLang) return; // user already chose
+    if (!video) return;
+
+    // Priority 1: language with a dubsync.srt (preferring vi over en)
+    const dubLangs = (video.dub_status ?? []).map((d) => d.language);
+    for (const candidate of ['vi', 'en']) {
+      if (dubLangs.includes(candidate)) {
+        setActiveLang(candidate);
+        return;
+      }
+    }
+    if (dubLangs.length > 0) {
+      setActiveLang(dubLangs[0]);
+      return;
+    }
+
+    // Priority 2: first non-Chinese SRT language
+    const nonZh = (video.srt_languages ?? []).filter((l) => l !== 'zh');
+    if (nonZh.length > 0) {
+      setActiveLang(nonZh[0]);
+      return;
+    }
+
+    // Priority 3: any SRT language (including zh)
+    if (video.srt_languages.length > 0) {
+      setActiveLang(video.srt_languages[0]);
+    }
+  }, [video, activeLang]);
 
   useEffect(() => {
     if (!videoId || !activeLang) return;
@@ -128,48 +165,6 @@ function SubtitleEditorPage() {
         setOriginalSegments([]);
       });
   }, [videoId, activeLang]);
-
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      // Don't capture when typing in inputs/textareas
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-
-      switch (e.key) {
-        case ' ':
-        case 'k':
-          e.preventDefault();
-          playerControls.togglePlay();
-          break;
-        case 'j':
-          e.preventDefault();
-          playerControls.seek(playerState.currentTime - 5);
-          break;
-        case 'l':
-          e.preventDefault();
-          playerControls.seek(playerState.currentTime + 5);
-          break;
-        case 'ArrowLeft':
-          e.preventDefault();
-          playerControls.stepFrame(-1);
-          break;
-        case 'ArrowRight':
-          e.preventDefault();
-          playerControls.stepFrame(1);
-          break;
-      }
-
-      // Ctrl/Cmd+S to save
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-        e.preventDefault();
-        handleSave();
-      }
-    };
-
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [playerControls, playerState.currentTime, segments]);
 
   // --- Segment handlers ---
 
@@ -306,7 +301,7 @@ function SubtitleEditorPage() {
     } finally {
       setSaving(false);
     }
-  }, [videoId, activeLang, segments, saving, stylePayload]);
+  }, [videoId, activeLang, segments, saving, stylePayload, style]);
 
   const handleSaveAsDefault = useCallback(async () => {
     if (styleSaving) return;
@@ -321,7 +316,110 @@ function SubtitleEditorPage() {
     } finally {
       setStyleSaving(false);
     }
-  }, [style, styleSaving, stylePayload]);
+  }, [styleSaving, stylePayload]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Don't capture when typing in inputs/textareas
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      switch (e.key) {
+        case ' ':
+        case 'k':
+          e.preventDefault();
+          playerControls.togglePlay();
+          break;
+        case 'j':
+          e.preventDefault();
+          playerControls.seek(playerState.currentTime - 5);
+          break;
+        case 'l':
+          e.preventDefault();
+          playerControls.seek(playerState.currentTime + 5);
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          playerControls.stepFrame(-1);
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          playerControls.stepFrame(1);
+          break;
+      }
+
+      // Ctrl/Cmd+S to save
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        handleSave();
+      }
+    };
+
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [playerControls, playerState.currentTime, handleSave]);
+
+  // --- Sync-Dub ---
+
+  const dubStatusForActive = (video?.dub_status ?? []).find(
+    (d) => d.language === activeLang,
+  );
+  const isOutOfSync = Boolean(dubStatusForActive?.out_of_sync);
+
+  const handleSyncDub = useCallback(async () => {
+    if (!video || !activeLang) return;
+    setSyncError('');
+    setIsSyncing(true);
+    setSyncProgress({ pct: 0, message: 'Starting sync…' });
+
+    const provider = storageGet('tts_selected_provider') || 'google';
+    const voiceId = storageGet(`tts_voice_id_${provider}`) || '';
+    const playbackSpeed = parseFloat(storageGet('tts_playback_speed') || '1.5');
+    const underlayDb = parseFloat(storageGet('tts_underlay_db') || '-18');
+
+    const apiKeys = loadApiKeys();
+    const apiKey = apiKeys[provider] || undefined;
+
+    const llmPrefs = loadLLMPrefs();
+    const llmBackend = llmPrefs.backend;
+    const llmApiKey = apiKeys[llmBackend] || undefined;
+
+    try {
+      const { task_id } = await postDubSync(video.video_id, {
+        language: activeLang,
+        provider,
+        voice_id: voiceId,
+        playback_speed: playbackSpeed,
+        underlay_db: underlayDb,
+        api_key: apiKey,
+        llm_api_key: llmApiKey,
+        llm_backend: llmBackend,
+      });
+
+      const es = subscribeSSE(task_id, (eventType, data) => {
+        if (eventType === 'progress') {
+          const pct = typeof data.progress === 'number' ? Math.round(data.progress * 100) : 0;
+          const msg = typeof data.message === 'string' ? data.message : 'Syncing…';
+          setSyncProgress({ pct, message: msg });
+        } else if (eventType === 'complete') {
+          setIsSyncing(false);
+          setSyncProgress({ pct: 100, message: 'Dub synced.' });
+          es.close();
+          // Refresh the parent's video metadata so dub_status updates and the banner clears
+          onSyncComplete?.();
+        } else if (eventType === 'error') {
+          setIsSyncing(false);
+          const errMsg = typeof data.message === 'string' ? data.message : 'Sync failed';
+          setSyncError(errMsg);
+          es.close();
+        }
+      });
+    } catch (e) {
+      setIsSyncing(false);
+      setSyncError(e instanceof Error ? e.message : 'Sync failed');
+    }
+  }, [video, activeLang, onSyncComplete]);
 
   // --- Preview burn-in ---
   const handlePreviewBurnIn = useCallback(async () => {
@@ -335,7 +433,7 @@ function SubtitleEditorPage() {
         setOriginalSegments(segments);
       }
 
-      const stylePayload = {
+      const stylePayloadInline = {
         font_name: style.fontName,
         font_size: style.fontSize,
         outline_width: style.outlineWidth,
@@ -350,10 +448,10 @@ function SubtitleEditorPage() {
         language: activeLang,
         start: Math.max(0, playerState.currentTime - 2),
         duration: 10,
-        subtitle_style: stylePayload,
+        subtitle_style: stylePayloadInline,
       });
 
-      const es = subscribeSSE(task_id, (eventType, data) => {
+      const es = subscribeSSE(task_id, (eventType) => {
         if (eventType === 'complete') {
           setPreviewUrl(getProcessedVideoUrl(videoId, 'preview'));
           setPreviewLoading(false);
@@ -370,24 +468,25 @@ function SubtitleEditorPage() {
 
   if (!videoId) return <div className="p-6 text-on-surface">No video ID</div>;
 
+  // Prefer the dub-mixed preview MP4 when the active language has a dub, so
+  // users hear the dub (with the original Chinese at underlay_db) instead of
+  // the raw original. Falls back to raw / proxy for languages without a dub
+  // or when viewing zh.
+  const hasDubForActiveLang = (video?.dub_status ?? []).some(
+    (d) => d.language === activeLang,
+  );
   const videoSrc = video
-    ? (useProxy ? getProxyVideoUrl(videoId!) : getRawVideoUrl(videoId!))
+    ? (hasDubForActiveLang && activeLang && activeLang !== 'zh'
+        ? getPreviewMixUrl(videoId, activeLang)
+        : (useProxy ? getProxyVideoUrl(videoId) : getRawVideoUrl(videoId)))
     : '';
 
   return (
-    <div className="flex flex-col h-full bg-surface">
-      <TopBar showSearch={false} searchPlaceholder="" />
-
+    <div className="flex flex-col h-full">
       <div className="flex-1 overflow-hidden flex flex-col">
-        {/* Header with breadcrumb + actions */}
+        {/* Header with editor toolbar */}
         <div className="flex items-center justify-between px-6 py-3 border-b border-outline-variant/10">
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => navigate(`/videos/${videoId}`)}
-              className="text-on-surface-variant hover:text-on-surface transition-colors"
-            >
-              <span className="material-symbols-outlined text-lg">arrow_back</span>
-            </button>
             <h1 className="text-sm font-semibold text-on-surface">
               Subtitle Editor
             </h1>
@@ -514,6 +613,46 @@ function SubtitleEditorPage() {
               </span>
             </div>
 
+            {/* Sync-Dub banner */}
+            <div className="mx-4 mt-3 space-y-2">
+              {isOutOfSync && !isSyncing && !syncError && (
+                <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs p-3 rounded-md flex items-center gap-3">
+                  <span className="material-symbols-outlined text-sm">sync_problem</span>
+                  <span className="flex-1">
+                    Dub for <code className="font-mono">{activeLang}</code> is out of sync with current subtitles.
+                  </span>
+                  <button
+                    onClick={handleSyncDub}
+                    className="bg-amber-500 text-zinc-900 px-3 py-1.5 rounded font-bold text-[10px] uppercase tracking-wider hover:bg-amber-400 transition-colors"
+                  >
+                    Sync Dub
+                  </button>
+                </div>
+              )}
+
+              {isSyncing && (
+                <div className="bg-amber-500/10 border border-amber-500/30 p-3 rounded-md space-y-1">
+                  <div className="flex justify-between text-[10px] font-mono text-amber-300">
+                    <span>{syncProgress.message}</span>
+                    <span>{syncProgress.pct}%</span>
+                  </div>
+                  <div className="w-full bg-amber-500/20 h-1.5 rounded-full overflow-hidden">
+                    <div className="h-full bg-amber-400 transition-all" style={{ width: `${syncProgress.pct}%` }} />
+                  </div>
+                </div>
+              )}
+
+              {syncError && (
+                <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-xs p-3 rounded-md flex items-center gap-2">
+                  <span className="material-symbols-outlined text-sm">error</span>
+                  <span className="flex-1">Sync failed: {syncError}</span>
+                  <button onClick={() => setSyncError('')} className="text-red-300 hover:text-red-200">
+                    <span className="material-symbols-outlined text-sm">close</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
             {/* Tab content */}
             <div className="flex-1 overflow-hidden p-4 flex flex-col">
               {rightTab === 'segments' ? (
@@ -585,5 +724,3 @@ function SubtitleEditorPage() {
     </div>
   );
 }
-
-export default SubtitleEditorPage;

@@ -104,6 +104,7 @@ python scripts/setup_oauth.py youtube
 - **Subtitle language per platform**: Vietnamese for TikTok/Facebook, English for YouTube/X. Configured in `config/platforms.yaml`.
 - **Stage-level state persistence**: Pipeline saves progress after each stage so interrupted runs resume from the last completed stage, not from scratch. File locking with `fcntl.flock()` for multi-instance safety.
 - **X/Twitter is a stretch goal**: $100/mo API cost, most restrictive limits (2:20, 512MB). Disabled by default in config.
+- **Dub planner**: The TTS assembler delegates timing/shortening decisions to a pure-function planner in `src/tts/planner.py` (`Planner.build_plan`). Vietnamese clips that overrun their source span are first shortened by the loosest target from (0.85, 0.75, 0.65) that fits, then pushed downstream if shortening doesn't fully recover. Drift is reclaimed from silent gaps ≥ 1s, reset at gaps ≥ 3s. The source MP4's audio is mixed under the dub at a configurable `underlay_db` (default -12 dB). Synth failures fall back to source audio at 0 dB rather than silence.
 
 ## Extending the Pipeline
 

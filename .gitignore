@@ -32,3 +32,5 @@ ui-app/dist/
 *.swp
 *.swo
 .DS_Store
+
+.superpowers/
