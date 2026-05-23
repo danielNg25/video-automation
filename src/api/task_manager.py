@@ -78,29 +78,66 @@ def _detect_video_status(video_id: str, has_srt: bool, srt_langs: list[str]) -> 
 def _build_dub_status(video_id: str) -> list[dict]:
     """Enumerate languages with a persisted dub; flag which are out-of-sync.
 
-    Reads ``data/tts/{video_id}/dub_meta_*.json`` to find languages with a dub,
-    then cross-references ``PipelineState.dub_out_of_sync_languages`` to flag
-    which are stale relative to the current SRT.
+    Sources:
+    - ``data/tts/{video_id}/dub_meta_{lang}.json`` — populated by the dub-sync
+      feature on first dub. Carries last-synced timestamp.
+    - ``data/srt/{video_id}_{lang}.dubsync.srt`` — populated by every dub
+      generation (legacy included). Presence = a dub exists for {lang}.
+
+    A language is reported ``out_of_sync`` when:
+    - it's listed in ``PipelineState.dub_out_of_sync_languages`` (edits since
+      the last dub), OR
+    - it has a ``dubsync.srt`` but no ``dub_meta_{lang}.json`` (legacy dub —
+      we can't verify sync state without meta, so prompt the user to re-sync,
+      which populates the cache + meta).
     """
     import datetime as dt
 
     from src.utils.state import PipelineState
 
     tts_data_dir = Path("data/tts") / video_id
-    if not tts_data_dir.exists():
-        return []
+    srt_dir = Path("data/srt")
 
     state = PipelineState.load(video_id)
     out_of_sync = set(state.dub_out_of_sync_languages)
 
+    # Languages with a dub_meta_*.json (modern dubs)
+    meta_languages: dict[str, float] = {}  # language → meta mtime
+    if tts_data_dir.exists():
+        for meta_file in tts_data_dir.glob("dub_meta_*.json"):
+            lang = meta_file.stem.replace("dub_meta_", "", 1)
+            meta_languages[lang] = meta_file.stat().st_mtime
+
+    # Languages with a dubsync.srt (covers legacy dubs too)
+    srt_languages: dict[str, float] = {}  # language → srt mtime
+    for srt_file in srt_dir.glob(f"{video_id}_*.dubsync.srt"):
+        # stem is like "{video_id}_vi.dubsync"
+        stem = srt_file.stem
+        if not stem.endswith(".dubsync"):
+            continue
+        lang_part = stem[: -len(".dubsync")]
+        prefix = f"{video_id}_"
+        if not lang_part.startswith(prefix):
+            continue
+        lang = lang_part[len(prefix):]
+        if lang:
+            srt_languages[lang] = srt_file.stat().st_mtime
+
+    # Union: a dub exists if EITHER meta OR dubsync.srt does
+    all_languages = set(meta_languages.keys()) | set(srt_languages.keys())
+
     entries = []
-    for meta_file in tts_data_dir.glob("dub_meta_*.json"):
-        lang = meta_file.stem.replace("dub_meta_", "", 1)
-        mtime = meta_file.stat().st_mtime
-        last_synced_at = dt.datetime.utcfromtimestamp(mtime).isoformat() + "Z"
+    for lang in all_languages:
+        # last_synced_at: prefer meta mtime, else dubsync.srt mtime
+        mtime = meta_languages.get(lang, srt_languages.get(lang, 0.0))
+        last_synced_at = (
+            dt.datetime.utcfromtimestamp(mtime).isoformat() + "Z" if mtime > 0 else ""
+        )
+        # Legacy (no meta) → always out of sync until user syncs
+        is_legacy_no_meta = lang not in meta_languages and lang in srt_languages
         entries.append({
             "language": lang,
-            "out_of_sync": lang in out_of_sync,
+            "out_of_sync": (lang in out_of_sync) or is_legacy_no_meta,
             "last_synced_at": last_synced_at,
         })
     return sorted(entries, key=lambda e: e["language"])
@@ -276,6 +313,15 @@ class TaskManager:
                 shutil.rmtree(tts_cache_dir)
             except OSError as e:
                 logger.warning(f"Failed to delete TTS cache {tts_cache_dir}: {e}")
+
+        # Preview-mix cache (data/preview/{video_id}_*.mp4)
+        preview_dir = Path("data/preview")
+        if preview_dir.exists():
+            for preview in preview_dir.glob(f"{video_id}_*.mp4"):
+                try:
+                    preview.unlink()
+                except OSError as e:
+                    logger.warning(f"Failed to delete preview {preview}: {e}")
 
         # State + duplicate registry
         logs_dir = Path("data/logs")

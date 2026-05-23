@@ -53,6 +53,98 @@ async def serve_raw_video(video_id: str):
     )
 
 
+def _mix_dub_preview(raw: Path, dub: Path, underlay_db: float, out: Path) -> None:
+    """ffmpeg pipeline: raw video + raw audio (at underlay_db) + dub (at 0 dB) → MP4."""
+    # underlay_db is negative (e.g., -18). Convert to volume factor.
+    orig_vol = 10 ** (underlay_db / 20.0) if underlay_db is not None else 0.125
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(raw),
+        "-i", str(dub),
+        "-filter_complex",
+        f"[0:a]volume={orig_vol:.4f}[orig];"
+        f"[1:a]volume=1.0[dub];"
+        f"[orig][dub]amix=inputs=2:duration=longest[mix]",
+        "-map", "0:v",
+        "-map", "[mix]",
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-b:a", "128k",
+        "-shortest",
+        str(out),
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"ffmpeg dub-preview mix failed (exit {proc.returncode}): "
+            f"{proc.stderr[-500:]}"
+        )
+
+
+@router.get("/api/videos/{video_id}/preview-mix")
+async def serve_preview_mix(video_id: str, language: str):
+    """Serve an MP4 mixing raw video with the dub audio for a language.
+
+    Mix recipe:
+    - Video stream from raw MP4 (stream-copied, fast).
+    - Audio: raw original at ``underlay_db`` (from ``dub_meta`` or default
+      -18 dB), mixed with dub WAV at 0 dB. Re-encoded as AAC.
+    - Cached at ``data/preview/{video_id}_{language}_dub_mix.mp4``.
+    - Cache freshness: cached file's mtime must be newer than the dub WAV's
+      mtime AND the raw MP4's mtime. Otherwise regenerate.
+    """
+    tm = get_task_manager()
+    video = tm.video_index.get(video_id)
+    if not video:
+        raise HTTPException(status_code=404, detail=f"Video {video_id} not found")
+
+    raw_path = Path(video.file_path)
+    if not raw_path.exists():
+        raise HTTPException(status_code=404, detail="Raw video missing on disk")
+
+    # Find the dub WAV — glob `data/tts/{id}_{lang}_*.wav`, pick newest
+    tts_dir = Path("data/tts")
+    candidates = sorted(
+        tts_dir.glob(f"{video_id}_{language}_*.wav"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    candidates = [p for p in candidates if p.is_file()]
+    if not candidates:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No dub WAV for {video_id}/{language} — generate the dub first",
+        )
+    dub_wav = candidates[0]
+
+    # Determine underlay_db: prefer dub_meta, else default
+    meta = load_dub_meta(tts_dir, video_id, language)
+    underlay_db = meta.underlay_db if meta is not None else -18.0
+
+    # Output path + cache check
+    preview_dir = Path("data/preview")
+    preview_dir.mkdir(parents=True, exist_ok=True)
+    out_path = preview_dir / f"{video_id}_{language}_dub_mix.mp4"
+
+    needs_regen = (
+        not out_path.exists()
+        or out_path.stat().st_mtime < dub_wav.stat().st_mtime
+        or out_path.stat().st_mtime < raw_path.stat().st_mtime
+    )
+
+    if needs_regen:
+        await asyncio.to_thread(
+            _mix_dub_preview, raw_path, dub_wav, underlay_db, out_path,
+        )
+
+    return FileResponse(
+        path=str(out_path),
+        media_type="video/mp4",
+        filename=f"{video_id}_{language}_dub_mix.mp4",
+    )
+
+
 @router.get("/api/videos/{video_id}/proxy")
 async def serve_proxy_video(video_id: str):
     """Serve a cached 480p proxy video, generating on first request."""

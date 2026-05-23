@@ -389,6 +389,8 @@ douyin-automation/
 - [x] `POST /api/videos/{id}/dub/sync` partial-regen endpoint with fallback to full regen (> 50% dirty / count change / provider-voice-speed-underlay mismatch). LLM shortening preserved via Stage 3 translator construction.
 - [x] `VideoResponse.dub_status` field for editor banner UX.
 - [x] EditorTab Sync-Dub banner + explicit "Sync Dub" button + SSE progress + auto-refresh on completion.
+- [x] Legacy dubs surface in `dub_status` — `_build_dub_status` enumerates `dubsync.srt` files too, flags legacy entries (no `dub_meta`) as `out_of_sync` so the editor banner appears.
+- [x] EditorTab plays the dub mixed under the original audio via a new `GET /api/videos/{id}/preview-mix` endpoint (cached MP4 at `data/preview/{id}_{lang}_dub_mix.mp4`); raw / proxy used as fallback when no dub exists.
 
 ---
 

@@ -159,6 +159,10 @@ export function getProxyVideoUrl(videoId: string): string {
   return `${BASE}/videos/${videoId}/proxy`;
 }
 
+export function getPreviewMixUrl(videoId: string, language: string): string {
+  return `${BASE}/videos/${videoId}/preview-mix?language=${encodeURIComponent(language)}`;
+}
+
 // --- Translation + Profiles ---
 
 export function getProfiles(): Promise<TranslationProfileSummary[]> {
