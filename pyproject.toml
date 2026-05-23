@@ -23,8 +23,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-linux = ["llama-cpp-python>=0.3.0"]
-macos = ["mlx-lm>=0.19.0"]
+# Linux / macOS extras are intentionally empty — install the base package on either OS.
+# Local-LLM backends are opt-in (see `local-llm-linux` / `local-llm-macos` below).
+linux = []
+macos = []
+local-llm-linux = ["llama-cpp-python>=0.3.0"]
+local-llm-macos = ["mlx-lm>=0.19.0"]
 
 [project.scripts]
 douyin-repurpose = "src.cli:main"

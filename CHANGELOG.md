@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- `pyproject.toml`: `llama-cpp-python` moved out of the `[linux]` extras into a new opt-in `[local-llm-linux]` extras group; `mlx-lm` moved from `[macos]` to `[local-llm-macos]`. Both `[linux]` and `[macos]` are now empty. The Docker image and `make install-linux` / `make install` no longer compile llama-cpp-python from source (saved ~5–15 minutes per fresh build). Users wanting local-LLM translation can install explicitly via `pip install -e ".[local-llm-linux]"` (or `[local-llm-macos]`). The `_call_local` code path still imports lazily, so the runtime is unaffected when the dep isn't installed and isn't called.
+
 ### Added
 - `GET /api/videos/{id}/preview-mix?language={lang}`: serves a cached MP4 mixing the raw video stream with the dub audio for the requested language. Used by the EditorTab `<video>` so users hear the dub (with the original Chinese at `underlay_db`) instead of the raw original. Cached under `data/preview/{id}_{lang}_dub_mix.mp4`; regenerates when the dub WAV is newer than the cache. `getPreviewMixUrl` helper in the API client.
 - `EditorTab` now prefers `getPreviewMixUrl(video_id, activeLang)` when the active language has a dub; falls back to the raw / proxy URL when no dub exists or when viewing `zh`.
