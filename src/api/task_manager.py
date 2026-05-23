@@ -128,10 +128,18 @@ class TaskManager:
             size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
 
             srt_dir = Path("data/srt")
-            srt_langs = sorted(
-                f.stem.split("_")[-1]
+
+            def _parse_srt_lang(stem: str) -> str:
+                """Extract language code from SRT filename stem, stripping .dubsync suffix."""
+                lang = stem.split("_")[-1]
+                if lang.endswith(".dubsync"):
+                    lang = lang[: -len(".dubsync")]
+                return lang
+
+            srt_langs = sorted({
+                _parse_srt_lang(f.stem)
                 for f in srt_dir.glob(f"{video_id}_*.srt")
-            )
+            })
             has_srt = len(srt_langs) > 0
 
             # Load saved metadata (title, author, etc.) if available

@@ -105,3 +105,38 @@ class TestVideoResponseIncludesDubStatus:
         for video in body["videos"]:
             assert "dub_status" in video, f"dub_status missing from video: {video!r}"
             assert isinstance(video["dub_status"], list)
+
+
+class TestSrtLangsDeduplicatesDubsyncFiles:
+    async def test_dubsync_srt_not_listed_as_separate_language(self, tmp_path, monkeypatch):
+        """srt_languages deduplicates: vi.srt + vi.dubsync.srt → only 'vi' in list."""
+        monkeypatch.chdir(tmp_path)
+
+        # Set up a raw video so scan_existing_videos picks it up
+        raw_dir = tmp_path / "data" / "raw"
+        raw_dir.mkdir(parents=True)
+        (raw_dir / "myvid.mp4").write_bytes(b"\x00" * 1024)
+
+        # Two SRT files for the same language: plain + dubsync variant
+        srt_dir = tmp_path / "data" / "srt"
+        srt_dir.mkdir(parents=True)
+        (srt_dir / "myvid_vi.srt").write_text(
+            "1\n00:00:01,000 --> 00:00:02,000\nhello\n", encoding="utf-8"
+        )
+        (srt_dir / "myvid_vi.dubsync.srt").write_text(
+            "1\n00:00:01,000 --> 00:00:02,000\nhello dubsync\n", encoding="utf-8"
+        )
+        (srt_dir / "myvid_zh.srt").write_text(
+            "1\n00:00:01,000 --> 00:00:02,000\n你好\n", encoding="utf-8"
+        )
+
+        from src.api.task_manager import TaskManager
+
+        tm = TaskManager()
+        await tm.scan_existing_videos()
+
+        video = tm.video_index.get("myvid")
+        assert video is not None, "scan_existing_videos should have indexed myvid"
+        assert video.srt_languages == ["vi", "zh"], (
+            f"Expected deduped ['vi', 'zh'], got {video.srt_languages}"
+        )
