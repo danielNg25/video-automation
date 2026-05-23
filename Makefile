@@ -1,4 +1,4 @@
-.PHONY: install install-linux test lint format check clean docker-up docker-down docker-build docker-rebuild docker-logs api ui
+.PHONY: install install-linux test lint format check clean docker-up docker-down docker-build docker-rebuild docker-build-nocache docker-logs api ui
 
 # Development (macOS)
 install:
@@ -36,10 +36,19 @@ docker-up:
 docker-down:
 	docker compose down
 
+# Build the app image (incremental, uses Docker layer cache + pip wheel cache).
+# Fast for code changes; even when pyproject.toml changes, pip reuses cached wheels.
 docker-build:
 	docker compose build app
 
+# Build + restart the app container (incremental). Use this after code changes.
 docker-rebuild:
+	docker compose build app
+	docker compose up -d --force-recreate app
+
+# Nuclear option: wipe Docker layer cache and rebuild from scratch.
+# Avoid unless you suspect a stale layer is the actual problem — re-downloads ~200MB of paddlepaddle.
+docker-build-nocache:
 	docker compose build --no-cache app
 
 docker-logs:

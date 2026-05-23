@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Changed
+- `Makefile`: `docker-rebuild` now does an incremental build (`docker compose build app`) followed by a container restart, matching the intuitive "rebuild after code change" meaning. The old wipe-everything behavior moved to a new `docker-build-nocache` target with a comment warning that it re-downloads ~200 MB of paddlepaddle. Comments added to all three targets so users can pick the right one.
 - `pyproject.toml`: `llama-cpp-python` moved out of the `[linux]` extras into a new opt-in `[local-llm-linux]` extras group; `mlx-lm` moved from `[macos]` to `[local-llm-macos]`. Both `[linux]` and `[macos]` are now empty. The Docker image and `make install-linux` / `make install` no longer compile llama-cpp-python from source (saved ~5–15 minutes per fresh build). Users wanting local-LLM translation can install explicitly via `pip install -e ".[local-llm-linux]"` (or `[local-llm-macos]`). The `_call_local` code path still imports lazily, so the runtime is unaffected when the dep isn't installed and isn't called.
 
 ### Added
