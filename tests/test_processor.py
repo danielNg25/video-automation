@@ -291,6 +291,39 @@ class TestBuildStyleString:
         assert "FontSize=28" in result
         assert "MarginV=80" in result
 
+    def test_hex_background_color_converts_to_ass(self):
+        """#RRGGBB from <input type='color'> → &HAABBGGRR ASS literal."""
+        style = {"background_color": "#FFFF00", "background_opacity": 100}
+        result = self.proc._build_style_string(style)
+        # Yellow #FFFF00 → R=FF G=FF B=00, with alpha=0 (fully opaque). ASS
+        # format is &HAABBGGRR so the literal is &H0000FFFF.
+        assert "BackColour=&H0000FFFF" in result
+        assert "BorderStyle=3" in result
+
+    def test_opacity_is_percentage_inverted_to_ass_alpha(self):
+        """`background_opacity` is a percentage; ASS alpha is inverted."""
+        style = {"background_color": "#000000", "background_opacity": 90}
+        result = self.proc._build_style_string(style)
+        # 90% opaque → ASS alpha 255-229=26 → 0x1A.
+        assert "BackColour=&H1A000000" in result
+
+    def test_ass_literal_color_passes_through(self):
+        style = {"background_color": "&H80FF00FF", "background_opacity": 50}
+        result = self.proc._build_style_string(style)
+        assert "BackColour=&H80FF00FF" in result
+
+    def test_no_background_when_both_unset(self):
+        style = {"font_name": "Arial", "font_size": 24}
+        result = self.proc._build_style_string(style)
+        assert "BackColour" not in result
+        assert "BorderStyle" not in result
+
+    def test_opacity_only_falls_back_to_black(self):
+        """No bg_color, only opacity → opaque black box."""
+        style = {"background_opacity": 100}
+        result = self.proc._build_style_string(style)
+        assert "BackColour=&H00000000" in result
+
 
 # ── TestFFmpegProcessor ──────────────────────────────────────────────
 

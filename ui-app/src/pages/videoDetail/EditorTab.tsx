@@ -278,6 +278,7 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete }: Props) {
     margin_h: style.marginH,
     bold: style.bold,
     shadow_depth: style.shadow ? 1 : 0,
+    background_color: style.backgroundColor,
     background_opacity: style.backgroundOpacity,
   }), [style]);
 
@@ -441,7 +442,8 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete }: Props) {
         margin_h: style.marginH,
         bold: style.bold,
         shadow_depth: style.shadow ? 1 : 0,
-        background_opacity: Math.round(style.backgroundOpacity * 2.55), // 0-100% → 0-255
+        background_color: style.backgroundColor,
+        background_opacity: style.backgroundOpacity,
       };
 
       const { task_id } = await postPreviewClip(videoId, {

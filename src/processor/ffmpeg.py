@@ -219,15 +219,28 @@ class FFmpegProcessor:
         if style.get("bold", False):
             parts.append("Bold=1")
 
-        # Background color support
+        # Background color support. `background_opacity` is a percentage
+        # (0-100) — matches the StylePanel slider and the percentage scale
+        # used by `generate_subtitle_background_images` on the export path.
+        # ASS alpha is inverted (0 = opaque, 255 = transparent), hence the
+        # `255 - pct*255/100`. When `background_color` is a `#RRGGBB` hex
+        # (the StylePanel sends this from <input type="color">), convert
+        # to ASS's `&HAABBGGRR`. When it's already a `&H...` ASS literal
+        # we pass it through. When neither is present but opacity > 0,
+        # fall back to opaque black so the user still sees a box.
         bg_color = style.get("background_color", "")
         bg_opacity = style.get("background_opacity", 0)
-        if bg_color:
-            parts.append(f"BackColour={bg_color}")
-            parts.append("BorderStyle=3")
-        elif bg_opacity > 0:
-            alpha_hex = f"{bg_opacity:02X}"
-            parts.append(f"BackColour=&H{alpha_hex}000000")
+        if bg_color or bg_opacity > 0:
+            alpha = max(0, 255 - int(bg_opacity * 255 / 100)) if bg_opacity > 0 else 0
+            alpha_hex = f"{alpha:02X}"
+            if bg_color.startswith("#") and len(bg_color) == 7:
+                r, g, b = bg_color[1:3], bg_color[3:5], bg_color[5:7]
+                ass_colour = f"&H{alpha_hex}{b}{g}{r}".upper().replace("&H", "&H")
+                parts.append(f"BackColour={ass_colour}")
+            elif bg_color.startswith("&H"):
+                parts.append(f"BackColour={bg_color}")
+            else:
+                parts.append(f"BackColour=&H{alpha_hex}000000")
             parts.append("BorderStyle=3")
 
         # Horizontal margin
