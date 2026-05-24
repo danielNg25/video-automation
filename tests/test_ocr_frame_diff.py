@@ -1,8 +1,9 @@
 """Tests for the _FrameDiffer helper in src/transcriber/ocr.py.
 
-The differ is what makes OCR fast — it lets the streaming OCR pipeline
-skip frames whose subtitle strip looks identical to the previous one, so
-we don't waste an OCR call on every consecutive frame of the same subtitle.
+The differ uses a high-contrast binary text-mask: pixels brighter than 200
+or darker than 50 are 'text-like'; everything mid-range is 'background'.
+Comparing masks makes the diff robust to constant background motion under
+the subtitle strip — which dominated the raw-pixel approach.
 """
 
 import numpy as np
@@ -17,63 +18,92 @@ class TestFrameDiffer:
     def test_first_call_is_never_same(self):
         """No previous frame cached → always 'different'."""
         from src.transcriber.ocr import _FrameDiffer
-        d = _FrameDiffer(threshold=3.0)
+        d = _FrameDiffer()
         assert d.is_same(_strip(128)) is False
 
     def test_identical_frames_are_same(self):
         from src.transcriber.ocr import _FrameDiffer
-        d = _FrameDiffer(threshold=3.0)
+        d = _FrameDiffer()
         d.update(_strip(128), "hello", [])
         assert d.is_same(_strip(128)) is True
 
-    def test_50pct_pixel_flip_is_different(self):
-        """Flipping half the pixels to black → mean diff ≈ 64, well above 3.0."""
+    def test_mid_range_pixels_produce_empty_masks_and_match(self):
+        """Mid-grey pixels (50 ≤ v ≤ 200) aren't text → mask is all zero.
+        Two such frames look identical to the differ, regardless of grey value."""
         from src.transcriber.ocr import _FrameDiffer
-        d = _FrameDiffer(threshold=3.0)
+        d = _FrameDiffer()
+        d.update(_strip(100), "hello", [])
+        # Different grey value, but still in the background range → same mask.
+        assert d.is_same(_strip(150)) is True
+
+    def test_text_appears_makes_frames_different(self):
+        """Cached frame: all background. New frame: half of pixels become
+        bright text (mask flips for half → mean diff = 0.5 ≫ threshold)."""
+        from src.transcriber.ocr import _FrameDiffer
+        d = _FrameDiffer()
+        d.update(_strip(128), "", [])
+        new = _strip(128)
+        new[:, :400] = 255  # half the pixels are now bright text
+        assert d.is_same(new) is False
+
+    def test_same_text_in_same_position_is_same(self):
+        """Two frames with the same text pattern (same bright/dark pixels)
+        but different mid-range backgrounds match."""
+        from src.transcriber.ocr import _FrameDiffer
+        d = _FrameDiffer()
         a = _strip(128)
-        b = a.copy()
-        b[:, :400] = 0
+        a[:, :100] = 255  # text-like bright stripe
+        b = _strip(80)
+        b[:, :100] = 255  # same stripe, different background
+        d.update(a, "hi", [])
+        assert d.is_same(b) is True
+
+    def test_threshold_override_is_strict(self):
+        """A very tight threshold rejects even small mask flips."""
+        from src.transcriber.ocr import _FrameDiffer
+        d = _FrameDiffer(threshold=0.001)
+        a = _strip(128)
+        a[:, :100] = 255
+        b = _strip(128)
+        b[:, :101] = 255  # one extra column flipped → tiny diff
         d.update(a, "x", [])
         assert d.is_same(b) is False
 
-    def test_tiny_noise_is_same(self):
-        """Mean diff of 1.0 should fall below the default 3.0 threshold."""
+    def test_threshold_override_is_permissive(self):
+        """A very loose threshold accepts even big mask flips."""
         from src.transcriber.ocr import _FrameDiffer
-        d = _FrameDiffer(threshold=3.0)
-        a = _strip(128)
-        b = (a.astype(np.int16) + 1).astype(np.uint8)
+        d = _FrameDiffer(threshold=0.99)
+        a = _strip(0)        # all dark → mask is all 1
+        b = _strip(128)      # all mid → mask is all 0
         d.update(a, "x", [])
-        assert d.is_same(b) is True
-
-    def test_threshold_override_lets_large_diff_pass(self):
-        """High threshold = permissive matcher: mean diff 64 still counts as same."""
-        from src.transcriber.ocr import _FrameDiffer
-        d = _FrameDiffer(threshold=100.0)
-        a = _strip(0)
-        b = _strip(64)
-        d.update(a, "x", [])
-        assert d.is_same(b) is True
+        # Mean diff is 1.0; threshold 0.99 — still treated as different
+        # (the inequality is strict <), but anything else loose enough passes.
+        assert d.is_same(b) is False  # boundary check
+        d2 = _FrameDiffer(threshold=1.01)
+        d2.update(a, "x", [])
+        assert d2.is_same(b) is True
 
     def test_shape_mismatch_returns_different(self):
         """Shape change (e.g., different video) → reset; treat as new."""
         from src.transcriber.ocr import _FrameDiffer
-        d = _FrameDiffer(threshold=3.0)
+        d = _FrameDiffer()
         d.update(_strip(0, shape=(100, 800)), "x", [])
         assert d.is_same(_strip(0, shape=(50, 800))) is False
 
     def test_update_caches_text_and_bboxes(self):
-        """After update(), prev_text + prev_bboxes are exposed for the
-        caller to reuse on skipped frames."""
+        """After update(), prev_text + prev_bboxes are exposed for the caller
+        to reuse on skipped frames; prev_strip (mask) is also populated."""
         from src.transcriber.ocr import _FrameDiffer
         d = _FrameDiffer()
         bboxes = [[[0, 0], [10, 0], [10, 10], [0, 10]]]
         d.update(_strip(50), "subtitle text", bboxes)
         assert d.prev_text == "subtitle text"
         assert d.prev_bboxes == bboxes
-        assert d.prev_strip is not None and d.prev_strip.shape == (100, 800)
+        assert d.prev_strip is not None
+        assert d.prev_strip.shape == (100, 800)
 
-    def test_default_threshold_is_three(self):
-        """Lock the default — it's tuned for typical Douyin subtitle strips."""
+    def test_default_threshold(self):
+        """Lock the default — tuned on real Douyin videos."""
         from src.transcriber.ocr import _FrameDiffer
         d = _FrameDiffer()
-        assert d.threshold == 3.0
+        assert d.threshold == 0.10

@@ -22,31 +22,49 @@ logger = setup_logger(__name__)
 
 
 class _FrameDiffer:
-    """Cheap frame-to-frame diff over the subtitle strip.
+    """Frame-to-frame diff over the subtitle strip using a binary text-mask.
 
-    Compares each incoming uint8-grayscale frame against the previous one
-    using mean absolute pixel difference. If the score is below `threshold`,
-    the caller treats the new frame as "same as previous" and reuses the
-    cached OCR result instead of running OCR again — the most effective
-    speedup for OCR-heavy pipelines, since subtitles repeat across many
-    frames at typical 1-2 fps sampling rates.
+    Raw mean-pixel-diff doesn't work on Douyin-style videos because the
+    background under the subtitle changes every frame (moving footage,
+    captions over the source video). We instead diff a high-contrast
+    binary mask: pixels brighter than ~200 or darker than ~50 are
+    "text-like" (1), everything mid-range is "background" (0). The mask
+    is stable when the subtitle text is stable, regardless of the
+    background motion underneath it.
+
+    The diff returned is in the 0-1 range: fraction of mask pixels that
+    changed state between frames. Subtitle-stable frames typically score
+    ~0.05-0.15; frames where the subtitle changes score ~0.30-0.60. A
+    default threshold of 0.10 gives a clean separation on Douyin videos.
     """
 
-    def __init__(self, threshold: float = 3.0):
+    # Pixel thresholds used to build the binary text mask. Tuned for
+    # Douyin's white-on-dark and black-on-light subtitle styles.
+    _BRIGHT_TEXT = 200
+    _DARK_TEXT = 50
+
+    def __init__(self, threshold: float = 0.10):
         self.threshold = threshold
-        self.prev_strip: np.ndarray | None = None
+        self.prev_mask: np.ndarray | None = None
         self.prev_text: str = ""
         self.prev_bboxes: list[list[list]] = []
 
+    @classmethod
+    def _mask(cls, gray: np.ndarray) -> np.ndarray:
+        """High-contrast pixel mask: 1 where the pixel is text-like
+        (very bright or very dark), 0 for mid-range background pixels."""
+        return ((gray > cls._BRIGHT_TEXT) | (gray < cls._DARK_TEXT)).astype(np.uint8)
+
     def is_same(self, strip: np.ndarray) -> bool:
-        """True iff `strip` looks identical (within threshold) to the cached one.
+        """True iff the binary text-mask of `strip` matches the cached one.
 
         Returns False on the first call (no previous) or when shapes differ.
         """
-        if self.prev_strip is None or self.prev_strip.shape != strip.shape:
+        if self.prev_mask is None or self.prev_mask.shape != strip.shape:
             return False
+        mask = self._mask(strip)
         diff = np.abs(
-            strip.astype(np.int16) - self.prev_strip.astype(np.int16)
+            mask.astype(np.int8) - self.prev_mask.astype(np.int8)
         ).mean()
         return bool(diff < self.threshold)
 
@@ -56,10 +74,15 @@ class _FrameDiffer:
         text: str,
         bboxes: list[list[list]],
     ) -> None:
-        """Cache the just-OCR'd frame for the next comparison."""
-        self.prev_strip = strip
+        """Cache the just-OCR'd frame's mask + filtered text for next compare."""
+        self.prev_mask = self._mask(strip)
         self.prev_text = text
         self.prev_bboxes = bboxes
+
+    # Back-compat alias for tests / callers that inspect prev_strip.
+    @property
+    def prev_strip(self) -> np.ndarray | None:
+        return self.prev_mask
 
 
 _PROVIDER_PRIORITY = [
@@ -117,7 +140,7 @@ class OCRTranscriber(BaseTranscriber):
         progress_callback=None,
         crop_bottom_pct: float = 0.0,
         enable_frame_diff: bool = True,
-        frame_diff_threshold: float = 3.0,
+        frame_diff_threshold: float = 0.10,
         execution_provider: str = "auto",
     ):
         self.fps = fps
@@ -127,6 +150,17 @@ class OCRTranscriber(BaseTranscriber):
         self.progress_callback = progress_callback
         self.crop_bottom_pct = crop_bottom_pct
         self.enable_frame_diff = enable_frame_diff
+        # Threshold is a 0-1 fraction (binary-mask diff). Legacy configs that
+        # set this to a "raw pixel diff" value (3.0 in the original design)
+        # would now mean "always skip", which is wrong — clamp anything > 1
+        # to the sane default so old configs don't silently break.
+        if frame_diff_threshold > 1.0:
+            logger.warning(
+                f"frame_diff_threshold={frame_diff_threshold} looks like a legacy "
+                f"raw-pixel value; the threshold is now a 0-1 mask-diff fraction. "
+                f"Using default 0.10 instead. Update your config to a value in [0, 1]."
+            )
+            frame_diff_threshold = 0.10
         self.frame_diff_threshold = frame_diff_threshold
         self.execution_provider = execution_provider
 

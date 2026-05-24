@@ -22,7 +22,7 @@ def get_transcriber(config: dict, **kwargs) -> BaseTranscriber:
     region_cfg = config.get("subtitle_region", {})
     crop_bottom_pct = config.get("crop_bottom_pct", 0.0)
     enable_frame_diff = config.get("enable_frame_diff", True)
-    frame_diff_threshold = config.get("frame_diff_threshold", 3.0)
+    frame_diff_threshold = config.get("frame_diff_threshold", 0.10)
     execution_provider = config.get("execution_provider", "auto")
 
     logger.info(
