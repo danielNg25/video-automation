@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Changed
+- DownloadTranscribe (Pipeline page) now filters the TTS voice list by the translation profile's `target_language`. Previously called `getTTSVoices(undefined, ...)` — dumped every voice across every language in one dropdown. The effect was most visible after the Google live-voices swap, when the unfiltered list jumped from 16 to ~1500 entries. The DubTab already filtered by `ttsLanguage`; this brings the two pages in line.
 - `GoogleTTSProvider.list_voices` now calls the live `GET /v1/voices` endpoint instead of returning a hardcoded 16-entry list. Users see every voice their Google Cloud account is entitled to — Standard, Wavenet, Neural2, Studio, Chirp3-HD, News, Casual, Polyglot, Journey, etc. across all locales. The previous list omitted ~99% of available voices. Filtering by `language` accepts a short code (`"vi"`, `"en"` — prefix-match across locales) or a full BCP-47 tag (`"vi-VN"`); the latter is delegated to Google's `languageCode` query param. Voices are returned with `name`, `language` (primary BCP-47), `gender` (lowercased from `ssmlGender`), `provider`, and `friendly_name`. Requires the Google API key to be configured (raises a clear error otherwise). FE: `getTTSVoices` default provider corrected from the removed `'edge'` to `'google'`.
 
 ### Removed

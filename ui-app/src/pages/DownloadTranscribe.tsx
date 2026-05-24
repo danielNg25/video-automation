@@ -96,7 +96,10 @@ function PipelinePage() {
     setLlmApiKey(keyMap[llmBackend] || '');
   }, [llmBackend]);
 
-  // Load voice list when the TTS provider changes.
+  // Load voice list when the TTS provider or target language changes.
+  // The target language follows the selected translation profile so the
+  // dropdown only shows voices that can actually speak the dub.
+  const targetTtsLanguage = profiles.find((p) => p.name === selectedProfile)?.target_language ?? 'vi';
   useEffect(() => {
     if (selectedTtsProvider === 'elevenlabs') {
       setTtsVoices([]);
@@ -115,7 +118,7 @@ function PipelinePage() {
     }
     (async () => {
       try {
-        const voices = await getTTSVoices(undefined, selectedTtsProvider, key);
+        const voices = await getTTSVoices(targetTtsLanguage, selectedTtsProvider, key);
         setTtsVoices(voices);
         const saved = storageGet(`tts_voice_id_${selectedTtsProvider}`) || '';
         const isValid = !!saved && voices.some(v => v.name === saved);
@@ -128,7 +131,7 @@ function PipelinePage() {
         setTtsVoices([]);
       }
     })();
-  }, [selectedTtsProvider]);
+  }, [selectedTtsProvider, targetTtsLanguage]);
 
   // Parse URLs from input
   const parsedUrls = urlInput.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
