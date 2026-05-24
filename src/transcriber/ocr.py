@@ -62,6 +62,48 @@ class _FrameDiffer:
         self.prev_bboxes = bboxes
 
 
+_PROVIDER_PRIORITY = [
+    "CUDAExecutionProvider",        # NVIDIA — best perf
+    "DmlExecutionProvider",         # Windows GPU (NVIDIA / AMD / Intel)
+    "CoreMLExecutionProvider",      # macOS native (not usable from Docker)
+    "CPUExecutionProvider",         # always available
+]
+
+
+def _pick_provider(override: str = "auto") -> str:
+    """Pick the best ONNX Runtime execution provider for this host.
+
+    `override` may be one of: 'auto', 'cpu', 'cuda', 'directml', 'coreml'.
+    A non-'auto' value returns the matching ORT provider name unconditionally
+    (the caller is responsible for ensuring the matching ORT package is
+    installed). 'auto' probes onnxruntime for available providers and
+    picks the highest-priority one that's actually present, falling back
+    to CPU. Returns 'CPUExecutionProvider' if onnxruntime can't be imported.
+    """
+    if override and override != "auto":
+        return {
+            "cpu": "CPUExecutionProvider",
+            "cuda": "CUDAExecutionProvider",
+            "directml": "DmlExecutionProvider",
+            "coreml": "CoreMLExecutionProvider",
+        }.get(override, "CPUExecutionProvider")
+
+    try:
+        import onnxruntime as ort
+
+        available = set(ort.get_available_providers())
+    except Exception as e:
+        logger.warning(
+            f"onnxruntime not importable yet ({e}); defaulting to CPU provider"
+        )
+        return "CPUExecutionProvider"
+
+    for ep in _PROVIDER_PRIORITY:
+        if ep in available:
+            return ep
+    return "CPUExecutionProvider"
+
+
 class OCRTranscriber(BaseTranscriber):
     """Extracts subtitles from video frames via PaddleOCR with auto-detection."""
 
