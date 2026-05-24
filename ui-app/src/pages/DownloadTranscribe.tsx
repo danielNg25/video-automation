@@ -44,6 +44,12 @@ function PipelinePage() {
   const [voiceIdInput, setVoiceIdInput] = useState(() => storageGet('tts_voice_id_elevenlabs') || '');
   const [voiceIdSaved, setVoiceIdSaved] = useState(false);
   const [ttsApiKey, setTtsApiKey] = useState('');
+  // Voice-list language filter. Empty string means "follow the translation
+  // profile's target_language". The user can override to e.g. preview an
+  // English voice while a Vietnamese translation profile is selected.
+  const [ttsLanguageOverride, setTtsLanguageOverride] = useState<string>(
+    () => storageGet('tts_language_override') || ''
+  );
   const [playbackSpeed, setPlaybackSpeed] = useState(() => {
     const saved = parseFloat(storageGet('tts_playback_speed') || '');
     return Number.isFinite(saved) && saved >= 1.0 && saved <= 2.0 ? saved : 1.5;
@@ -96,10 +102,11 @@ function PipelinePage() {
     setLlmApiKey(keyMap[llmBackend] || '');
   }, [llmBackend]);
 
-  // Load voice list when the TTS provider or target language changes.
-  // The target language follows the selected translation profile so the
-  // dropdown only shows voices that can actually speak the dub.
-  const targetTtsLanguage = profiles.find((p) => p.name === selectedProfile)?.target_language ?? 'vi';
+  // Load voice list when the TTS provider or effective language changes.
+  // Defaults to the translation profile's target_language; the explicit
+  // override (set via the Language dropdown) wins when non-empty.
+  const profileLang = profiles.find((p) => p.name === selectedProfile)?.target_language ?? 'vi';
+  const targetTtsLanguage = ttsLanguageOverride || profileLang;
   useEffect(() => {
     if (selectedTtsProvider === 'elevenlabs') {
       setTtsVoices([]);
@@ -225,8 +232,9 @@ function PipelinePage() {
     // All providers now forward a voice override — use the per-provider key,
     // falling back to the in-memory selection if localStorage is empty.
     const ttsVoiceId = storageGet(`tts_voice_id_${ttsProviderName}`) || selectedVoiceId || '';
-    // Language for the dub follows the translation profile's target language.
-    const targetLang = profiles.find((p) => p.name === selectedProfile)?.target_language ?? 'vi';
+    // Dub language: explicit picker override wins; otherwise follow the
+    // translation profile's target_language.
+    const targetLang = targetTtsLanguage;
     // subtitle_style: null when "off" (preserves per-platform defaults); dict otherwise.
     const subtitleStyle = subtitleBackground === 'off' ? null : SUBTITLE_BG_PRESETS[subtitleBackground];
     const ttsOverrides = {
@@ -429,8 +437,8 @@ function PipelinePage() {
               </div>
             </div>
 
-            {/* Middle row: TTS Provider + Voice */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {/* Middle row: TTS Provider + Language + Voice */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
                 <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold block mb-1.5">
                   TTS Provider
@@ -448,6 +456,35 @@ function PipelinePage() {
                       {p.name}{p.free ? ' (Free)' : ''}
                     </option>
                   ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold block mb-1.5">
+                  Language
+                </label>
+                <select
+                  value={ttsLanguageOverride}
+                  onChange={(e) => {
+                    setTtsLanguageOverride(e.target.value);
+                    storageSet('tts_language_override', e.target.value);
+                  }}
+                  className="w-full bg-surface-container border-none text-xs text-on-surface h-10 px-3 rounded-lg focus:ring-1 focus:ring-primary"
+                  title={ttsLanguageOverride ? '' : `Following translation profile: ${profileLang}`}
+                >
+                  <option value="">Auto ({profileLang})</option>
+                  <option value="vi">Vietnamese (vi)</option>
+                  <option value="en">English (en)</option>
+                  <option value="zh">Chinese (zh)</option>
+                  <option value="ja">Japanese (ja)</option>
+                  <option value="ko">Korean (ko)</option>
+                  <option value="es">Spanish (es)</option>
+                  <option value="fr">French (fr)</option>
+                  <option value="de">German (de)</option>
+                  <option value="ru">Russian (ru)</option>
+                  <option value="pt">Portuguese (pt)</option>
+                  <option value="it">Italian (it)</option>
+                  <option value="th">Thai (th)</option>
+                  <option value="id">Indonesian (id)</option>
                 </select>
               </div>
               <div>
@@ -493,7 +530,7 @@ function PipelinePage() {
                   apiKey={ttsApiKey || undefined}
                   playbackSpeed={playbackSpeed}
                   sampleText={
-                    profiles.find((p) => p.name === selectedProfile)?.target_language === 'en'
+                    targetTtsLanguage === 'en'
                       ? 'Hello everyone, today we will talk about a very interesting topic.'
                       : 'Xin chào các bạn, hôm nay chúng ta sẽ nói về một chủ đề rất thú vị.'
                   }
