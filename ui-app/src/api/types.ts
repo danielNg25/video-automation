@@ -120,9 +120,8 @@ export interface OcrRegion {
 export interface TTSRequest {
   video_id: string;
   language: string;
-  voice_profile: string;
-  provider?: string;
-  voice?: string;
+  provider: string;
+  voice: string;
   api_key?: string;
 }
 
@@ -155,21 +154,6 @@ export interface VoiceInfo {
   gender: string;
   provider: string;
   friendly_name: string;
-}
-
-export interface VoiceProfileConfig {
-  provider: string;
-  voice: string;
-  language: string;
-  speed: string;
-  pitch: string;
-}
-
-export interface TTSPlatformConfig {
-  enabled: boolean;
-  profile: string;
-  original_volume: number;
-  tts_volume: number;
 }
 
 export interface PipelineHistoryEntry {

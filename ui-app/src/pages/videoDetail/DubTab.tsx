@@ -5,18 +5,15 @@ import { TTSPreview } from '../../components/TTSPreview';
 import { deleteTTSAudio, getTTSAudioUrl } from '../../api/client';
 import type { TTSAudioEntry } from '../../api/client';
 import type {
-  TTSProviderInfo, VoiceInfo, VoiceProfileConfig,
+  TTSProviderInfo, VoiceInfo,
 } from '../../api/types';
 
 interface Props {
   videoId: string;
-  // Provider / profile / voice state (parent owns)
+  // Provider / voice state (parent owns)
   ttsProviders: TTSProviderInfo[];
   selectedTtsProvider: string;
   onChangeTtsProvider: (v: string) => void;
-  ttsProfiles: Record<string, VoiceProfileConfig>;
-  selectedTtsProfile: string;
-  onChangeTtsProfile: (v: string) => void;
   ttsVoices: VoiceInfo[];
   selectedVoiceId: string;
   onChangeSelectedVoiceId: (v: string) => void;
@@ -53,7 +50,6 @@ export function DubTab(props: Props) {
   const {
     videoId,
     ttsProviders, selectedTtsProvider, onChangeTtsProvider,
-    ttsProfiles, selectedTtsProfile, onChangeTtsProfile,
     ttsVoices, selectedVoiceId, onChangeSelectedVoiceId,
     voiceIdInput, onChangeVoiceIdInput, voiceIdSaved, onSaveVoiceId,
     ttsApiKey,
@@ -81,7 +77,6 @@ export function DubTab(props: Props) {
   };
 
   const providerInfo = ttsProviders.find((p) => p.id === selectedTtsProvider);
-  const profileNames = Object.keys(ttsProfiles);
 
   return (
     <div className="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/10 p-5 space-y-4">
@@ -92,24 +87,6 @@ export function DubTab(props: Props) {
           {selectedTtsProvider}
         </span>
       </div>
-
-      {/* Profile selector */}
-      {profileNames.length > 0 && (
-        <div>
-          <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">Voice Profile</label>
-          <select
-            value={selectedTtsProfile}
-            onChange={(e) => onChangeTtsProfile(e.target.value)}
-            className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
-          >
-            {profileNames.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
 
       {/* Provider + Language */}
       <div className="grid grid-cols-2 gap-3">
@@ -356,14 +333,14 @@ export function DubTab(props: Props) {
                     <span className="material-symbols-outlined text-sm">{isPlaying ? 'stop' : 'play_arrow'}</span>
                   </button>
                   <div className="flex-1 min-w-0">
-                    <span className="text-[11px] font-semibold text-on-surface">{entry.profile}</span>
+                    <span className="text-[11px] font-semibold text-on-surface">{entry.voice}</span>
                     <span className="text-[9px] text-zinc-500 ml-2">{entry.provider} · {entry.language} · {sizeMb}MB</span>
                   </div>
                   <span className="text-[9px] font-mono text-zinc-600">{ago}</span>
                   <button
                     onClick={async (e) => {
                       e.stopPropagation();
-                      if (!confirm(`Delete dub "${entry.profile}"?`)) return;
+                      if (!confirm(`Delete dub "${entry.voice}"?`)) return;
                       try {
                         await deleteTTSAudio(videoId, entry.filename);
                         onReloadTtsList();

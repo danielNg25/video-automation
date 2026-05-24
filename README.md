@@ -347,7 +347,7 @@ douyin-automation/
 - [x] **4.3** OpenAI TTS provider — `src/tts/openai_tts.py`
 - [x] **4.4** Google Cloud TTS provider — `src/tts/google_tts.py`
 - [x] **4.5** TTS factory — `src/tts/__init__.py`
-- [x] **4.6** Voice profiles config — `config/tts_voices.yaml`
+- [x] **4.6** ~~Voice profiles config — `config/tts_voices.yaml`~~ (removed — FE fetches voices live from each provider's API)
 - [x] **4.7** TTS audio assembler — `src/tts/assembler.py`
 - [x] **4.8** Audio mixing in ffmpeg — `src/processor/ffmpeg.py`
 - [x] **4.9** Update batch processor — `src/processor/__init__.py`

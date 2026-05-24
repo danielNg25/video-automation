@@ -32,7 +32,11 @@ export function DouyinSection() {
       const updated = await putCookie(cookieInput);
       setCookie(updated);
       setCookieInput('');
-      setCookieSaveMsg('Saved');
+      setCookieSaveMsg(
+        updated.helper_config_synced
+          ? 'Saved — restart douyin-api to apply'
+          : 'Saved (helper config not found — yt-dlp fallback only)'
+      );
       setCookieTestResult(null);
     } catch (e: unknown) {
       setCookieSaveMsg(e instanceof Error ? e.message : 'Save failed');
@@ -84,6 +88,23 @@ export function DouyinSection() {
               <span className="text-[10px] font-mono bg-red-900/30 text-red-400 px-2 py-0.5 rounded">
                 {cookie === null ? 'LOADING...' : 'MISSING'}
               </span>
+            )}
+            {cookie?.exists && (
+              cookie.helper_config_synced ? (
+                <span
+                  className="text-[10px] font-mono bg-emerald-900/30 text-emerald-400 px-2 py-0.5 rounded"
+                  title="config/douyin_web_config.yaml has been updated with this cookie. The helper API container picks it up at startup — `docker compose restart douyin-api` if you haven't already."
+                >
+                  HELPER-API SYNCED
+                </span>
+              ) : (
+                <span
+                  className="text-[10px] font-mono bg-amber-900/30 text-amber-400 px-2 py-0.5 rounded"
+                  title="config/douyin_web_config.yaml still has the placeholder cookie. Save again here to sync it — downloads fall back to yt-dlp until then."
+                >
+                  HELPER-API NOT SYNCED
+                </span>
+              )
             )}
           </div>
           {cookie?.preview && (

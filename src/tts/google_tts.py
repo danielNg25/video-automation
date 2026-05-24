@@ -9,30 +9,6 @@ from src.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
-# Common Vietnamese and English voices
-GOOGLE_VOICES = {
-    "vi": [
-        {"name": "vi-VN-Standard-A", "gender": "female"},
-        {"name": "vi-VN-Standard-B", "gender": "male"},
-        {"name": "vi-VN-Standard-C", "gender": "female"},
-        {"name": "vi-VN-Standard-D", "gender": "male"},
-        {"name": "vi-VN-Wavenet-A", "gender": "female"},
-        {"name": "vi-VN-Wavenet-B", "gender": "male"},
-        {"name": "vi-VN-Wavenet-C", "gender": "female"},
-        {"name": "vi-VN-Wavenet-D", "gender": "male"},
-    ],
-    "en": [
-        {"name": "en-US-Standard-A", "gender": "male"},
-        {"name": "en-US-Standard-C", "gender": "female"},
-        {"name": "en-US-Standard-D", "gender": "male"},
-        {"name": "en-US-Standard-E", "gender": "female"},
-        {"name": "en-US-Wavenet-A", "gender": "male"},
-        {"name": "en-US-Wavenet-C", "gender": "female"},
-        {"name": "en-US-Wavenet-D", "gender": "male"},
-        {"name": "en-US-Wavenet-F", "gender": "female"},
-    ],
-}
-
 
 class GoogleTTSProvider(BaseTTSProvider):
     """TTS provider using Google Cloud Text-to-Speech REST API.
@@ -102,31 +78,42 @@ class GoogleTTSProvider(BaseTTSProvider):
         return base64.b64decode(audio_content)
 
     async def list_voices(self, language: str | None = None) -> list[dict]:
-        """List available Google Cloud TTS voices.
+        """List Google Cloud TTS voices via the live voices:list endpoint.
 
-        Args:
-            language: Optional language filter ("vi", "en").
-
-        Returns:
-            List of voice dicts.
+        Hits ``GET /v1/voices`` (optionally filtered with ``languageCode``).
+        ``language`` accepts either a short code (``"vi"``, ``"en"``) — which
+        matches any locale starting with that prefix — or a full BCP-47 tag
+        (``"vi-VN"``, ``"en-US"``). Returns every voice the account is
+        entitled to (Standard, Wavenet, Neural2, Studio, Chirp3-HD, News, etc.).
         """
-        results = []
+        if not self.api_key:
+            raise ValueError(
+                "Google TTS API key not configured. "
+                "Save it in Settings → API Keys (Google)."
+            )
 
-        for lang_code, voices in GOOGLE_VOICES.items():
-            if language and language != lang_code:
-                # Also check full locale match
-                if not any(v["name"].startswith(language) for v in voices):
-                    continue
+        params: dict[str, str] = {"key": self.api_key}
+        is_short_code = bool(language) and "-" not in language
+        if language and not is_short_code:
+            params["languageCode"] = language
 
-            for v in voices:
-                if language and not v["name"].startswith(language) and lang_code != language:
-                    continue
-                results.append({
-                    "name": v["name"],
-                    "language": lang_code,
-                    "gender": v["gender"],
-                    "provider": "google",
-                    "friendly_name": f"Google {v['name']}",
-                })
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            r = await client.get(f"{self.base_url}/voices", params=params)
+            r.raise_for_status()
+            payload = r.json()
+
+        results: list[dict] = []
+        for v in payload.get("voices", []):
+            codes: list[str] = v.get("languageCodes", []) or []
+            primary = codes[0] if codes else ""
+            if is_short_code and not any(c.lower().startswith(language.lower()) for c in codes):
+                continue
+            results.append({
+                "name": v.get("name", ""),
+                "language": primary,
+                "gender": (v.get("ssmlGender") or "NEUTRAL").lower(),
+                "provider": "google",
+                "friendly_name": v.get("name", ""),
+            })
 
         return results

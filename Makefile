@@ -1,4 +1,4 @@
-.PHONY: install install-linux test lint format check clean docker-up docker-down docker-build docker-rebuild docker-build-nocache docker-logs api ui
+.PHONY: install install-linux setup test lint format check clean docker-up docker-down docker-build docker-rebuild docker-build-nocache docker-logs api ui
 
 # Development (macOS)
 install:
@@ -29,8 +29,26 @@ format:
 
 check: lint test
 
-# Docker (full stack: douyin-api + app)
-docker-up:
+# One-time bootstrap: seed local config files from their .example templates so
+# bind-mounted paths exist before `docker compose up`. Idempotent — won't
+# overwrite a config you've already filled in.
+setup:
+	@if [ ! -f config/config.yaml ]; then \
+		cp config/config.example.yaml config/config.yaml; \
+		echo "Created config/config.yaml from example."; \
+	fi
+	@if [ ! -f config/douyin_web_config.yaml ]; then \
+		cp config/douyin_web_config.example.yaml config/douyin_web_config.yaml; \
+		echo "Created config/douyin_web_config.yaml from example."; \
+		echo "  → Edit it and replace PASTE_YOUR_DOUYIN_COOKIE_HERE with a real"; \
+		echo "    Cookie header to enable the primary Douyin API path."; \
+		echo "    (Without a real cookie, downloads fall back to yt-dlp.)"; \
+	fi
+
+# Docker (full stack: douyin-api + app). Runs setup first so the bind-mount
+# sources exist — important on fresh clones (especially Windows/WSL2, where a
+# missing bind-mount source auto-creates as a directory and breaks the mount).
+docker-up: setup
 	docker compose up -d --build
 
 docker-down:
@@ -42,7 +60,7 @@ docker-build:
 	docker compose build app
 
 # Build + restart the app container (incremental). Use this after code changes.
-docker-rebuild:
+docker-rebuild: setup
 	docker compose build app
 	docker compose up -d --force-recreate app
 

@@ -86,11 +86,11 @@ def tts_output_path(
     video_id: str,
     language: str,
     provider_name: str,
-    voice_profile_name: str,
+    voice_id: str,
 ) -> Path:
     """Canonical output filename used by both flows."""
-    safe_profile = voice_profile_name.replace("/", "-").replace(" ", "-")
-    return tts_dir / f"{video_id}_{language}_{provider_name}_{safe_profile}.wav"
+    safe_voice = voice_id.replace("/", "-").replace(" ", "-")
+    return tts_dir / f"{video_id}_{language}_{provider_name}_{safe_voice}.wav"
 
 
 async def run_tts_track(
@@ -98,11 +98,10 @@ async def run_tts_track(
     video_id: str,
     video_path: Path,
     language: str,
-    voice_profile_name: str,
+    voice: str,
+    provider: str = "google",
     config: dict,
     canonical_duration: float | None = None,
-    provider_override: str | None = None,
-    voice_override: str | None = None,
     api_key_override: str | None = None,
     llm_api_key: str | None = None,
     llm_backend: str | None = None,
@@ -128,13 +127,12 @@ async def run_tts_track(
         video_path: Path to the source MP4 (used as a duration fallback).
         language: Subtitle language code; the SRT must exist at
             data/srt/{video_id}_{language}.srt.
-        voice_profile_name: Key into the voice profiles config.
+        voice: Provider's voice ID (e.g. 'vi-VN-Wavenet-A'). Required.
+        provider: TTS provider name ('google' | 'elevenlabs' | 'openai').
         config: Full app config dict.
         canonical_duration: Trusted duration (e.g. from the video index).
             If provided and > 0 it is used directly; otherwise we fall back to
             ffprobe on `video_path`.
-        provider_override: Override the profile's TTS provider (e.g. elevenlabs).
-        voice_override: Override the profile's voice ID.
         api_key_override: Per-request TTS provider API key (elevenlabs/openai/google).
         llm_api_key: Per-request LLM API key for sentence detection + shortening.
         llm_backend: deepseek | anthropic | openai.
@@ -144,21 +142,14 @@ async def run_tts_track(
         {"audio_path": str, "duration": float, "segment_count": int, "language": str}
     """
     from src.processor.subtitle import parse_srt
-    from src.tts import get_tts_provider, load_voice_profiles
+    from src.tts import get_tts_provider
     from src.tts.assembler import TTSAssembler
     from src.utils.metadata import extract_metadata_from_file
 
-    # ── Voice profile ────────────────────────────────────────────────
-    profiles_data = load_voice_profiles(config)
-    profiles = profiles_data.get("profiles", {})
-    if voice_profile_name not in profiles:
-        raise ValueError(
-            f"Voice profile '{voice_profile_name}' not found. "
-            f"Available: {list(profiles.keys())}"
-        )
-    voice_profile = profiles[voice_profile_name]
-    if voice_override:
-        voice_profile = {**voice_profile, "voice": voice_override}
+    # The voice profile is now a tiny dict built from explicit kwargs; no
+    # YAML lookup. Optional speed/pitch could be added later if a future UI
+    # exposes them — providers default to no adjustment when absent.
+    voice_profile = {"voice": voice}
 
     # ── SRT segments ─────────────────────────────────────────────────
     srt_dir = Path("data/srt")
@@ -183,7 +174,7 @@ async def run_tts_track(
         )
 
     # ── TTS provider with per-request API-key injection ─────────────
-    provider_name = provider_override or voice_profile.get("provider", "edge")
+    provider_name = provider
     effective_config = config
     if api_key_override:
         tts_section = dict(config.get("tts", {}))
@@ -206,7 +197,7 @@ async def run_tts_track(
     tts_dir = Path("data/tts")
     tts_dir.mkdir(parents=True, exist_ok=True)
     output_path = tts_output_path(
-        tts_dir, video_id, language, provider_name, voice_profile_name
+        tts_dir, video_id, language, provider_name, voice
     )
 
     # ── Assemble ────────────────────────────────────────────────────
@@ -267,8 +258,7 @@ async def run_tts_track(
             "video_id": video_id,
             "language": language,
             "provider": provider_name,
-            "voice_profile": voice_profile_name,
-            "voice": voice_profile.get("voice"),
+            "voice": voice,
             "playback_speed_requested": playback_speed,
             "audio_path": str(output_path),
             "audio_duration": out_duration,

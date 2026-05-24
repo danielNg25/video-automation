@@ -73,7 +73,7 @@ class Pipeline:
             url: Douyin video URL.
             platforms: List of target platforms (default: from config).
             options: Additional options (force, subtitle_lang, translate_profile,
-                     tts_profile, privacy, title, tags).
+                     tts_voice, tts_provider, tts_language, privacy, title, tags).
             progress_callback: Optional callback(stage, progress, message).
 
         Returns:
@@ -220,29 +220,25 @@ class Pipeline:
                 return self._make_result(state, "interrupted")
 
             # --- Stage: TTS (optional) ---
-            tts_profile = options.get("tts_profile")
-            if tts_profile and not state.is_stage_complete("tts"):
+            # Trigger: caller supplied a tts_voice. Language defaults to vi.
+            # The shared runner handles all provider / API-key / LLM plumbing,
+            # so the pipeline path produces byte-identical output to the
+            # per-video API path for identical inputs.
+            tts_voice = options.get("tts_voice")
+            tts_provider = options.get("tts_provider", "google")
+            tts_lang = options.get("tts_language", "vi")
+            if tts_voice and not state.is_stage_complete("tts"):
                 emit("tts", 0.60, "Starting TTS generation...")
                 state.mark_stage_start("tts")
 
-                # Delegate to the shared runner used by the per-video flow so
-                # both paths produce byte-identical output for identical inputs.
-                # All LLM / TTS-provider / voice / API-key plumbing lives there.
-                from src.tts import load_voice_profiles
                 from src.tts.runner import run_tts_track
                 from src.utils.metadata import extract_metadata_from_file
-
-                profiles_data = load_voice_profiles(self.config)
-                profiles = profiles_data.get("profiles", {})
-                voice_profile = profiles.get(tts_profile, {})
-                tts_lang = voice_profile.get("language", "vi")
 
                 video_path = Path(
                     state.stage_results.get("download", {}).get(
                         "file_path", f"data/raw/{video_id}.mp4"
                     )
                 )
-                # Trusted duration from file metadata if available.
                 file_meta = extract_metadata_from_file(video_path)
                 canonical_duration = file_meta.get("duration", 0.0)
 
@@ -254,11 +250,10 @@ class Pipeline:
                     video_id=video_id,
                     video_path=video_path,
                     language=tts_lang,
-                    voice_profile_name=tts_profile,
+                    voice=tts_voice,
+                    provider=tts_provider,
                     config=self.config,
                     canonical_duration=canonical_duration,
-                    provider_override=options.get("tts_provider"),
-                    voice_override=options.get("tts_voice"),
                     api_key_override=options.get("tts_api_key"),
                     llm_api_key=options.get("llm_api_key"),
                     llm_backend=options.get("llm_backend"),
@@ -271,7 +266,7 @@ class Pipeline:
                     "language": tts_lang,
                 })
                 emit("tts", 0.70, "TTS generation complete")
-            elif tts_profile:
+            elif tts_voice:
                 emit("tts", 0.70, "TTS already complete")
 
             if self._interrupted:

@@ -32,32 +32,15 @@ class Task:
     events: list[dict] = field(default_factory=list)
 
 
-def _build_tts_mix_settings(
-    platforms_cfg: dict,
-    underlay_db: float | None,
-) -> dict:
-    """Build per-platform {original_volume, tts_volume} dict.
+def _default_tts_mix_for_platform(underlay_db: float | None) -> dict:
+    """Build a default {original_volume, tts_volume} pair for a single platform.
 
-    If underlay_db is provided (dB scale), it overrides original_volume for
-    ALL enabled platforms — the user's explicit preference wins over the
-    per-platform YAML defaults. The conversion is: linear = 10 ** (dB / 20).
-
-    When underlay_db is None the per-platform original_volume from
-    tts_voices.yaml is used as-is.
+    When underlay_db is provided (dB scale), it sets the source-audio underlay
+    level: linear = 10 ** (dB / 20). When None, falls back to the historical
+    0.3 default. tts_volume is fixed at 1.0 — the dub is the foreground.
     """
-    result: dict[str, dict] = {}
-    for platform_name, p in platforms_cfg.items():
-        if not p.get("enabled", False):
-            continue
-        if underlay_db is not None:
-            original_vol = 10 ** (underlay_db / 20)
-        else:
-            original_vol = p.get("original_volume", 0.3)
-        result[platform_name] = {
-            "original_volume": original_vol,
-            "tts_volume": p.get("tts_volume", 1.0),
-        }
-    return result
+    original_vol = 10 ** (underlay_db / 20) if underlay_db is not None else 0.3
+    return {"original_volume": original_vol, "tts_volume": 1.0}
 
 
 def _detect_video_status(video_id: str, has_srt: bool, srt_langs: list[str]) -> str:
@@ -649,10 +632,9 @@ class TaskManager:
         task_id: str,
         video_id: str,
         language: str,
-        voice_profile_name: str,
-        provider_override: str | None,
+        voice: str,
+        provider: str,
         config: dict,
-        voice_override: str | None = None,
         api_key_override: str | None = None,
         llm_api_key: str | None = None,
         llm_backend: str | None = None,
@@ -669,8 +651,8 @@ class TaskManager:
         task = self.tasks[task_id]
         task.status = "running"
         task.video_id = video_id
-        task.message = "Loading voice profile..."
-        self._emit(task_id, "progress", {"progress": 0.0, "message": "Loading voice profile..."})
+        task.message = "Preparing TTS..."
+        self._emit(task_id, "progress", {"progress": 0.0, "message": "Preparing TTS..."})
 
         try:
             video_info = self.video_index.get(video_id)
@@ -687,11 +669,10 @@ class TaskManager:
                 video_id=video_id,
                 video_path=Path(video_info.file_path),
                 language=language,
-                voice_profile_name=voice_profile_name,
+                voice=voice,
+                provider=provider,
                 config=config,
                 canonical_duration=video_info.duration,
-                provider_override=provider_override,
-                voice_override=voice_override,
                 api_key_override=api_key_override,
                 llm_api_key=llm_api_key,
                 llm_backend=llm_backend,
@@ -759,46 +740,43 @@ class TaskManager:
                     {"progress": pct, "message": message, "platform": platform},
                 )
 
-            # Build TTS audio paths if TTS is enabled
+            # Build TTS audio paths if TTS is enabled. We pick the per-platform
+            # subtitle language from config/platforms.yaml (the same source the
+            # processor uses for burn-in) and glob for any dub WAV matching
+            # that language for this video. Voice/provider live in the WAV
+            # filename suffix; the first match wins (typically there's only
+            # one dub per language).
             tts_audio_paths: dict[str, Path] | None = None
             if enable_tts:
-                from src.tts import load_voice_profiles
-
                 tts_dir = Path("data/tts")
-                profiles_data = load_voice_profiles(config)
-                tts_platforms = profiles_data.get("platforms", {})
+                platforms_yaml_path = Path("config/platforms.yaml")
+                platforms_cfg = {}
+                if platforms_yaml_path.exists():
+                    import yaml as _yaml
+                    with open(platforms_yaml_path) as _f:
+                        platforms_cfg = _yaml.safe_load(_f) or {}
 
-                # Build per-platform mix settings from underlay_db (dB→linear)
-                # or fall back to per-platform YAML defaults. The caller-supplied
-                # tts_mix_settings dict (from ProcessRequest) still wins for any
-                # platform it already contains — this only fills missing ones.
-                derived_mix = _build_tts_mix_settings(tts_platforms, underlay_db)
-
+                default_mix = _default_tts_mix_for_platform(underlay_db)
                 tts_audio_paths = {}
                 for platform in platforms:
-                    plat_cfg = tts_platforms.get(platform, {})
-                    if not plat_cfg.get("enabled", False):
-                        continue
-                    # Determine language from profile
-                    profile_name = plat_cfg.get("profile", "")
-                    profile = profiles_data.get("profiles", {}).get(profile_name, {})
-                    lang = profile.get("language", "vi")
-                    tts_path = tts_dir / f"{video_id}_{lang}.wav"
-                    if tts_path.exists():
-                        tts_audio_paths[platform] = tts_path
-
-                        # Fill mix settings: caller-supplied wins; derived_mix
-                        # (from underlay_db) is the fallback.
+                    plat_cfg = platforms_cfg.get(platform, {})
+                    lang = plat_cfg.get("subtitle_language", "vi")
+                    # Match any dub WAV for this language. The full filename
+                    # is {video_id}_{lang}_{provider}_{voice}.wav.
+                    matches = sorted(
+                        tts_dir.glob(f"{video_id}_{lang}_*.wav")
+                    )
+                    if not matches:
+                        # Legacy path (older builds wrote {video_id}_{lang}.wav).
+                        legacy = tts_dir / f"{video_id}_{lang}.wav"
+                        if legacy.exists():
+                            matches = [legacy]
+                    if matches:
+                        tts_audio_paths[platform] = matches[0]
                         if tts_mix_settings is None:
                             tts_mix_settings = {}
                         if platform not in tts_mix_settings:
-                            tts_mix_settings[platform] = derived_mix.get(
-                                platform,
-                                {
-                                    "original_volume": plat_cfg.get("original_volume", 0.3),
-                                    "tts_volume": plat_cfg.get("tts_volume", 1.0),
-                                },
-                            )
+                            tts_mix_settings[platform] = default_mix
 
             # Load subtitle region for blur if blur is enabled
             subtitle_region = None

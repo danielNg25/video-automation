@@ -150,7 +150,7 @@ export function ExportTab(props: Props) {
               <option value="">No dub</option>
               {ttsList.map((entry) => (
                 <option key={entry.filename} value={entry.filename}>
-                  {entry.profile} ({entry.provider} · {entry.language})
+                  {entry.voice} ({entry.provider} · {entry.language})
                 </option>
               ))}
             </select>
