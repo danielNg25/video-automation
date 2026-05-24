@@ -13,10 +13,53 @@ from collections import defaultdict
 from difflib import SequenceMatcher
 from pathlib import Path
 
+import numpy as np
+
 from src.transcriber.base import BaseTranscriber
 from src.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
+
+
+class _FrameDiffer:
+    """Cheap frame-to-frame diff over the subtitle strip.
+
+    Compares each incoming uint8-grayscale frame against the previous one
+    using mean absolute pixel difference. If the score is below `threshold`,
+    the caller treats the new frame as "same as previous" and reuses the
+    cached OCR result instead of running OCR again — the most effective
+    speedup for OCR-heavy pipelines, since subtitles repeat across many
+    frames at typical 1-2 fps sampling rates.
+    """
+
+    def __init__(self, threshold: float = 3.0):
+        self.threshold = threshold
+        self.prev_strip: np.ndarray | None = None
+        self.prev_text: str = ""
+        self.prev_bboxes: list[list[list]] = []
+
+    def is_same(self, strip: np.ndarray) -> bool:
+        """True iff `strip` looks identical (within threshold) to the cached one.
+
+        Returns False on the first call (no previous) or when shapes differ.
+        """
+        if self.prev_strip is None or self.prev_strip.shape != strip.shape:
+            return False
+        diff = np.abs(
+            strip.astype(np.int16) - self.prev_strip.astype(np.int16)
+        ).mean()
+        return bool(diff < self.threshold)
+
+    def update(
+        self,
+        strip: np.ndarray,
+        text: str,
+        bboxes: list[list[list]],
+    ) -> None:
+        """Cache the just-OCR'd frame for the next comparison."""
+        self.prev_strip = strip
+        self.prev_text = text
+        self.prev_bboxes = bboxes
 
 
 class OCRTranscriber(BaseTranscriber):
