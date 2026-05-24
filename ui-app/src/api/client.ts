@@ -373,6 +373,7 @@ export interface CookieStatus {
   preview: string;
   length: number;
   file_path: string;
+  helper_config_synced: boolean;
 }
 
 export interface CookieTestResult {

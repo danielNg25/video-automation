@@ -27,6 +27,7 @@ class CookieStatus(BaseModel):
     preview: str  # masked, e.g. "sid_gua...kd93x"
     length: int
     file_path: str
+    helper_config_synced: bool = False  # True when douyin_web_config.yaml was updated too
 
 
 class CookieUpdate(BaseModel):
@@ -46,6 +47,46 @@ def _cookie_path() -> Path:
     return Path(config.get("douyin", {}).get("cookie_file", "config/douyin_cookie.txt"))
 
 
+def _helper_config_path() -> Path:
+    """Path to the evil0ctal douyin-api container's bind-mounted config."""
+    return Path("config/douyin_web_config.yaml")
+
+
+def _splice_cookie_into_helper_config(cookie: str) -> bool:
+    """Rewrite the `Cookie:` line in config/douyin_web_config.yaml in place.
+
+    The helper API container reads its cookie from that YAML at startup, so
+    keeping it in sync with the FE-managed cookie removes the "nano in WSL"
+    setup step on fresh machines. Uses a regex line-rewrite to preserve
+    comments and field ordering (yaml.dump would strip both).
+
+    Returns True if the file existed and was rewritten, False if the file
+    isn't present (e.g. user hasn't run `make setup` and the bind mount is
+    disabled). Callers should not treat False as an error — the yt-dlp
+    fallback still works without the helper config.
+    """
+    path = _helper_config_path()
+    if not path.exists():
+        return False
+
+    text = path.read_text()
+    # Match the indented `Cookie: ...` line under TokenManager.douyin.headers.
+    # The cookie value is a single line of opaque token=value; pairs — anything
+    # up to EOL after `Cookie:` is the payload.
+    new_text, n = re.subn(
+        r"(?m)^(\s*Cookie:\s*).*$",
+        lambda m: m.group(1) + cookie,
+        text,
+        count=1,
+    )
+    if n == 0:
+        # File exists but the marker line isn't where we expect — bail rather
+        # than corrupting the YAML. The user can still hand-edit.
+        return False
+    path.write_text(new_text)
+    return True
+
+
 def _mask_cookie(raw: str) -> str:
     """Show first 8 and last 6 chars, mask the rest."""
     if len(raw) <= 20:
@@ -59,15 +100,33 @@ def _mask_cookie(raw: str) -> str:
 @router.get("/api/settings/cookie", response_model=CookieStatus)
 async def get_cookie_status():
     path = _cookie_path()
+    helper_synced = _helper_config_has_real_cookie()
     if not path.exists():
-        return CookieStatus(exists=False, preview="", length=0, file_path=str(path.resolve()))
+        return CookieStatus(
+            exists=False, preview="", length=0,
+            file_path=str(path.resolve()),
+            helper_config_synced=helper_synced,
+        )
     raw = path.read_text().strip()
     return CookieStatus(
         exists=bool(raw),
         preview=_mask_cookie(raw) if raw else "",
         length=len(raw),
         file_path=str(path.resolve()),
+        helper_config_synced=helper_synced,
     )
+
+
+def _helper_config_has_real_cookie() -> bool:
+    """True iff douyin_web_config.yaml exists and has a non-placeholder Cookie."""
+    path = _helper_config_path()
+    if not path.exists():
+        return False
+    m = re.search(r"(?m)^\s*Cookie:\s*(.+)$", path.read_text())
+    if not m:
+        return False
+    value = m.group(1).strip()
+    return bool(value) and value != "PASTE_YOUR_DOUYIN_COOKIE_HERE"
 
 
 @router.put("/api/settings/cookie", response_model=CookieStatus)
@@ -78,11 +137,13 @@ async def update_cookie(body: CookieUpdate):
     path = _cookie_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(cookie + "\n")
+    helper_synced = _splice_cookie_into_helper_config(cookie)
     return CookieStatus(
         exists=True,
         preview=_mask_cookie(cookie),
         length=len(cookie),
         file_path=str(path.resolve()),
+        helper_config_synced=helper_synced,
     )
 
 
