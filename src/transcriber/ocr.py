@@ -13,76 +13,10 @@ from collections import defaultdict
 from difflib import SequenceMatcher
 from pathlib import Path
 
-import numpy as np
-
 from src.transcriber.base import BaseTranscriber
 from src.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
-
-
-class _FrameDiffer:
-    """Frame-to-frame diff over the subtitle strip using a binary text-mask.
-
-    Raw mean-pixel-diff doesn't work on Douyin-style videos because the
-    background under the subtitle changes every frame (moving footage,
-    captions over the source video). We instead diff a high-contrast
-    binary mask: pixels brighter than ~200 or darker than ~50 are
-    "text-like" (1), everything mid-range is "background" (0). The mask
-    is stable when the subtitle text is stable, regardless of the
-    background motion underneath it.
-
-    The diff returned is in the 0-1 range: fraction of mask pixels that
-    changed state between frames. Subtitle-stable frames typically score
-    ~0.05-0.15; frames where the subtitle changes score ~0.30-0.60. A
-    default threshold of 0.10 gives a clean separation on Douyin videos.
-    """
-
-    # Pixel thresholds used to build the binary text mask. Tuned for
-    # Douyin's white-on-dark and black-on-light subtitle styles.
-    _BRIGHT_TEXT = 200
-    _DARK_TEXT = 50
-
-    def __init__(self, threshold: float = 0.10):
-        self.threshold = threshold
-        self.prev_mask: np.ndarray | None = None
-        self.prev_text: str = ""
-        self.prev_bboxes: list[list[list]] = []
-
-    @classmethod
-    def _mask(cls, gray: np.ndarray) -> np.ndarray:
-        """High-contrast pixel mask: 1 where the pixel is text-like
-        (very bright or very dark), 0 for mid-range background pixels."""
-        return ((gray > cls._BRIGHT_TEXT) | (gray < cls._DARK_TEXT)).astype(np.uint8)
-
-    def is_same(self, strip: np.ndarray) -> bool:
-        """True iff the binary text-mask of `strip` matches the cached one.
-
-        Returns False on the first call (no previous) or when shapes differ.
-        """
-        if self.prev_mask is None or self.prev_mask.shape != strip.shape:
-            return False
-        mask = self._mask(strip)
-        diff = np.abs(
-            mask.astype(np.int8) - self.prev_mask.astype(np.int8)
-        ).mean()
-        return bool(diff < self.threshold)
-
-    def update(
-        self,
-        strip: np.ndarray,
-        text: str,
-        bboxes: list[list[list]],
-    ) -> None:
-        """Cache the just-OCR'd frame's mask + filtered text for next compare."""
-        self.prev_mask = self._mask(strip)
-        self.prev_text = text
-        self.prev_bboxes = bboxes
-
-    # Back-compat alias for tests / callers that inspect prev_strip.
-    @property
-    def prev_strip(self) -> np.ndarray | None:
-        return self.prev_mask
 
 
 _PROVIDER_PRIORITY = [
@@ -139,8 +73,6 @@ class OCRTranscriber(BaseTranscriber):
         ocr_region: dict | None = None,
         progress_callback=None,
         crop_bottom_pct: float = 0.0,
-        enable_frame_diff: bool = True,
-        frame_diff_threshold: float = 0.10,
         execution_provider: str = "auto",
     ):
         self.fps = fps
@@ -149,19 +81,6 @@ class OCRTranscriber(BaseTranscriber):
         self.ocr_region = ocr_region
         self.progress_callback = progress_callback
         self.crop_bottom_pct = crop_bottom_pct
-        self.enable_frame_diff = enable_frame_diff
-        # Threshold is a 0-1 fraction (binary-mask diff). Legacy configs that
-        # set this to a "raw pixel diff" value (3.0 in the original design)
-        # would now mean "always skip", which is wrong — clamp anything > 1
-        # to the sane default so old configs don't silently break.
-        if frame_diff_threshold > 1.0:
-            logger.warning(
-                f"frame_diff_threshold={frame_diff_threshold} looks like a legacy "
-                f"raw-pixel value; the threshold is now a 0-1 mask-diff fraction. "
-                f"Using default 0.10 instead. Update your config to a value in [0, 1]."
-            )
-            frame_diff_threshold = 0.10
-        self.frame_diff_threshold = frame_diff_threshold
         self.execution_provider = execution_provider
 
         region_cfg = subtitle_region_config or {}
@@ -266,17 +185,12 @@ class OCRTranscriber(BaseTranscriber):
                     frames, ocr, frame_height, frame_width
                 )
 
-            # Single streaming pass with frame-diff skipping.
-            # For each frame:
-            #   - Load grayscale strip (cv2).
-            #   - If diff to previous strip < threshold → reuse cached
-            #     filtered text + bboxes (no OCR call).
-            #   - Otherwise call OCR, parse, filter, and cache.
-            # Watermark Y-positions are built from a rolling buffer of the
-            # last N OCR results; refreshed every 10 OCRs (cheap, streams).
-            import cv2
-
-            differ = _FrameDiffer(threshold=self.frame_diff_threshold)
+            # Single streaming pass: OCR every frame, build a rolling
+            # watermark Y-index from recent detections, filter, and append.
+            # Pre-image frame-diff skipping was attempted but didn't help
+            # at typical Douyin sampling rates (1-2 fps with constantly
+            # changing video content under a small subtitle strip) — the
+            # engine swap to RapidOCR provides the bulk of the speedup.
             ring: list[list[tuple]] = []  # recent detection sets
             RING_SIZE = 50
             REFRESH_EVERY = 10
@@ -288,8 +202,6 @@ class OCRTranscriber(BaseTranscriber):
             # largest single-frame bbox instead of unioning across frames.
             all_subtitle_bboxes: list[list[list]] = []
 
-            ocr_calls = 0
-            ocr_skips = 0
             effective_min_y = 0.0 if crop_pct > 0 else self.min_y
             crop_y_offset = (
                 int(frame_height * (1 - crop_pct)) if crop_pct > 0 else 0
@@ -299,28 +211,9 @@ class OCRTranscriber(BaseTranscriber):
                 pct = 0.10 + (i / total_frames) * 0.75
                 if i % 10 == 0:
                     self._emit_progress(
-                        pct,
-                        f"Frame {i + 1}/{total_frames} "
-                        f"(ocr={ocr_calls}, skipped={ocr_skips})",
+                        pct, f"OCR frame {i + 1}/{total_frames}..."
                     )
 
-                strip = cv2.imread(str(frame_path), cv2.IMREAD_GRAYSCALE)
-
-                # Fast path: frame visually identical to the previous one →
-                # reuse the cached filtered text. By far the biggest speedup.
-                if (
-                    self.enable_frame_diff
-                    and strip is not None
-                    and differ.is_same(strip)
-                ):
-                    ocr_skips += 1
-                    frame_texts.append(differ.prev_text)
-                    if differ.prev_bboxes:
-                        all_subtitle_bboxes.append(differ.prev_bboxes)
-                    continue
-
-                # Slow path: OCR this frame.
-                ocr_calls += 1
                 result, _elapse = ocr(str(frame_path))
                 detections = self._parse_ocr_result(result)
 
@@ -328,7 +221,7 @@ class OCRTranscriber(BaseTranscriber):
                 ring.append(detections)
                 if len(ring) > RING_SIZE:
                     ring.pop(0)
-                if ocr_calls % REFRESH_EVERY == 0 or i == total_frames - 1:
+                if (i + 1) % REFRESH_EVERY == 0 or i == total_frames - 1:
                     watermark_positions = self._build_watermark_positions(
                         # _build_watermark_positions takes (idx, detections)
                         # tuples but uses only the detections; pass 0 for idx.
@@ -346,15 +239,7 @@ class OCRTranscriber(BaseTranscriber):
                 if subtitle_bboxes:
                     all_subtitle_bboxes.append(subtitle_bboxes)
 
-                if strip is not None:
-                    differ.update(strip, subtitle_text, subtitle_bboxes)
-
-            total_visits = ocr_calls + ocr_skips
-            hit_rate = ocr_skips / total_visits if total_visits else 0.0
-            logger.info(
-                f"OCR streaming: {ocr_calls} engine calls, "
-                f"{ocr_skips} frame-diff skips ({hit_rate:.0%} skip rate)"
-            )
+            logger.info(f"OCR streaming: {total_frames} engine calls")
 
             # Deduplicate consecutive frames into segments
             self._emit_progress(0.85, "Deduplicating and generating SRT...")

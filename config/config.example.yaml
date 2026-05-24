@@ -27,14 +27,6 @@ ocr:
     crop_bottom_pct: 0.25             # Pre-crop to bottom 25% of frame (0 = disabled)
     confidence_threshold: 0.7         # Minimum OCR confidence
     similarity_threshold: 0.85        # SequenceMatcher ratio for dedup
-    # Frame-diff skipping: compare each frame's binary text-mask to the
-    # previous one. Background motion is ignored; only changes to text-like
-    # (high-contrast) pixels count. Saves OCR calls when subtitles repeat.
-    enable_frame_diff: true
-    frame_diff_threshold: 0.10        # fraction of mask pixels that flipped;
-                                      # 0=identical, 1=fully different.
-                                      # 0.10 separates stable subtitles (~0.05-0.15)
-                                      # from changed subtitles (~0.30+).
     # ONNX Runtime execution provider: auto | cpu | cuda | directml | coreml.
     # 'auto' picks the best available (CUDA > DirectML > CoreML > CPU).
     # NVIDIA GPU requires installing the [gpu] extra and running docker

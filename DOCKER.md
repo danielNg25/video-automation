@@ -168,7 +168,7 @@ You haven't entered an API key in **Settings → API Keys** yet. Open the UI and
 
 ### OCR seems slower than the speedup notes promise
 
-Check the assembler logs for the line `OCR streaming: N engine calls, M frame-diff skips (X% skip rate)`. If `skip rate` is below ~50% on a video with steady subtitles, raise `frame_diff_threshold` in `config/config.yaml` under `ocr:` (try 5–10). If skip rate is high but per-OCR time is still slow, you're CPU-bound — see Section 7 for the GPU path.
+Check the logs for `OCR streaming: N engine calls`. Per-OCR time on Apple Silicon (Docker amd64 via Rosetta) is roughly 0.2–0.5 s per frame with RapidOCR on CPU; multiply by your `fps` × video duration to estimate the floor. If it's much slower than that you're CPU-bound; see Section 7 for the NVIDIA-GPU path.
 
 ### `make api` on the host can't reach the Douyin helper
 
