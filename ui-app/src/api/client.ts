@@ -12,8 +12,6 @@ import type {
   TranslationProfile,
   TranslationProfileSummary,
   VoiceInfo,
-  VoiceProfileConfig,
-  TTSPlatformConfig,
   TTSProviderInfo,
   SubtitleRegion,
   BlurSettings,
@@ -218,11 +216,11 @@ export function postPipeline(
   translateProfile?: string,
   sourceLanguage: string = 'zh',
   translationOverride?: { backend: string; model: string; api_key?: string; base_url?: string },
-  ttsProfile?: string,
   blurEnabled: boolean = true,
   ttsOverrides?: {
     tts_provider?: string;
     tts_voice?: string;
+    tts_language?: string;
     tts_api_key?: string;
     llm_api_key?: string;
     llm_backend?: string;
@@ -240,10 +238,10 @@ export function postPipeline(
       translate_profile: translateProfile ?? null,
       translation_override: translationOverride ?? null,
       source_language: sourceLanguage,
-      tts_profile: ttsProfile ?? null,
       blur_enabled: blurEnabled,
-      tts_provider: ttsOverrides?.tts_provider ?? null,
+      tts_provider: ttsOverrides?.tts_provider ?? 'google',
       tts_voice: ttsOverrides?.tts_voice ?? null,
+      tts_language: ttsOverrides?.tts_language ?? 'vi',
       tts_api_key: ttsOverrides?.tts_api_key ?? null,
       llm_api_key: ttsOverrides?.llm_api_key ?? null,
       llm_backend: ttsOverrides?.llm_backend ?? null,
@@ -273,9 +271,8 @@ export function putConfig(config: Record<string, unknown>): Promise<{ status: st
 export function postTTS(
   videoId: string,
   language: string,
-  voiceProfile: string,
-  provider?: string,
-  voice?: string,
+  provider: string,
+  voice: string,
   apiKey?: string,
   llmApiKey?: string,
   llmBackend?: string,
@@ -288,9 +285,8 @@ export function postTTS(
     body: JSON.stringify({
       video_id: videoId,
       language,
-      voice_profile: voiceProfile,
-      provider: provider ?? null,
-      voice: voice ?? null,
+      provider,
+      voice,
       api_key: apiKey ?? null,
       llm_api_key: llmApiKey ?? null,
       llm_backend: llmBackend ?? null,
@@ -311,26 +307,6 @@ export function getTTSVoices(language?: string, provider: string = 'edge', apiKe
   return request(`/tts/voices?${params}`);
 }
 
-export function getTTSProfiles(): Promise<Record<string, VoiceProfileConfig>> {
-  return request('/tts/profiles');
-}
-
-export function getTTSPlatforms(): Promise<Record<string, TTSPlatformConfig>> {
-  return request('/tts/platforms');
-}
-
-export function putTTSProfile(name: string, profile: VoiceProfileConfig): Promise<VoiceProfileConfig> {
-  return request(`/tts/profiles/${encodeURIComponent(name)}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(profile),
-  });
-}
-
-export async function deleteTTSProfile(name: string): Promise<void> {
-  await fetch(`${BASE}/tts/profiles/${encodeURIComponent(name)}`, { method: 'DELETE' });
-}
-
 export function getTTSAudioUrl(videoId: string, language: string, filename?: string): string {
   const base = `${BASE}/videos/${videoId}/tts/${language}`;
   return filename ? `${base}?file=${encodeURIComponent(filename)}` : base;
@@ -340,7 +316,7 @@ export interface TTSAudioEntry {
   filename: string;
   language: string;
   provider: string;
-  profile: string;
+  voice: string;
   size: number;
   created_at: number;
 }

@@ -57,12 +57,14 @@ class FullPipelineRequest(BaseModel):
     source_language: str = "zh"
     force: bool = False
     metadata: dict | None = None
-    tts_profile: str | None = None  # e.g. "female-vi-natural" — if set, generates TTS dub
     blur_enabled: bool = False  # blur original subtitles before burn-in
-    # Per-request overrides for TTS/LLM, mirroring TTSRequest so the pipeline
-    # produces the same output as running TTS via the per-video flow.
-    tts_provider: str | None = None  # override profile's provider
-    tts_voice: str | None = None  # override voice id (e.g. ElevenLabs voice ID)
+    # TTS dub fields. tts_voice is the trigger — when set, the pipeline runs
+    # the dub stage; otherwise it skips. Provider defaults to 'google', and
+    # language defaults to 'vi'. Mirror of TTSRequest so the pipeline and
+    # per-video flows produce identical output.
+    tts_provider: str = "google"
+    tts_voice: str | None = None
+    tts_language: str = "vi"
     tts_api_key: str | None = None  # ElevenLabs/OpenAI/Google API key
     llm_api_key: str | None = None  # for the TTS-shortening LLM
     llm_backend: str | None = None  # deepseek, openai, anthropic
@@ -85,10 +87,11 @@ class BatchPipelineRequest(BaseModel):
     translation_override: dict | None = None  # {backend, model, api_key, base_url}
     source_language: str = "zh"
     force: bool = False
-    tts_profile: str | None = None  # e.g. "female-vi-natural" — if set, generates TTS dub
     blur_enabled: bool = False  # blur original subtitles before burn-in
-    tts_provider: str | None = None
+    # TTS dub fields — same shape as FullPipelineRequest.
+    tts_provider: str = "google"
     tts_voice: str | None = None
+    tts_language: str = "vi"
     tts_api_key: str | None = None
     llm_api_key: str | None = None
     llm_backend: str | None = None
@@ -236,9 +239,8 @@ class TranslationProfileSummary(BaseModel):
 class TTSRequest(BaseModel):
     video_id: str
     language: str = "vi"
-    voice_profile: str = "female-vi-natural"
-    provider: str | None = None  # override default provider
-    voice: str | None = None  # direct voice ID (overrides profile voice)
+    provider: str = "google"  # google | elevenlabs | openai (FE picks)
+    voice: str                # provider's voice ID (e.g. "vi-VN-Wavenet-A"); required
     api_key: str | None = None  # per-request API key for paid providers
     llm_api_key: str | None = None  # API key for LLM text shortening
     llm_backend: str | None = None  # deepseek, openai, anthropic
@@ -277,14 +279,6 @@ class VoiceInfo(BaseModel):
     gender: str
     provider: str
     friendly_name: str = ""
-
-
-class VoiceProfileConfig(BaseModel):
-    provider: str = "google"
-    voice: str
-    language: str
-    speed: str = "+0%"
-    pitch: str = "+0Hz"
 
 
 class TTSResult(BaseModel):

@@ -222,14 +222,14 @@ function PipelinePage() {
     // All providers now forward a voice override — use the per-provider key,
     // falling back to the in-memory selection if localStorage is empty.
     const ttsVoiceId = storageGet(`tts_voice_id_${ttsProviderName}`) || selectedVoiceId || '';
-    // Derive voice profile from translation profile's target language.
+    // Language for the dub follows the translation profile's target language.
     const targetLang = profiles.find((p) => p.name === selectedProfile)?.target_language ?? 'vi';
-    const ttsVoiceProfile = targetLang === 'en' ? 'female-en-natural' : 'female-vi-natural';
     // subtitle_style: null when "off" (preserves per-platform defaults); dict otherwise.
     const subtitleStyle = subtitleBackground === 'off' ? null : SUBTITLE_BG_PRESETS[subtitleBackground];
     const ttsOverrides = {
       tts_provider: ttsProviderName || undefined,
       tts_voice: ttsVoiceId || undefined,
+      tts_language: targetLang,
       tts_api_key: ttsApiKeyVal || undefined,
       llm_api_key: llmApiKey || undefined,
       llm_backend: llmBackend || undefined,
@@ -252,7 +252,6 @@ function PipelinePage() {
             concurrency: batchConcurrency,
             translate_profile: selectedProfile || null,
             translation_override: selectedProfile ? { backend: llmBackend, model: llmModel, api_key: llmApiKey || undefined } : null,
-            tts_profile: ttsVoiceProfile,
             blur_enabled: blurEnabled,
             subtitle_style: subtitleStyle,
             ...ttsOverrides,
@@ -270,7 +269,7 @@ function PipelinePage() {
     setError('');
     try {
       const translationOverride = selectedProfile ? { backend: llmBackend, model: llmModel, api_key: llmApiKey || undefined } : undefined;
-      const { task_id } = await postPipeline(url, selectedProfile || undefined, 'zh', translationOverride, ttsVoiceProfile, blurEnabled, ttsOverrides);
+      const { task_id } = await postPipeline(url, selectedProfile || undefined, 'zh', translationOverride, blurEnabled, ttsOverrides);
       startPolling(task_id, 'single');
     } catch (e) { setError(e instanceof Error ? e.message : 'Pipeline failed'); }
   };

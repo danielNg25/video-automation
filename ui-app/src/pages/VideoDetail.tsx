@@ -7,13 +7,13 @@ import { DubTab } from './videoDetail/DubTab';
 import { ExportTab } from './videoDetail/ExportTab';
 import {
   getVideo, postTranslate, postTTS, postExport, deleteExport,
-  subscribeSSE, getProfiles, getTTSProfiles, getTTSProviders, getTTSVoices,
+  subscribeSSE, getProfiles, getTTSProviders, getTTSVoices,
   getTTSList,
 } from '../api/client';
 import type { TTSAudioEntry } from '../api/client';
 import type {
   VideoMetadata, TranslationProfileSummary,
-  VoiceProfileConfig, TTSProviderInfo, VoiceInfo,
+  TTSProviderInfo, VoiceInfo,
 } from '../api/types';
 import { loadApiKeys, loadLLMPrefs, storageGet, storageSet } from '../utils/storage';
 
@@ -63,8 +63,6 @@ function VideoDetailPage() {
   const [selectedTtsProvider, setSelectedTtsProvider] = useState(
     () => storageGet('tts_selected_provider') || 'google'
   );
-  const [ttsProfiles, setTtsProfiles] = useState<Record<string, VoiceProfileConfig>>({});
-  const [selectedTtsProfile, setSelectedTtsProfile] = useState('female-vi-natural');
   const [ttsVoices, setTtsVoices] = useState<VoiceInfo[]>([]);
   const [selectedVoiceId, setSelectedVoiceId] = useState(() => {
     const provider = storageGet('tts_selected_provider') || 'google';
@@ -163,8 +161,7 @@ function VideoDetailPage() {
       } catch { /* profiles not available */ }
 
       try {
-        const [profs, provs] = await Promise.all([getTTSProfiles(), getTTSProviders()]);
-        setTtsProfiles(profs);
+        const provs = await getTTSProviders();
         setTtsProviders(provs);
       } catch { /* TTS not available */ }
 
@@ -240,12 +237,19 @@ function VideoDetailPage() {
     setTtsProgress({ pct: 0, message: 'Starting TTS generation...' });
 
     try {
+      const voiceForRequest = selectedTtsProvider === 'elevenlabs'
+        ? voiceIdInput
+        : selectedVoiceId;
+      if (!voiceForRequest) {
+        setIsGeneratingTts(false);
+        setTtsError('Pick a voice first.');
+        return;
+      }
       const { task_id } = await postTTS(
         videoMeta.video_id,
         ttsLanguage,
-        selectedTtsProfile,
         selectedTtsProvider,
-        selectedVoiceId || undefined,
+        voiceForRequest,
         ttsApiKey || undefined,
         llmApiKey || undefined,
         llmBackend || undefined,
@@ -275,16 +279,6 @@ function VideoDetailPage() {
       setIsGeneratingTts(false);
       setTtsError(e instanceof Error ? e.message : 'TTS generation failed');
     }
-  };
-
-  const handleTtsProfileChange = (profileName: string) => {
-    setSelectedTtsProfile(profileName);
-    const profile = ttsProfiles[profileName];
-    if (profile) {
-      setTtsLanguage(profile.language);
-      setSelectedTtsProvider(profile.provider);
-    }
-    setTtsGenerated(false);
   };
 
   const handleTtsProviderChange = (provider: string) => {
@@ -424,9 +418,6 @@ function VideoDetailPage() {
             ttsProviders={ttsProviders}
             selectedTtsProvider={selectedTtsProvider}
             onChangeTtsProvider={handleTtsProviderChange}
-            ttsProfiles={ttsProfiles}
-            selectedTtsProfile={selectedTtsProfile}
-            onChangeTtsProfile={handleTtsProfileChange}
             ttsVoices={ttsVoices}
             selectedVoiceId={selectedVoiceId}
             onChangeSelectedVoiceId={(v) => { setSelectedVoiceId(v); setTtsGenerated(false); }}

@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import yaml
-
 from src.tts.base import BaseTTSProvider
 from src.utils.logger import setup_logger
 
@@ -52,42 +48,3 @@ def get_tts_provider(config: dict, provider: str | None = None) -> BaseTTSProvid
         raise ValueError(f"Unknown TTS provider: {provider_name}")
 
 
-def load_voice_profiles(config: dict | None = None) -> dict:
-    """Load voice profiles from YAML config.
-
-    Args:
-        config: Optional config dict with 'tts.voices_config' path.
-
-    Returns:
-        Full voice profiles dict with 'profiles' and 'platforms' keys.
-    """
-    config_path = "config/tts_voices.yaml"
-    if config:
-        tts_config = config.get("tts", {})
-        config_path = tts_config.get("voices_config", config_path)
-
-    path = Path(config_path)
-    if not path.exists():
-        logger.warning(f"Voice profiles not found at {config_path}, using defaults")
-        return {"default_provider": "google", "profiles": {}, "platforms": {}}
-
-    with open(path) as f:
-        return yaml.safe_load(f) or {}
-
-
-def save_voice_profiles(profiles: dict, config: dict | None = None) -> None:
-    """Save voice profiles to YAML config.
-
-    Args:
-        profiles: Full voice profiles dict.
-        config: Optional config dict with 'tts.voices_config' path.
-    """
-    config_path = "config/tts_voices.yaml"
-    if config:
-        tts_config = config.get("tts", {})
-        config_path = tts_config.get("voices_config", config_path)
-
-    with open(config_path, "w") as f:
-        yaml.safe_dump(profiles, f, default_flow_style=False)
-
-    logger.info(f"Saved voice profiles to {config_path}")

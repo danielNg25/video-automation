@@ -539,67 +539,41 @@ class TestProcessForAllPlatforms:
         assert len(results) == 0
 
 
-class TestBuildTtsMixSettings:
-    """Unit tests for the _build_tts_mix_settings helper in task_manager.
+class TestDefaultTtsMixForPlatform:
+    """Unit tests for the _default_tts_mix_for_platform helper in task_manager.
 
-    The helper converts underlay_db (dB scale) to a linear original_volume
-    and fills per-platform mix dicts for every enabled platform. When
-    underlay_db is None it falls back to the per-platform YAML default.
+    Converts underlay_db (dB scale) to a linear original_volume for a single
+    platform's mix. When underlay_db is None, falls back to a hard-coded 0.3.
     """
 
     def _helper(self):
-        from src.api.task_manager import _build_tts_mix_settings
-        return _build_tts_mix_settings
+        from src.api.task_manager import _default_tts_mix_for_platform
+        return _default_tts_mix_for_platform
 
-    def test_underlay_db_overrides_all_enabled_platforms(self):
+    def test_underlay_db_minus_18(self):
         build = self._helper()
-        platforms_cfg = {
-            "tiktok": {"enabled": True, "original_volume": 0.3, "tts_volume": 1.0},
-            "youtube": {"enabled": True, "original_volume": 0.4, "tts_volume": 0.9},
-        }
-        result = build(platforms_cfg, underlay_db=-18.0)
+        result = build(-18.0)
         # 10 ** (-18 / 20) = 0.12589...
-        assert abs(result["tiktok"]["original_volume"] - 0.12589) < 1e-3
-        assert abs(result["youtube"]["original_volume"] - 0.12589) < 1e-3
-        assert result["tiktok"]["tts_volume"] == 1.0
-        assert result["youtube"]["tts_volume"] == 0.9
+        assert abs(result["original_volume"] - 0.12589) < 1e-3
+        assert result["tts_volume"] == 1.0
 
-    def test_underlay_db_none_uses_per_platform_default(self):
+    def test_underlay_db_none_uses_default(self):
         build = self._helper()
-        platforms_cfg = {
-            "tiktok": {"enabled": True, "original_volume": 0.3, "tts_volume": 1.0},
-            "youtube": {"enabled": True, "original_volume": 0.4, "tts_volume": 0.8},
-        }
-        result = build(platforms_cfg, underlay_db=None)
-        assert result["tiktok"]["original_volume"] == 0.3
-        assert result["youtube"]["original_volume"] == 0.4
+        result = build(None)
+        assert result["original_volume"] == 0.3
+        assert result["tts_volume"] == 1.0
 
     def test_underlay_db_zero_gives_linear_one(self):
         build = self._helper()
-        platforms_cfg = {
-            "tiktok": {"enabled": True, "original_volume": 0.3, "tts_volume": 1.0},
-        }
-        result = build(platforms_cfg, underlay_db=0.0)
-        assert abs(result["tiktok"]["original_volume"] - 1.0) < 1e-9
-
-    def test_disabled_platforms_excluded(self):
-        build = self._helper()
-        platforms_cfg = {
-            "tiktok": {"enabled": True, "original_volume": 0.3, "tts_volume": 1.0},
-            "twitter": {"enabled": False, "original_volume": 0.2, "tts_volume": 1.0},
-        }
-        result = build(platforms_cfg, underlay_db=-12.0)
-        assert "tiktok" in result
-        assert "twitter" not in result
+        result = build(0.0)
+        assert abs(result["original_volume"] - 1.0) < 1e-9
+        assert result["tts_volume"] == 1.0
 
     def test_underlay_db_minus_12_conversion(self):
         build = self._helper()
-        platforms_cfg = {
-            "tiktok": {"enabled": True, "original_volume": 0.3, "tts_volume": 1.0},
-        }
-        result = build(platforms_cfg, underlay_db=-12.0)
+        result = build(-12.0)
         # 10 ** (-12 / 20) = 0.25119...
-        assert abs(result["tiktok"]["original_volume"] - 0.25119) < 1e-3
+        assert abs(result["original_volume"] - 0.25119) < 1e-3
 
 
 class TestSubtitleSelectionPrefersDubsync:

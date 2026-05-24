@@ -15,7 +15,6 @@ from src.api.models import (
     TTSPreviewRequest,
     TTSRequest,
     VoiceInfo,
-    VoiceProfileConfig,
 )
 
 router = APIRouter()
@@ -37,10 +36,9 @@ async def start_tts(request: TTSRequest):
             task.task_id,
             request.video_id,
             request.language,
-            request.voice_profile,
+            request.voice,
             request.provider,
             config,
-            voice_override=request.voice,
             api_key_override=request.api_key,
             llm_api_key=request.llm_api_key,
             llm_backend=request.llm_backend,
@@ -181,58 +179,6 @@ async def list_providers():
     ]
 
 
-@router.get("/api/tts/profiles")
-async def get_profiles():
-    """Get all voice profiles from config."""
-    from src.tts import load_voice_profiles
-
-    config = get_config()
-    profiles_data = load_voice_profiles(config)
-    return profiles_data.get("profiles", {})
-
-
-@router.get("/api/tts/platforms")
-async def get_tts_platforms():
-    """Get per-platform TTS settings."""
-    from src.tts import load_voice_profiles
-
-    config = get_config()
-    profiles_data = load_voice_profiles(config)
-    return profiles_data.get("platforms", {})
-
-
-@router.put("/api/tts/profiles/{name}")
-async def upsert_profile(name: str, profile: VoiceProfileConfig):
-    """Create or update a voice profile."""
-    from src.tts import load_voice_profiles, save_voice_profiles
-
-    config = get_config()
-    profiles_data = load_voice_profiles(config)
-
-    if "profiles" not in profiles_data:
-        profiles_data["profiles"] = {}
-
-    profiles_data["profiles"][name] = profile.model_dump()
-    save_voice_profiles(profiles_data, config)
-    return profiles_data["profiles"][name]
-
-
-@router.delete("/api/tts/profiles/{name}")
-async def delete_profile(name: str):
-    """Delete a voice profile."""
-    from src.tts import load_voice_profiles, save_voice_profiles
-
-    config = get_config()
-    profiles_data = load_voice_profiles(config)
-
-    if name not in profiles_data.get("profiles", {}):
-        raise HTTPException(status_code=404, detail=f"Profile '{name}' not found")
-
-    del profiles_data["profiles"][name]
-    save_voice_profiles(profiles_data, config)
-    return {"status": "deleted", "name": name}
-
-
 @router.get("/api/videos/{video_id}/tts")
 async def list_tts_audio(video_id: str):
     """List all generated TTS audio files for a video."""
@@ -245,21 +191,21 @@ async def list_tts_audio(video_id: str):
 
     results = []
     for f in tts_dir.glob(f"{video_id}_*.wav"):
-        # Parse filename: {video_id}_{lang}_{provider}_{profile}.wav
+        # Parse filename: {video_id}_{lang}_{provider}_{voice}.wav
         # or legacy: {video_id}_{lang}.wav
         stem = f.stem  # without .wav
         parts = stem[len(video_id) + 1:]  # remove "{video_id}_"
-        segments = parts.split("_", 2)  # lang, provider, profile
+        segments = parts.split("_", 2)  # lang, provider, voice
         language = segments[0] if len(segments) >= 1 else "unknown"
         provider = segments[1] if len(segments) >= 2 else "unknown"
-        profile = segments[2] if len(segments) >= 3 else "default"
+        voice = segments[2] if len(segments) >= 3 else ""
 
         stat = f.stat()
         results.append({
             "filename": f.name,
             "language": language,
             "provider": provider,
-            "profile": profile,
+            "voice": voice,
             "size": stat.st_size,
             "created_at": os.path.getmtime(f),
         })

@@ -97,40 +97,6 @@ class TestTTSFactory:
         assert isinstance(provider, GoogleTTSProvider)
 
 
-# ── Voice profiles tests ──
-
-
-class TestVoiceProfiles:
-    def test_load_profiles_from_file(self):
-        from src.tts import load_voice_profiles
-
-        profiles = load_voice_profiles()
-        assert "profiles" in profiles
-        assert "platforms" in profiles
-        assert "female-vi-natural" in profiles["profiles"]
-
-    def test_load_profiles_missing_file(self, tmp_path):
-        from src.tts import load_voice_profiles
-
-        config = {"tts": {"voices_config": str(tmp_path / "nonexistent.yaml")}}
-        profiles = load_voice_profiles(config)
-        assert profiles["default_provider"] == "google"
-        assert profiles["profiles"] == {}
-
-    def test_save_and_load_profiles(self, tmp_path):
-        from src.tts import load_voice_profiles, save_voice_profiles
-
-        config = {"tts": {"voices_config": str(tmp_path / "test_voices.yaml")}}
-        data = {
-            "default_provider": "google",
-            "profiles": {"test-voice": {"provider": "google", "voice": "en-US-Neural2-A", "language": "en"}},
-            "platforms": {},
-        }
-        save_voice_profiles(data, config)
-        loaded = load_voice_profiles(config)
-        assert loaded["profiles"]["test-voice"]["voice"] == "en-US-Neural2-A"
-
-
 # ── Assembler duration fitting tests ──
 
 

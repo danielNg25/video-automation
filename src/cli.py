@@ -47,12 +47,14 @@ def main():
 @click.option("--platforms", "-p", default="youtube,tiktok", help="Comma-separated platforms")
 @click.option("--subtitle-lang", default="zh", help="Source subtitle language")
 @click.option("--translate", "translate_profile", default=None, help="Translation profile name")
-@click.option("--tts", "tts_profile", default=None, help="TTS voice profile name")
+@click.option("--tts-voice", default=None, help="Provider voice ID for the dub (omit to skip TTS)")
+@click.option("--tts-provider", default="google", help="TTS provider (google | elevenlabs | openai)")
+@click.option("--tts-language", default="vi", help="Language code for the dub track (default: vi)")
 @click.option("--title", default=None, help="Custom video title")
 @click.option("--tags", default=None, help="Comma-separated tags")
 @click.option("--privacy", default="private", type=click.Choice(["private", "public", "unlisted"]))
 @click.option("--force", is_flag=True, help="Ignore duplicate detection")
-def process(url, platforms, subtitle_lang, translate_profile, tts_profile, title, tags, privacy, force):
+def process(url, platforms, subtitle_lang, translate_profile, tts_voice, tts_provider, tts_language, title, tags, privacy, force):
     """Process a single Douyin video URL through the full pipeline."""
     from src.pipeline import Pipeline
 
@@ -64,7 +66,9 @@ def process(url, platforms, subtitle_lang, translate_profile, tts_profile, title
         "force": force,
         "subtitle_lang": subtitle_lang,
         "translate_profile": translate_profile,
-        "tts_profile": tts_profile,
+        "tts_voice": tts_voice,
+        "tts_provider": tts_provider,
+        "tts_language": tts_language,
         "title": title,
         "tags": tags,
         "privacy": privacy,

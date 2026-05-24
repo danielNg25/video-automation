@@ -176,17 +176,10 @@ async def _run_full_regen(
 ) -> None:
     """Delegate to the existing full dub runner.
 
-    The runner needs a voice_profile_name (key in voice profiles config);
-    when the caller didn't supply one (Sync-Dub endpoint doesn't take it),
-    we synthesise an ephemeral profile name and inject a matching profile
-    into the runner's voice-profile lookup via override args.
-
-    The runner reads `voice_profile_name` to look up the provider+voice,
-    but we already have those in `params` — so we use voice_override +
-    provider_override and pick an arbitrary existing profile name as the
-    base (just so the lookup doesn't fail).
+    `params` carries the SyncDubRequest fields (provider, voice_id,
+    playback_speed, underlay_db, api_key, llm_*); we hand the runner the
+    same shape it already accepts.
     """
-    from src.tts import load_voice_profiles
     from src.tts.runner import run_tts_track
 
     config = get_config()
@@ -198,14 +191,6 @@ async def _run_full_regen(
     # the singleton populated).
     video_path = Path("data/raw") / f"{video_id}.mp4"
 
-    # Pick any existing voice profile as the base — its provider/voice
-    # gets overridden anyway.
-    profiles_data = load_voice_profiles(config)
-    profiles = profiles_data.get("profiles", {})
-    if not profiles:
-        raise RuntimeError("No voice profiles configured; cannot run full regen")
-    base_profile_name = next(iter(profiles.keys()))
-
     # Inject underlay_db into the config the runner sees so dub_meta
     # records the requested value.
     underlay_db = params.get("underlay_db")
@@ -215,21 +200,18 @@ async def _run_full_regen(
         tts_section["underlay_db"] = float(underlay_db)
         effective_config = {**config, "tts": tts_section}
 
-    # Bridge our (current, total, message) progress into the runner's
-    # callback shape, which is also (current, total, message).
-    runner_progress = on_progress
-
     await run_tts_track(
         video_id=video_id,
         video_path=video_path,
         language=language,
-        voice_profile_name=base_profile_name,
+        voice=params["voice_id"],
+        provider=params.get("provider", "google"),
         config=effective_config,
-        provider_override=params.get("provider"),
-        voice_override=params.get("voice_id"),
         api_key_override=params.get("api_key"),
+        llm_api_key=params.get("llm_api_key"),
+        llm_backend=params.get("llm_backend"),
         playback_speed=params.get("playback_speed"),
-        on_progress=runner_progress,
+        on_progress=on_progress,
     )
 
 
@@ -249,7 +231,7 @@ async def _run_partial_regen(
     `generate_full_track` but accepts `clip_overrides` for cached
     natural-speed clips.
     """
-    from src.tts import get_tts_provider, load_voice_profiles
+    from src.tts import get_tts_provider
     from src.tts.assembler import TTSAssembler
 
     config = get_config()
@@ -272,21 +254,19 @@ async def _run_partial_regen(
         effective_config = {**config, "tts": tts_section}
     tts_provider = get_tts_provider(effective_config, provider=provider_name)
 
-    # Pick a base voice profile to inherit speed/pitch kwargs from.
-    profiles_data = load_voice_profiles(config)
-    profiles = profiles_data.get("profiles", {})
-    base_profile = next(iter(profiles.values()), {}) if profiles else {}
+    # No profile lookup any more — the dub is uniquely identified by
+    # provider + voice_id from the original dub_meta. Speed/pitch defaults
+    # come from the provider (the assembler treats both as optional kwargs).
+    voice_profile = {"voice": meta.voice_id}
 
-    voice_profile = {**base_profile, "voice": meta.voice_id}
+    # Output path matches the runner's tts_output_path layout so subsequent
+    # dub consumers (processor) pick up the right file.
+    from src.tts.runner import tts_output_path
 
-    # Output path mirrors the runner's tts_output_path so subsequent dub
-    # consumers (processor) pick up the right file.
-    safe_profile = "sync"
     tts_dir = Path("data/tts")
     tts_dir.mkdir(parents=True, exist_ok=True)
-    output_path = (
-        tts_dir
-        / f"{video_id}_{language}_{provider_name}_{safe_profile}.wav"
+    output_path = tts_output_path(
+        tts_dir, video_id, language, provider_name, meta.voice_id
     )
 
     # Build a translator for Stage 3 LLM shortening, mirroring runner.py's
