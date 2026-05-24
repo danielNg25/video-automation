@@ -77,7 +77,7 @@ docker compose ps               # status of both containers
 docker compose logs -f app      # tail backend logs
 docker compose logs -f douyin-api
 docker compose down             # stop and remove containers (volumes survive)
-docker compose down -v          # ALSO wipe paddleocr_cache (forces re-download)
+docker compose down -v          # ALSO wipe any compose volumes
 ```
 
 Make targets: `make docker-up`, `make docker-down`, `make docker-build`, `make docker-rebuild`, `make docker-logs`.
@@ -102,25 +102,34 @@ Mounts in `docker-compose.yml`:
 |---|---|---|
 | `./data` ↔ `/app/data` | Bind mount | All pipeline outputs (raw videos, SRT, TTS audio, exports, logs, state) |
 | `./config` ↔ `/app/config` | Bind mount | Live-edit config without rebuilding |
-| `paddleocr_cache` ↔ `/root/.paddleocr` | Named volume | OCR model files (~1 GB, downloaded on first OCR run) |
 
-Everything else inside the container is ephemeral. `docker compose down` keeps both bind mounts and the named volume; `docker compose down -v` also drops the named volume.
+Everything else inside the container is ephemeral. RapidOCR ships its ONNX models bundled inside the python package — no download at runtime, no model cache volume.
+
+**Cleanup tip** — if you upgraded from a previous PaddleOCR build, the old `paddleocr_cache` volume is now orphaned (~170 MB). Reclaim it once:
+
+```bash
+docker volume rm douyin-automation_paddleocr_cache
+```
 
 ---
 
 ## 6. Apple Silicon notes
 
-`docker-compose.yml` pins the app to `platform: linux/amd64`. PaddlePaddle's aarch64 wheels are flaky and OCR mis-loads on some Mac setups. amd64 under Rosetta is ~30–50% slower at OCR but reliable.
+`docker-compose.yml` pins the app to `platform: linux/amd64`. OnnxRuntime ships aarch64 wheels, but Rosetta amd64 is the better-tested path on the current image — the OCR speedup work was validated on amd64.
 
-To try native arm64: comment the `platform: linux/amd64` line, run `docker compose build --no-cache app && docker compose up -d`. Revert if OCR fails or paddle imports error out.
+To try native arm64: comment the `platform: linux/amd64` line, run `docker compose build --no-cache app && docker compose up -d`. Revert if OCR misbehaves.
 
 ---
 
-## 7. First-run gotcha — PaddleOCR model download
+## 7. GPU acceleration (Linux / Windows with NVIDIA)
 
-The first time the OCR transcriber runs inside the container, it downloads ~1 GB of model files into `/root/.paddleocr`. This takes a few minutes and looks like a hang. Subsequent runs are instant — the named volume persists across `up`/`down`.
+The OCR engine (RapidOCR / ONNX Runtime) auto-detects available execution providers at startup. CPU is the bundled fallback. For NVIDIA-CUDA:
 
-If you suspect a stuck download, tail logs with `docker compose logs -f app` while triggering OCR.
+1. Install with the `[gpu]` extra: `pip install -e ".[gpu]"` (this pulls `onnxruntime-gpu`). In the Dockerfile that means switching the install command for GPU images — or doing it manually inside a running container for ad-hoc tests.
+2. Run docker with GPU passthrough: `docker compose run --gpus all ...` or add `gpus: all` to the compose service (Docker Engine + NVIDIA Container Toolkit must already be set up on the host).
+3. Optionally pin the provider in `config/config.yaml` under `ocr:`: `execution_provider: cuda`. The default `auto` already picks CUDA when it's available.
+
+Apple Silicon Docker can't pass through the M-series GPU, so Macs run CPU-only. Frame-diff skipping is what makes that path acceptable on a Mac.
 
 ---
 
@@ -157,15 +166,15 @@ Inside the container, `localhost` is the container itself — it can't reach the
 
 You haven't entered an API key in **Settings → API Keys** yet. Open the UI and add one.
 
-### First OCR job appears to hang for several minutes
+### OCR seems slower than the speedup notes promise
 
-Expected — first-run model download. See Section 7.
+Check the assembler logs for the line `OCR streaming: N engine calls, M frame-diff skips (X% skip rate)`. If `skip rate` is below ~50% on a video with steady subtitles, raise `frame_diff_threshold` in `config/config.yaml` under `ocr:` (try 5–10). If skip rate is high but per-OCR time is still slow, you're CPU-bound — see Section 7 for the GPU path.
 
 ### `make api` on the host can't reach the Douyin helper
 
 Bare-metal expects the helper at `http://localhost:8081`. The `${DOUYIN_API_BASE:-...}` default handles this as long as `DOUYIN_API_BASE` is unset in your shell. If you exported it for Docker testing, `unset DOUYIN_API_BASE` before running `make api`.
 
-### Build is slow / repeatedly downloads paddlepaddle
+### Build is slow
 
 The Dockerfile uses BuildKit cache mounts. Make sure BuildKit is on:
 
@@ -189,15 +198,16 @@ git pull
 docker compose up -d --build
 ```
 
-The `paddleocr_cache` volume and `data/` bind mount survive image rebuilds. If a release notes a config schema change, re-diff `config/config.example.yaml` against your `config/config.yaml`.
+The `data/` bind mount survives image rebuilds (RapidOCR models are bundled in the python package — no model cache to worry about). If a release notes a config schema change, re-diff `config/config.example.yaml` against your `config/config.yaml`.
 
 ---
 
 ## 11. Clean slate
 
 ```bash
-docker compose down -v          # drops containers + named volumes (paddleocr_cache)
+docker compose down -v          # drops containers + any compose volumes
 docker rmi douyin-automation-app:latest
+docker volume rm douyin-automation_paddleocr_cache 2>/dev/null || true  # legacy
 rm -rf data/                    # WARNING: erases all videos, subtitles, TTS, logs
 ```
 
