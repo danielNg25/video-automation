@@ -21,12 +21,22 @@ translation:
     temperature: 0.7
     default_profile: 'funny-casual-vi'
 
-# OCR Subtitle Extraction
+# OCR Subtitle Extraction (RapidOCR / ONNX Runtime)
 ocr:
     fps: 2.0                          # Frames per second to extract
     crop_bottom_pct: 0.25             # Pre-crop to bottom 25% of frame (0 = disabled)
-    confidence_threshold: 0.7         # Minimum PaddleOCR confidence
+    confidence_threshold: 0.7         # Minimum OCR confidence
     similarity_threshold: 0.85        # SequenceMatcher ratio for dedup
+    # Frame-diff skipping: compare each frame's subtitle strip to the previous
+    # one (mean abs pixel diff). Below the threshold = "same subtitle, reuse
+    # the cached OCR result"; saves ~70-90% of OCR calls on typical videos.
+    enable_frame_diff: true
+    frame_diff_threshold: 3.0         # mean pixel diff on 0-255 scale; 0=identical
+    # ONNX Runtime execution provider: auto | cpu | cuda | directml | coreml.
+    # 'auto' picks the best available (CUDA > DirectML > CoreML > CPU).
+    # NVIDIA GPU requires installing the [gpu] extra and running docker
+    # with `--gpus all`.
+    execution_provider: auto
     subtitle_region:
         min_y: 0.65                   # Only text below 65% of frame height
         max_watermark_frequency: 0.80 # Text in >80% of frames = watermark

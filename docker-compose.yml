@@ -12,8 +12,8 @@ services:
     build: .
     image: douyin-automation-app:latest
     container_name: douyin-app
-    # Apple Silicon: comment the line below to try native arm64. paddlepaddle aarch64
-    # wheels can be flaky; amd64 via Rosetta is slower but reliable.
+    # Apple Silicon: comment the line below to try native arm64. Onnxruntime
+    # ships aarch64 wheels but Rosetta amd64 is the well-tested path.
     platform: linux/amd64
     ports:
       - "8000:8000"
@@ -24,11 +24,9 @@ services:
     volumes:
       - ./data:/app/data
       - ./config:/app/config
-      # PaddleOCR 3.x downloads its inference models into ~/.paddlex/official_models,
-      # NOT ~/.paddleocr. Mount the named volume there so models survive container
-      # recreates instead of redownloading ~1 GB each time.
-      - paddleocr_cache:/root/.paddlex
     restart: unless-stopped
-
-volumes:
-  paddleocr_cache:
+    # RapidOCR ships its ONNX models bundled inside the python package (no
+    # runtime download), so no model-cache volume is needed any more. The
+    # old `paddleocr_cache` volume is orphaned and can be reclaimed with:
+    #   docker volume rm douyin-automation_paddleocr_cache
+    # See DOCKER.md.
