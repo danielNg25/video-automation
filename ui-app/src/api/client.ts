@@ -300,7 +300,7 @@ export function getTTSProviders(): Promise<TTSProviderInfo[]> {
   return request('/tts/providers');
 }
 
-export function getTTSVoices(language?: string, provider: string = 'edge', apiKey?: string): Promise<VoiceInfo[]> {
+export function getTTSVoices(language?: string, provider: string = 'google', apiKey?: string): Promise<VoiceInfo[]> {
   const params = new URLSearchParams({ provider });
   if (language) params.set('language', language);
   if (apiKey) params.set('api_key', apiKey);
