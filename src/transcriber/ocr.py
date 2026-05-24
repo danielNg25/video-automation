@@ -232,55 +232,95 @@ class OCRTranscriber(BaseTranscriber):
                     frames, ocr, frame_height, frame_width
                 )
 
-            # Two-pass auto-detection approach
-            # Pass 1: Sample every 5th frame to build watermark map
-            self._emit_progress(0.10, "Analyzing subtitle regions (sampling)...")
-            sample_indices = list(range(0, total_frames, 5))
-            all_sample_detections = []
+            # Single streaming pass with frame-diff skipping.
+            # For each frame:
+            #   - Load grayscale strip (cv2).
+            #   - If diff to previous strip < threshold → reuse cached
+            #     filtered text + bboxes (no OCR call).
+            #   - Otherwise call OCR, parse, filter, and cache.
+            # Watermark Y-positions are built from a rolling buffer of the
+            # last N OCR results; refreshed every 10 OCRs (cheap, streams).
+            import cv2
 
-            for i, idx in enumerate(sample_indices):
-                if i % 5 == 0:
-                    pct = 0.10 + (i / len(sample_indices)) * 0.05
-                    self._emit_progress(
-                        pct, f"Sampling frame {i + 1}/{len(sample_indices)}..."
-                    )
-                result = ocr.ocr(str(frames[idx]))
-                detections = self._parse_ocr_result(result)
-                all_sample_detections.append((idx, detections))
+            differ = _FrameDiffer(threshold=self.frame_diff_threshold)
+            ring: list[list[tuple]] = []  # recent detection sets
+            RING_SIZE = 50
+            REFRESH_EVERY = 10
+            watermark_positions: set[int] = set()
 
-            # Build watermark position index from samples
-            watermark_positions = self._build_watermark_positions(
-                all_sample_detections, len(sample_indices), cropped_height
-            )
-
-            # Pass 2: OCR all frames, skip watermark positions
-            frame_texts = []
+            frame_texts: list[str] = []
             # One inner list per analyzed frame that had at least one subtitle box.
             # Per-frame grouping is required so _save_ocr_metadata can pick the
             # largest single-frame bbox instead of unioning across frames.
             all_subtitle_bboxes: list[list[list]] = []
+
+            ocr_calls = 0
+            ocr_skips = 0
+            effective_min_y = 0.0 if crop_pct > 0 else self.min_y
+            crop_y_offset = (
+                int(frame_height * (1 - crop_pct)) if crop_pct > 0 else 0
+            )
+
             for i, frame_path in enumerate(frames):
-                pct = 0.15 + (i / total_frames) * 0.65
+                pct = 0.10 + (i / total_frames) * 0.75
                 if i % 10 == 0:
                     self._emit_progress(
-                        pct, f"Running OCR on frame {i + 1}/{total_frames}..."
+                        pct,
+                        f"Frame {i + 1}/{total_frames} "
+                        f"(ocr={ocr_calls}, skipped={ocr_skips})",
                     )
 
-                result = ocr.ocr(str(frame_path))
+                strip = cv2.imread(str(frame_path), cv2.IMREAD_GRAYSCALE)
+
+                # Fast path: frame visually identical to the previous one →
+                # reuse the cached filtered text. By far the biggest speedup.
+                if (
+                    self.enable_frame_diff
+                    and strip is not None
+                    and differ.is_same(strip)
+                ):
+                    ocr_skips += 1
+                    frame_texts.append(differ.prev_text)
+                    if differ.prev_bboxes:
+                        all_subtitle_bboxes.append(differ.prev_bboxes)
+                    continue
+
+                # Slow path: OCR this frame.
+                ocr_calls += 1
+                result, _elapse = ocr(str(frame_path))
                 detections = self._parse_ocr_result(result)
 
-                # Filter: keep only subtitle-classified text
-                # When pre-cropped, the entire frame IS the subtitle region,
-                # so use min_y=0 to accept text at any vertical position
-                effective_min_y = 0.0 if crop_pct > 0 else self.min_y
+                # Refresh watermark index from rolling buffer.
+                ring.append(detections)
+                if len(ring) > RING_SIZE:
+                    ring.pop(0)
+                if ocr_calls % REFRESH_EVERY == 0 or i == total_frames - 1:
+                    watermark_positions = self._build_watermark_positions(
+                        # _build_watermark_positions takes (idx, detections)
+                        # tuples but uses only the detections; pass 0 for idx.
+                        [(0, d) for d in ring],
+                        len(ring),
+                        cropped_height,
+                    )
+
                 subtitle_text, subtitle_bboxes = self._filter_subtitle_text_with_boxes(
                     detections, watermark_positions, cropped_height, cropped_width,
                     min_y_override=effective_min_y,
-                    crop_y_offset=int(frame_height * (1 - crop_pct)) if crop_pct > 0 else 0,
+                    crop_y_offset=crop_y_offset,
                 )
                 frame_texts.append(subtitle_text)
                 if subtitle_bboxes:
                     all_subtitle_bboxes.append(subtitle_bboxes)
+
+                if strip is not None:
+                    differ.update(strip, subtitle_text, subtitle_bboxes)
+
+            total_visits = ocr_calls + ocr_skips
+            hit_rate = ocr_skips / total_visits if total_visits else 0.0
+            logger.info(
+                f"OCR streaming: {ocr_calls} engine calls, "
+                f"{ocr_skips} frame-diff skips ({hit_rate:.0%} skip rate)"
+            )
 
             # Deduplicate consecutive frames into segments
             self._emit_progress(0.85, "Deduplicating and generating SRT...")
@@ -325,7 +365,8 @@ class OCRTranscriber(BaseTranscriber):
                     pct, f"Running OCR on frame {i + 1}/{total_frames}..."
                 )
 
-            result = ocr.ocr(str(frame_path))
+            # RapidOCR is callable: ocr(image) returns (result, timings).
+            result, _elapse = ocr(str(frame_path))
             detections = self._parse_ocr_result(result)
 
             # Keep only detections within the manual region
@@ -345,13 +386,40 @@ class OCRTranscriber(BaseTranscriber):
 
     @staticmethod
     def _parse_ocr_result(result) -> list[tuple]:
-        """Parse PaddleOCR result into list of (bbox, text, confidence).
+        """Parse OCR engine result into list of (bbox, text, confidence).
 
-        Handles both v2 format [[(bbox, (text, conf)), ...]] and
-        v3 format [{"rec_texts": [...], "rec_scores": [...], "dt_polys": [...]}].
+        Handles three shapes:
+            - RapidOCR:     [[bbox_pts, text, conf], ...]  (current)
+            - PaddleOCR v3: [{"rec_texts": [...], "rec_scores": [...],
+                              "dt_polys": [...]}]
+            - PaddleOCR v2: [[(bbox, (text, conf)), ...]]
+
+        Paddle shapes are kept so this function can be used against
+        captured fixtures or if we ever flip back. Every branch normalises
+        to the same `(bbox_4pts, text, float_conf)` tuple expected by
+        `_filter_subtitle_text_with_boxes` and watermark logic.
         """
         detections = []
         if not result:
+            return detections
+
+        # RapidOCR: list of [bbox_pts, text, conf]
+        # (PP-OCR style, the only shape RapidOCR 1.x emits)
+        if (
+            isinstance(result, list)
+            and len(result) > 0
+            and isinstance(result[0], list)
+            and len(result[0]) == 3
+            and isinstance(result[0][1], str)
+        ):
+            for item in result:
+                bbox, text, conf = item
+                bbox = bbox.tolist() if hasattr(bbox, "tolist") else list(bbox)
+                try:
+                    conf_f = float(conf)
+                except (TypeError, ValueError):
+                    conf_f = 0.0
+                detections.append((bbox, text, conf_f))
             return detections
 
         # PaddleOCR v3: list of result dicts with rec_texts/rec_scores/dt_polys
@@ -364,13 +432,10 @@ class OCRTranscriber(BaseTranscriber):
             for i, text in enumerate(texts):
                 score = scores[i] if i < len(scores) else 0.0
                 poly = polys[i] if i < len(polys) else [[0, 0], [0, 0], [0, 0], [0, 0]]
-                # Convert numpy array to list if needed
                 bbox = poly.tolist() if hasattr(poly, "tolist") else list(poly)
-                # Ensure 4-point bbox format [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
                 if len(bbox) >= 4:
                     detections.append((bbox[:4], text, score))
                 elif len(bbox) == 2:
-                    # rect format [x1,y1,x2,y2] → expand to 4 corners
                     x1, y1 = bbox[0]
                     x2, y2 = bbox[1]
                     detections.append(
