@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `config/douyin_web_config.example.yaml`: template for the evil0ctal douyin-api container's config (User-Agent, msToken, ttwid, and a `Cookie: PASTE_YOUR_DOUYIN_COOKIE_HERE` placeholder). The real `config/douyin_web_config.yaml` stays gitignored. New `make setup` target copies both `config.example.yaml` → `config.yaml` and `douyin_web_config.example.yaml` → `douyin_web_config.yaml` when missing — idempotent, won't clobber existing files. `make docker-up` and `make docker-rebuild` now run `setup` first so fresh clones (especially Windows + Docker Desktop / WSL2, where a missing bind-mount source auto-creates as a directory and breaks the mount with `not a directory: Are you trying to mount a directory onto a file?`) no longer crash on first `docker compose up`. DOCKER.md §2 and the troubleshooting section updated.
 - DownloadTranscribe (Pipeline page): explicit **Language** dropdown next to TTS Provider and Voice. Defaults to `Auto (<target_language>)` — follows the selected translation profile — and the user can override to any of vi / en / zh / ja / ko / es / fr / de / ru / pt / it / th / id. The chosen language drives the voice-list filter, the dub language sent to the pipeline, and the TTS preview's sample-text selection. Persisted via `tts_language_override` in localStorage.
 
 ### Changed

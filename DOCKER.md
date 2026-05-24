@@ -25,23 +25,25 @@ You also need ~4 GB of free disk for the built image plus headroom for `data/` (
 
 ## 2. First-run setup
 
-Three steps. Almost everything else is configured later in the Settings UI.
+Two steps. Almost everything else is configured later in the Settings UI.
 
 ```bash
-# 2.1  App config (ffmpeg, OCR, transcription, etc.) — edit later in the UI.
-cp config/config.example.yaml config/config.yaml
+# 2.1  Seed local config files from their .example templates. Idempotent —
+# safe to run any time; won't clobber edits you've already made. This is also
+# run automatically by `make docker-up` and `make docker-rebuild`.
+make setup
+# Creates: config/config.yaml, config/douyin_web_config.yaml
 
-# 2.2  Helper-API cookie — REQUIRED. The douyin-api container needs a real
-# Douyin Cookie header to scrape Douyin. Copy this template and paste your
-# cookie into the `Cookie:` field:
-#   https://github.com/Evil0ctal/Douyin_TikTok_Download_API/blob/main/crawlers/douyin/web/config.yaml
-# Save it as config/douyin_web_config.yaml. (Gitignored — it's personal.)
+# 2.2  Edit config/douyin_web_config.yaml and replace the placeholder
+# PASTE_YOUR_DOUYIN_COOKIE_HERE with a real Douyin Cookie header. The
+# douyin-api container uses this to scrape Douyin's primary API. Without
+# a real cookie, downloads silently fall back to yt-dlp (still works,
+# but slower and more anti-scraping-fragile).
 #   To get the cookie: log into https://www.douyin.com in a browser,
-#   open DevTools → Application → Cookies → copy the full Cookie header.
-ls config/douyin_web_config.yaml          # must exist before `docker compose up`
+#   open DevTools → Network → any XHR → copy the request "cookie:" header.
 
 # 2.3  Build and start.
-docker compose up -d --build
+make docker-up                            # or: docker compose up -d --build
 ```
 
 Open <http://localhost:8000> and finish configuration in the **Settings** page:
@@ -149,7 +151,11 @@ Stale image. Run `docker compose up -d --build app`.
 
 ### `docker compose up` fails with `no such file or directory: ./config/douyin_web_config.yaml`
 
-Step 2.2 wasn't completed. Create the file with a real Douyin cookie.
+Step 2.1 wasn't completed. Run `make setup` (or `cp config/douyin_web_config.example.yaml config/douyin_web_config.yaml`), then edit the cookie.
+
+### Windows/WSL2: `error mounting "/run/desktop/mnt/host/wsl/docker-desktop-bind-mounts/…" … not a directory: Are you trying to mount a directory onto a file?`
+
+Same root cause as above. On Windows + Docker Desktop, a missing bind-mount source auto-creates as an empty directory, then fails to mount onto the file path inside the container. Fix: run `make setup` before `docker compose up`. If it already failed once, remove the auto-created empty source first — `docker compose down`, delete the empty `config/douyin_web_config.yaml` directory if Docker Desktop made one, then `make setup && make docker-up`.
 
 ### Backend logs `Connection refused` to the Douyin helper
 
