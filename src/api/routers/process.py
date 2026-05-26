@@ -12,6 +12,7 @@ from starlette.responses import FileResponse
 
 from src.api.deps import get_config, get_data_dir, get_task_manager
 from src.api.models import ExportRequest, ProcessRequest, ProcessResult, TaskResponse
+from src.processor.style import SubtitleStyleSpec, load_style, save_global_default
 from src.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -84,52 +85,17 @@ async def get_process_result(task_id: str):
     return ProcessResult(**(task.result or {}))
 
 
-@router.get("/api/subtitle-styles")
+@router.get("/api/subtitle-styles", response_model=SubtitleStyleSpec)
 async def get_subtitle_styles():
-    """Return subtitle style configuration."""
-    config_path = Path("config/subtitle_styles.yaml")
-    if not config_path.exists():
-        raise HTTPException(status_code=404, detail="Subtitle styles config not found")
-    with open(config_path) as f:
-        return yaml.safe_load(f)
+    """Return the global default subtitle style."""
+    return load_style()
 
 
-@router.put("/api/subtitle-styles")
-async def update_default_subtitle_style(style: dict):
-    """Update the default subtitle style."""
-    config_path = Path("config/subtitle_styles.yaml")
-    if not config_path.exists():
-        raise HTTPException(status_code=404, detail="Subtitle styles config not found")
-
-    with open(config_path) as f:
-        styles = yaml.safe_load(f)
-
-    styles["default"] = {**styles.get("default", {}), **style}
-
-    with open(config_path, "w") as f:
-        yaml.safe_dump(styles, f, default_flow_style=False)
-
-    return styles
-
-
-@router.put("/api/subtitle-styles/{platform}")
-async def update_subtitle_style(platform: str, style: dict):
-    """Update platform-specific subtitle style."""
-    config_path = Path("config/subtitle_styles.yaml")
-    if not config_path.exists():
-        raise HTTPException(status_code=404, detail="Subtitle styles config not found")
-
-    with open(config_path) as f:
-        styles = yaml.safe_load(f)
-
-    if "platforms" not in styles:
-        styles["platforms"] = {}
-    styles["platforms"][platform] = style
-
-    with open(config_path, "w") as f:
-        yaml.safe_dump(styles, f, default_flow_style=False)
-
-    return styles
+@router.put("/api/subtitle-styles", response_model=SubtitleStyleSpec)
+async def put_subtitle_styles(spec: SubtitleStyleSpec):
+    """Replace the global default. Body must be a full SubtitleStyleSpec."""
+    save_global_default(spec)
+    return spec
 
 
 @router.get("/api/platforms")

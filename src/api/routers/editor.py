@@ -22,6 +22,8 @@ from src.api.models import (
     TaskResponse,
 )
 from src.api.routers.transcribe import _resolve_srt_path
+from src.processor.region_detector import load_subtitle_region
+from src.processor.style import SubtitleStyleSpec, load_style, save_style_delta
 from src.processor.subtitle import (
     _timestamp_to_seconds,
     parse_srt,
@@ -176,27 +178,6 @@ async def serve_proxy_video(video_id: str):
     )
 
 
-def _get_video_style_path(video_id: str) -> Path:
-    """Return path to per-video style file."""
-    return get_data_dir() / "srt" / f"{video_id}_style.json"
-
-
-def _load_video_style(video_id: str) -> dict:
-    """Load per-video style, falling back to global default."""
-    style_path = _get_video_style_path(video_id)
-    if style_path.exists():
-        return json.loads(style_path.read_text(encoding="utf-8"))
-
-    # Fall back to global default from subtitle_styles.yaml
-    config_path = Path("config/subtitle_styles.yaml")
-    if config_path.exists():
-        with open(config_path) as f:
-            styles = yaml.safe_load(f) or {}
-        return styles.get("default", {})
-
-    return {}
-
-
 def _check_dub_sync_against_meta(
     data_dir: Path, video_id: str, language: str, new_texts: list[str]
 ) -> bool:
@@ -219,27 +200,54 @@ def _check_dub_sync_against_meta(
 
 @router.get("/api/videos/{video_id}/style")
 async def get_video_style(video_id: str):
-    """Get subtitle style for a specific video (per-video or global default)."""
+    """Merged spec (global + per-video delta) plus a flag for whether the
+    user has any per-video customizations."""
     tm = get_task_manager()
     if video_id not in tm.video_index:
         raise HTTPException(status_code=404, detail=f"Video {video_id} not found")
-
-    style = _load_video_style(video_id)
-    return {"video_id": video_id, "style": style, "is_custom": _get_video_style_path(video_id).exists()}
+    video = tm.video_index[video_id]
+    region_obj = load_subtitle_region(Path("data/srt"), video_id)
+    ocr_region = None
+    if region_obj is not None:
+        ocr_region = {
+            "x": region_obj.x, "y": region_obj.y,
+            "width": region_obj.width, "height": region_obj.height,
+        }
+    source_dims = (video.width, video.height) if getattr(video, "width", None) else None
+    spec = load_style(
+        video_id=video_id,
+        source_dims=source_dims,
+        ocr_region=ocr_region,
+    )
+    delta_path = Path("data/srt") / f"{video_id}_style.json"
+    return {
+        "video_id": video_id,
+        "style": spec.model_dump(),
+        "is_custom": delta_path.exists(),
+    }
 
 
 @router.put("/api/videos/{video_id}/style")
-async def save_video_style(video_id: str, style: dict):
-    """Save subtitle style for a specific video."""
+async def put_video_style(video_id: str, delta: dict):
+    """Replace the per-video delta. Body is a partial SubtitleStyleSpec
+    (FE-computed diff vs the global default)."""
     tm = get_task_manager()
     if video_id not in tm.video_index:
         raise HTTPException(status_code=404, detail=f"Video {video_id} not found")
+    save_style_delta(video_id, delta)
+    return await get_video_style(video_id)
 
-    style_path = _get_video_style_path(video_id)
-    style_path.parent.mkdir(parents=True, exist_ok=True)
-    style_path.write_text(json.dumps(style, indent=2), encoding="utf-8")
 
-    return {"video_id": video_id, "style": style, "is_custom": True}
+@router.delete("/api/videos/{video_id}/style")
+async def delete_video_style(video_id: str):
+    """Remove the per-video delta entirely. Subsequent GETs return global."""
+    tm = get_task_manager()
+    if video_id not in tm.video_index:
+        raise HTTPException(status_code=404, detail=f"Video {video_id} not found")
+    delta_path = Path("data/srt") / f"{video_id}_style.json"
+    if delta_path.exists():
+        delta_path.unlink()
+    return await get_video_style(video_id)
 
 
 @router.put("/api/videos/{video_id}/srt", response_model=SrtResponse)
