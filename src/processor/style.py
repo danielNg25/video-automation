@@ -1,4 +1,4 @@
-"""Canonical subtitle style schema, loader, and persistence helpers.
+"""Canonical subtitle style schema.
 
 This module is the single source of truth for subtitle styling. All
 consumers (FE overlay renderer via TS mirror, ffmpeg renderer via

@@ -64,6 +64,17 @@ class TestSubtitleStyleSpec:
         with pytest.raises(ValidationError):
             SubtitleStyleSpec.model_validate({"background": {"shape": "blob"}})
 
+    def test_blur_strength_clamped_5_30(self):
+        from src.processor.style import SubtitleStyleSpec
+        # 5 and 30 OK (boundaries)
+        SubtitleStyleSpec.model_validate({"blur": {"strength": 5}})
+        SubtitleStyleSpec.model_validate({"blur": {"strength": 30}})
+        # Out of range rejected
+        with pytest.raises(ValidationError):
+            SubtitleStyleSpec.model_validate({"blur": {"strength": 4}})
+        with pytest.raises(ValidationError):
+            SubtitleStyleSpec.model_validate({"blur": {"strength": 31}})
+
     def test_opacity_clamped_0_100(self):
         from src.processor.style import SubtitleStyleSpec
         # 0 and 100 OK
