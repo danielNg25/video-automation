@@ -207,3 +207,66 @@ export interface PlatformSpec {
   title_max_length: number;
   hashtag_limit: number;
 }
+
+// Mirror of src/processor/style.py::SubtitleStyleSpec. Keep in sync.
+// All spatial fields are PERCENTAGES of canvas dims.
+
+export interface TextStyle {
+  font_name: 'Arial' | 'Roboto' | 'Impact' | 'Georgia' | 'Courier New' | 'Helvetica';
+  font_size: number;
+  color: string;       // '#RRGGBB'
+  bold: boolean;
+}
+
+export interface PositionStyle {
+  alignment:
+    | 'bottom-left' | 'bottom-center' | 'bottom-right'
+    | 'center-left' | 'center-center' | 'center-right'
+    | 'top-left'    | 'top-center'    | 'top-right';
+  margin_v: number;
+  margin_h: number;
+}
+
+export interface OutlineStyle {
+  width: number;
+  color: string;
+}
+
+export interface ShadowStyle {
+  depth: number;
+  color: string;
+}
+
+export interface BackgroundStyle {
+  shape: 'none' | 'rect' | 'rounded';
+  color: string;
+  opacity: number;     // 0-100
+  radius: number;
+  padding_x: number;
+  padding_y: number;
+}
+
+export interface BlurStyle {
+  enabled: boolean;
+  mode: 'blur' | 'pixelate' | 'fill';
+  strength: number;
+}
+
+export interface SubtitleStyleSpec {
+  text: TextStyle;
+  position: PositionStyle;
+  outline: OutlineStyle;
+  shadow: ShadowStyle;
+  background: BackgroundStyle;
+  blur: BlurStyle;
+}
+
+// Partial<...> would lose deep-partial; we hand-roll the delta type.
+export interface SubtitleStyleDelta {
+  text?:       Partial<TextStyle>;
+  position?:   Partial<PositionStyle>;
+  outline?:    Partial<OutlineStyle>;
+  shadow?:     Partial<ShadowStyle>;
+  background?: Partial<BackgroundStyle>;
+  blur?:       Partial<BlurStyle>;
+}
