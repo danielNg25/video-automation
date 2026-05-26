@@ -13,9 +13,12 @@ source video's coords for user intuition.
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
+from pathlib import Path
 from typing import Literal
 
+import yaml
 from pydantic import BaseModel, Field
 
 
@@ -87,3 +90,52 @@ def _deep_merge(base: dict, delta: dict) -> dict:
         else:
             result[key] = deepcopy(value)
     return result
+
+
+# Module-level path constants — overridden in tests via monkeypatch.
+_GLOBAL_PATH: Path = Path("config/subtitle_styles.yaml")
+_SRT_DIR: Path = Path("data/srt")
+
+
+def _per_video_path(video_id: str) -> Path:
+    return _SRT_DIR / f"{video_id}_style.json"
+
+
+def load_style(video_id: str | None = None) -> SubtitleStyleSpec:
+    """Return the merged spec for a video, or the pure global default.
+
+    Reads `config/subtitle_styles.yaml` as the seed and (when video_id is
+    given) deep-merges `data/srt/{video_id}_style.json` on top.
+    """
+    global_dict: dict = yaml.safe_load(_GLOBAL_PATH.read_text()) if _GLOBAL_PATH.exists() else {}
+    if video_id is None:
+        return SubtitleStyleSpec.model_validate(global_dict)
+
+    per_video = _per_video_path(video_id)
+    if not per_video.exists():
+        return SubtitleStyleSpec.model_validate(global_dict)
+
+    delta: dict = json.loads(per_video.read_text())
+    merged = _deep_merge(global_dict, delta)
+    return SubtitleStyleSpec.model_validate(merged)
+
+
+def save_style_delta(video_id: str, delta: dict) -> None:
+    """Replace the per-video file with `delta`.
+
+    The FE computes the diff client-side; this function just persists
+    whatever delta the FE sent. Missing fields fall back to global at
+    load time.
+    """
+    path = _per_video_path(video_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(delta, indent=2))
+
+
+def save_global_default(spec: SubtitleStyleSpec) -> None:
+    """Rewrite `config/subtitle_styles.yaml` with the full spec."""
+    yaml_text = yaml.safe_dump(
+        spec.model_dump(), sort_keys=False, default_flow_style=False,
+    )
+    _GLOBAL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _GLOBAL_PATH.write_text(yaml_text)

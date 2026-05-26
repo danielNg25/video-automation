@@ -132,3 +132,80 @@ class TestDeepMerge:
         base = {"text": {"color": "#FFFFFF", "bold": True}}
         delta = {"text": None}
         assert _deep_merge(base, delta) == {"text": None}
+
+
+class TestLoadStyle:
+    def _write_global(self, tmp_path, monkeypatch, content: dict):
+        import yaml
+        path = tmp_path / "subtitle_styles.yaml"
+        path.write_text(yaml.safe_dump(content))
+        monkeypatch.setattr("src.processor.style._GLOBAL_PATH", path)
+        return path
+
+    def _write_per_video(self, tmp_path, monkeypatch, video_id: str, content: dict):
+        import json
+        srt_dir = tmp_path / "srt"
+        srt_dir.mkdir(exist_ok=True)
+        path = srt_dir / f"{video_id}_style.json"
+        path.write_text(json.dumps(content))
+        monkeypatch.setattr("src.processor.style._SRT_DIR", srt_dir)
+        return path
+
+    def test_load_returns_global_when_no_video_id(self, tmp_path, monkeypatch):
+        from src.processor.style import load_style
+        self._write_global(tmp_path, monkeypatch, {
+            "text": {"font_size": 4.0},
+            "background": {"shape": "rect"},
+        })
+        # _SRT_DIR must be set even when not used
+        monkeypatch.setattr("src.processor.style._SRT_DIR", tmp_path / "srt")
+        spec = load_style()
+        assert spec.text.font_size == 4.0
+        assert spec.background.shape == "rect"
+        assert spec.text.color == "#FFFFFF"  # default fills in
+
+    def test_load_returns_global_when_no_per_video_file(self, tmp_path, monkeypatch):
+        from src.processor.style import load_style
+        self._write_global(tmp_path, monkeypatch, {"text": {"font_size": 4.0}})
+        monkeypatch.setattr("src.processor.style._SRT_DIR", tmp_path / "srt")
+        (tmp_path / "srt").mkdir()
+        spec = load_style("video123")
+        assert spec.text.font_size == 4.0
+
+    def test_per_video_delta_merges_over_global(self, tmp_path, monkeypatch):
+        from src.processor.style import load_style
+        self._write_global(tmp_path, monkeypatch, {
+            "text": {"font_size": 4.0, "color": "#FFFFFF"},
+            "background": {"shape": "none"},
+        })
+        self._write_per_video(tmp_path, monkeypatch, "video123", {
+            "background": {"shape": "rounded", "color": "#FFFF00"},
+        })
+        spec = load_style("video123")
+        assert spec.text.font_size == 4.0       # from global
+        assert spec.text.color == "#FFFFFF"     # from global
+        assert spec.background.shape == "rounded"  # from delta
+        assert spec.background.color == "#FFFF00"  # from delta
+
+    def test_save_delta_writes_partial_json(self, tmp_path, monkeypatch):
+        import json
+        from src.processor.style import save_style_delta
+        srt_dir = tmp_path / "srt"
+        srt_dir.mkdir()
+        monkeypatch.setattr("src.processor.style._SRT_DIR", srt_dir)
+        save_style_delta("video123", {"background": {"color": "#FFFF00"}})
+        path = srt_dir / "video123_style.json"
+        assert path.exists()
+        assert json.loads(path.read_text()) == {"background": {"color": "#FFFF00"}}
+
+    def test_save_global_default_writes_yaml(self, tmp_path, monkeypatch):
+        import yaml
+        from src.processor.style import save_global_default, SubtitleStyleSpec
+        path = tmp_path / "subtitle_styles.yaml"
+        monkeypatch.setattr("src.processor.style._GLOBAL_PATH", path)
+        spec = SubtitleStyleSpec()
+        spec.text.font_size = 5.5
+        save_global_default(spec)
+        assert path.exists()
+        loaded = yaml.safe_load(path.read_text())
+        assert loaded["text"]["font_size"] == 5.5
