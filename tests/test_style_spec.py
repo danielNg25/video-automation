@@ -126,3 +126,9 @@ class TestDeepMerge:
         delta = {"a": {"b": 2}}
         _deep_merge(base, delta)
         assert base == {"a": {"b": 1}}  # base unchanged
+
+    def test_delta_scalar_replaces_dict_in_base(self):
+        from src.processor.style import _deep_merge
+        base = {"text": {"color": "#FFFFFF", "bold": True}}
+        delta = {"text": None}
+        assert _deep_merge(base, delta) == {"text": None}
