@@ -92,7 +92,7 @@ export interface PreviewClipRequest {
   language: string;
   start: number;
   duration: number;
-  subtitle_style?: Record<string, unknown>;
+  subtitle_style?: SubtitleStyleSpec | Record<string, unknown>;
 }
 
 export interface TranslationProfileSummary {

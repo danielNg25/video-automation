@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { VideoPlayer } from '../../components/editor/VideoPlayer';
-import { SubtitleOverlay } from '../../components/editor/SubtitleOverlay';
-import type { SubtitleStyle } from '../../components/editor/SubtitleOverlay';
+import { SubtitleRenderer } from '../../components/editor/SubtitleRenderer';
 import { SegmentList } from '../../components/editor/SegmentList';
 import { Timeline } from '../../components/editor/Timeline';
 import { StylePanel } from '../../components/editor/StylePanel';
 import { useVideoPlayer } from '../../hooks/useVideoPlayer';
 import { srtTimestampToSeconds, secondsToSrtTimestamp } from '../../utils/srtTime';
+import { diffSpec } from '../../utils/diffSpec';
 import {
   getVideo,
   getSrt,
@@ -20,10 +20,14 @@ import {
   getVideoStyle,
   putVideoStyle,
   putSubtitleStyleDefault,
+  deleteVideoStyle,
+  getSubtitleStyleDefault,
+  getSubtitleRegion,
   postDubSync,
 } from '../../api/client';
 import { storageGet, loadApiKeys, loadLLMPrefs } from '../../utils/storage';
-import type { VideoMetadata, SubtitleSegment } from '../../api/types';
+import type { VideoMetadata, SubtitleSegment, SubtitleRegion } from '../../api/types';
+import type { SubtitleStyleSpec } from '../../api/types';
 
 type RightTab = 'segments' | 'style';
 
@@ -61,49 +65,40 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete }: Props) {
   const [syncProgress, setSyncProgress] = useState({ pct: 0, message: '' });
   const [syncError, setSyncError] = useState<string>('');
 
-  // Style
-  const [style, setStyle] = useState<SubtitleStyle>({
-    fontName: 'Arial',
-    fontSize: 24,
-    outlineWidth: 2,
-    marginV: 30,
-    marginH: 0,
-    bold: true,
-    shadow: true,
-    backgroundColor: '',
-    backgroundOpacity: 0,
-  });
-  const [originalStyle, setOriginalStyle] = useState<SubtitleStyle | null>(null);
+  // Subtitle style — new nested spec model
+  const [globalDefault, setGlobalDefault] = useState<SubtitleStyleSpec | null>(null);
+  const [savedSpec, setSavedSpec] = useState<SubtitleStyleSpec | null>(null);
+  const [draftSpec, setDraftSpec] = useState<SubtitleStyleSpec | null>(null);
+
   const [styleSaving, setStyleSaving] = useState(false);
   const [styleSaveStatus, setStyleSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
+
+  // Subtitle region (for OCR re-align)
+  const [subtitleRegion, setSubtitleRegion] = useState<SubtitleRegion | null>(null);
+
+  // Video rect for SubtitleRenderer overlay positioning
+  const [videoRect, setVideoRect] = useState<{
+    offsetX: number;
+    offsetY: number;
+    width: number;
+    height: number;
+  } | undefined>(undefined);
 
   const isDirty = useMemo(
     () =>
       JSON.stringify(segments) !== JSON.stringify(originalSegments) ||
-      (originalStyle !== null && JSON.stringify(style) !== JSON.stringify(originalStyle)),
-    [segments, originalSegments, style, originalStyle],
+      (savedSpec !== null && JSON.stringify(draftSpec) !== JSON.stringify(savedSpec)),
+    [segments, originalSegments, draftSpec, savedSpec],
   );
 
-  // Load per-video style (falls back to global default on backend)
+  // On mount: load global default + per-video merged style in parallel
   useEffect(() => {
     if (!videoId) return;
-    getVideoStyle(videoId)
-      .then(({ style: d }) => {
-        if (d) {
-          const loaded: SubtitleStyle = {
-            fontName: (d.font_name as string) || 'Arial',
-            fontSize: (d.font_size as number) || 24,
-            outlineWidth: (d.outline_width as number) ?? 2,
-            marginV: (d.margin_v as number) ?? 30,
-            marginH: (d.margin_h as number) ?? 0,
-            bold: d.bold !== undefined ? Boolean(d.bold) : true,
-            shadow: d.shadow_depth !== undefined ? Number(d.shadow_depth) > 0 : true,
-            backgroundColor: (d.background_color as string) || '',
-            backgroundOpacity: (d.background_opacity as number) ?? 0,
-          };
-          setStyle(loaded);
-          setOriginalStyle(loaded);
-        }
+    Promise.all([getSubtitleStyleDefault(), getVideoStyle(videoId)])
+      .then(([globalSpec, videoRes]) => {
+        setGlobalDefault(globalSpec);
+        setSavedSpec(videoRes.style);
+        setDraftSpec(structuredClone(videoRes.style));
       })
       .catch(() => {});
   }, [videoId]);
@@ -165,6 +160,31 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete }: Props) {
         setOriginalSegments([]);
       });
   }, [videoId, activeLang]);
+
+  // Track video element rect for subtitle overlay positioning
+  useEffect(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl) return;
+    const container = videoEl.parentElement;
+    if (!container) return;
+
+    const update = () => {
+      const containerRect = container.getBoundingClientRect();
+      const vidRect = videoEl.getBoundingClientRect();
+      setVideoRect({
+        offsetX: vidRect.left - containerRect.left,
+        offsetY: vidRect.top - containerRect.top,
+        width: vidRect.width,
+        height: vidRect.height,
+      });
+    };
+
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(videoEl);
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, []);
 
   // --- Segment handlers ---
 
@@ -265,36 +285,20 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete }: Props) {
     [],
   );
 
-  const handleDragPosition = useCallback((marginH: number, marginV: number) => {
-    setStyle((prev) => ({ ...prev, marginH, marginV }));
-  }, []);
-
-  // --- Style payload helper ---
-  const stylePayload = useCallback(() => ({
-    font_name: style.fontName,
-    font_size: style.fontSize,
-    outline_width: style.outlineWidth,
-    margin_v: style.marginV,
-    margin_h: style.marginH,
-    bold: style.bold,
-    shadow_depth: style.shadow ? 1 : 0,
-    background_color: style.backgroundColor,
-    background_opacity: style.backgroundOpacity,
-  }), [style]);
-
-  // --- Save (subtitles + style) ---
+  // --- Save (subtitles + style delta) ---
   const handleSave = useCallback(async () => {
-    if (!videoId || saving) return;
+    if (!videoId || saving || !draftSpec || !globalDefault) return;
     setSaving(true);
     setSaveStatus('idle');
     try {
+      const delta = diffSpec(draftSpec, globalDefault);
       const [res] = await Promise.all([
         putSrt(videoId, { language: activeLang, segments }),
-        putVideoStyle(videoId, stylePayload()),
+        putVideoStyle(videoId, delta),
       ]);
       setSegments(res.segments);
       setOriginalSegments(res.segments);
-      setOriginalStyle({ ...style });
+      setSavedSpec(structuredClone(draftSpec));
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 3000);
     } catch {
@@ -302,14 +306,15 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete }: Props) {
     } finally {
       setSaving(false);
     }
-  }, [videoId, activeLang, segments, saving, stylePayload, style]);
+  }, [videoId, activeLang, segments, saving, draftSpec, globalDefault]);
 
   const handleSaveAsDefault = useCallback(async () => {
-    if (styleSaving) return;
+    if (styleSaving || !draftSpec) return;
     setStyleSaving(true);
     setStyleSaveStatus('idle');
     try {
-      await putSubtitleStyleDefault(stylePayload());
+      const next = await putSubtitleStyleDefault(draftSpec);
+      setGlobalDefault(next);
       setStyleSaveStatus('saved');
       setTimeout(() => setStyleSaveStatus('idle'), 3000);
     } catch {
@@ -317,7 +322,25 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete }: Props) {
     } finally {
       setStyleSaving(false);
     }
-  }, [styleSaving, stylePayload]);
+  }, [styleSaving, draftSpec]);
+
+  const handleResetToGlobal = useCallback(async () => {
+    if (!videoId || !globalDefault) return;
+    if (!confirm('Reset all per-video style overrides? This clears every customization for this video.')) return;
+    const res = await deleteVideoStyle(videoId);
+    setSavedSpec(res.style);
+    setDraftSpec(structuredClone(res.style));
+  }, [videoId, globalDefault]);
+
+  const handleRealignToOcr = useCallback(async () => {
+    if (!videoId || !draftSpec || !globalDefault) return;
+    if (!confirm('Re-align subtitle position to the OCR-detected region? Your current vertical/horizontal/alignment values will be lost.')) return;
+    const delta = diffSpec(draftSpec, globalDefault);
+    delete (delta as Record<string, unknown>).position;
+    const res = await putVideoStyle(videoId, delta);
+    setSavedSpec(res.style);
+    setDraftSpec(structuredClone(res.style));
+  }, [videoId, draftSpec, globalDefault]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -434,23 +457,11 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete }: Props) {
         setOriginalSegments(segments);
       }
 
-      const stylePayloadInline = {
-        font_name: style.fontName,
-        font_size: style.fontSize,
-        outline_width: style.outlineWidth,
-        margin_v: style.marginV,
-        margin_h: style.marginH,
-        bold: style.bold,
-        shadow_depth: style.shadow ? 1 : 0,
-        background_color: style.backgroundColor,
-        background_opacity: style.backgroundOpacity,
-      };
-
       const { task_id } = await postPreviewClip(videoId, {
         language: activeLang,
         start: Math.max(0, playerState.currentTime - 2),
         duration: 10,
-        subtitle_style: stylePayloadInline,
+        subtitle_style: draftSpec ?? undefined,
       });
 
       const es = subscribeSSE(task_id, (eventType) => {
@@ -466,7 +477,15 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete }: Props) {
     } catch {
       setPreviewLoading(false);
     }
-  }, [videoId, activeLang, segments, isDirty, style, playerState.currentTime, previewLoading]);
+  }, [videoId, activeLang, segments, isDirty, draftSpec, playerState.currentTime, previewLoading]);
+
+  // Load subtitle region on mount (best-effort) so hasOcrRegion is accurate.
+  useEffect(() => {
+    if (!videoId) return;
+    getSubtitleRegion(videoId)
+      .then((r) => setSubtitleRegion(r))
+      .catch(() => {});
+  }, [videoId]);
 
   if (!videoId) return <div className="p-6 text-on-surface">No video ID</div>;
 
@@ -482,6 +501,11 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete }: Props) {
         ? getPreviewMixUrl(videoId, activeLang)
         : (useProxy ? getProxyVideoUrl(videoId) : getRawVideoUrl(videoId)))
     : '';
+
+  // Source dimensions for StylePanel — VideoMetadata has no width/height fields;
+  // fall back to portrait defaults (1080×1920) which match the Douyin format.
+  const sourceW = 1080;
+  const sourceH = 1920;
 
   return (
     <div className="flex flex-col h-full">
@@ -574,12 +598,17 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete }: Props) {
               loading={videoLoading}
               onLoadingChange={setVideoLoading}
             >
-              <SubtitleOverlay
-                segments={segments}
-                currentTime={playerState.currentTime}
-                style={style}
-                onDragPosition={handleDragPosition}
-              />
+              {draftSpec && (
+                <SubtitleRenderer
+                  segments={segments}
+                  currentTime={playerState.currentTime}
+                  spec={draftSpec}
+                  onDragPosition={(mh, mv) =>
+                    setDraftSpec((s) => s ? { ...s, position: { ...s.position, margin_h: mh, margin_v: mv } } : s)
+                  }
+                  videoRect={videoRect}
+                />
+              )}
             </VideoPlayer>
 
             <Timeline
@@ -671,9 +700,18 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete }: Props) {
               ) : (
                 <div className="flex-1 overflow-y-auto flex flex-col">
                   <div className="flex-1">
-                    <StylePanel style={style} onChange={setStyle} />
+                    {draftSpec && (
+                      <StylePanel
+                        spec={draftSpec}
+                        onChange={setDraftSpec}
+                        sourceW={sourceW}
+                        sourceH={sourceH}
+                        hasOcrRegion={!!subtitleRegion}
+                        onRealignToOcr={handleRealignToOcr}
+                      />
+                    )}
                   </div>
-                  <div className="pt-3 mt-3 border-t border-outline-variant/10 flex items-center gap-2">
+                  <div className="pt-3 mt-3 border-t border-outline-variant/10 flex items-center gap-2 flex-wrap">
                     <button
                       onClick={handleSaveAsDefault}
                       disabled={styleSaving}
@@ -684,6 +722,15 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete }: Props) {
                         {styleSaving ? 'progress_activity' : 'bookmark'}
                       </span>
                       {styleSaving ? 'Saving...' : 'Save as Default'}
+                    </button>
+                    <button
+                      onClick={handleResetToGlobal}
+                      disabled={!globalDefault}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-highest text-on-surface text-xs hover:bg-surface-container-high transition-all disabled:opacity-50"
+                      title="Reset all per-video style overrides to the global default"
+                    >
+                      <span className="material-symbols-outlined text-sm">restart_alt</span>
+                      Reset to Default
                     </button>
                     {styleSaveStatus === 'saved' && (
                       <span className="font-mono text-[9px] text-emerald-400">Saved</span>
