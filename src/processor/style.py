@@ -13,6 +13,7 @@ source video's coords for user intuition.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -67,3 +68,22 @@ class SubtitleStyleSpec(BaseModel):
     shadow:     ShadowStyle     = Field(default_factory=ShadowStyle)
     background: BackgroundStyle = Field(default_factory=BackgroundStyle)
     blur:       BlurStyle       = Field(default_factory=BlurStyle)
+
+
+def _deep_merge(base: dict, delta: dict) -> dict:
+    """Return a new dict where `delta` recursively overrides `base`.
+
+    Nested dicts merge key-by-key. Scalars and lists in `delta` replace
+    those in `base`. Neither input is mutated.
+    """
+    result = deepcopy(base)
+    for key, value in delta.items():
+        if (
+            key in result
+            and isinstance(result[key], dict)
+            and isinstance(value, dict)
+        ):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = deepcopy(value)
+    return result

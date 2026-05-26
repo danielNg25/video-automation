@@ -85,3 +85,44 @@ class TestSubtitleStyleSpec:
             SubtitleStyleSpec.model_validate({"background": {"opacity": 150}})
         with pytest.raises(ValidationError):
             SubtitleStyleSpec.model_validate({"background": {"opacity": -1}})
+
+
+class TestDeepMerge:
+    def test_merge_disjoint_keys(self):
+        from src.processor.style import _deep_merge
+        base = {"a": 1, "b": 2}
+        delta = {"c": 3}
+        assert _deep_merge(base, delta) == {"a": 1, "b": 2, "c": 3}
+
+    def test_delta_overwrites_scalar(self):
+        from src.processor.style import _deep_merge
+        base = {"a": 1, "b": 2}
+        delta = {"b": 99}
+        assert _deep_merge(base, delta) == {"a": 1, "b": 99}
+
+    def test_nested_dicts_merge(self):
+        from src.processor.style import _deep_merge
+        base = {"text": {"font_size": 3.0, "color": "#FFFFFF", "bold": True}}
+        delta = {"text": {"color": "#FFFF00"}}
+        assert _deep_merge(base, delta) == {
+            "text": {"font_size": 3.0, "color": "#FFFF00", "bold": True}
+        }
+
+    def test_two_level_nesting(self):
+        from src.processor.style import _deep_merge
+        base = {
+            "text": {"font_size": 3.0},
+            "background": {"shape": "none", "color": "#000000"},
+        }
+        delta = {"background": {"color": "#FFFF00"}}
+        assert _deep_merge(base, delta) == {
+            "text": {"font_size": 3.0},
+            "background": {"shape": "none", "color": "#FFFF00"},
+        }
+
+    def test_delta_does_not_mutate_base(self):
+        from src.processor.style import _deep_merge
+        base = {"a": {"b": 1}}
+        delta = {"a": {"b": 2}}
+        _deep_merge(base, delta)
+        assert base == {"a": {"b": 1}}  # base unchanged
