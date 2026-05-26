@@ -5,7 +5,6 @@ import type {
   SrtResponse,
   DashboardStats,
   ProcessRequest,
-  SubtitleStyleConfig,
   PlatformSpec,
   SaveSrtRequest,
   PreviewClipRequest,
@@ -97,10 +96,6 @@ export function postProcess(req: ProcessRequest): Promise<TaskResponse> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
   });
-}
-
-export function getSubtitleStyles(): Promise<SubtitleStyleConfig> {
-  return request('/subtitle-styles');
 }
 
 export function getSubtitleStyleDefault(): Promise<SubtitleStyleSpec> {
