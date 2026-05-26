@@ -473,6 +473,21 @@ douyin-automation/
 
 ---
 
+### Subtitle Style Canonical Spec (2026-05-26)
+
+> Design doc: [`docs/superpowers/specs/2026-05-26-subtitle-style-canonical-spec-design.md`](docs/superpowers/specs/2026-05-26-subtitle-style-canonical-spec-design.md)
+> Plan: [`docs/superpowers/plans/2026-05-26-subtitle-style-canonical-spec.md`](docs/superpowers/plans/2026-05-26-subtitle-style-canonical-spec.md)
+
+- [x] **Task 1** — `SubtitleStyleSpec` Pydantic models — `src/processor/style.py` + `tests/test_style_spec.py`
+- [ ] **Task 2** — Deep-merge loader (`load_style`, `_deep_merge`, `_migrate_if_legacy`) — `src/processor/style.py`
+- [ ] **Task 3** — Persistence helpers (`save_style_delta`, `save_global_default`) — `src/processor/style.py`
+- [ ] **Task 4** — ffmpeg renderer refactor — `src/processor/style_render.py`
+- [ ] **Task 5** — API routers wired to new spec — `src/api/routers/`
+- [ ] **Task 6** — `config/subtitle_styles.yaml` replaced with canonical defaults
+- [ ] **Task 7** — TypeScript mirror type + FE overlay renderer update
+
+---
+
 ### One-Time Setup Checklist
 
 - [ ] Docker installed, Douyin API container running

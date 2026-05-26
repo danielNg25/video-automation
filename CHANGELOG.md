@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- `SubtitleStyleSpec` canonical Pydantic schema (`src/processor/style.py`) with six sub-models (`TextStyle`, `PositionStyle`, `OutlineStyle`, `ShadowStyle`, `BackgroundStyle`, `BlurStyle`). All spatial values stored as canvas-percentage floats; validated literals for font name, alignment, background shape, and blur mode; `opacity` constrained `ge=0, le=100`. Seven unit tests in `tests/test_style_spec.py` cover defaults, partial init, JSON round-trip, and validation rejection.
+
 ### Fixed
 - Editor → Save persisted every style field **except** `background_color`. Picking yellow in the StylePanel and exporting produced a black background because the saved JSON had no `background_color` entry, and `generate_subtitle_background_images` falls back to `(0,0,0)` whenever the field is missing or not `#RRGGBB`. `stylePayload` and the preview-clip `stylePayloadInline` in `EditorTab.tsx` now both include `background_color: style.backgroundColor`.
 - `_build_style_string` (preview-frame + preview-clip burn-in) treated `background_opacity` as a raw 0-255 ASS alpha. The rest of the system (StylePanel slider, `SubtitleOverlay` CSS, `generate_subtitle_background_images` on the export path) treats it as a 0-100 percentage. Brought all three paths onto the percentage scale; ASS alpha is now derived via `255 - pct*255/100`. The function also learned to convert `#RRGGBB` `<input type="color">` values to `&HAABBGGRR` ASS literals, so the editor's burned-frame preview now shows the same colour the export produces. The preview-clip stylePayloadInline drops its now-redundant `Math.round(opacity * 2.55)` conversion. 7 new unit tests cover hex→ASS conversion, percentage→alpha inversion, ASS literal pass-through, and the opacity-only black fallback.
