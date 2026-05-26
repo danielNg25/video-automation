@@ -272,3 +272,60 @@ class TestMigrateIfLegacy:
         assert out["text"]["font_size"] == pytest.approx(30 * 100 / 1280, abs=0.01)
         assert "position" not in out  # margin_v not in legacy → don't fabricate
         assert "outline" not in out
+
+
+class TestPositionSeeding:
+    """When no per-video position override exists and an OCR region is
+    available, load_style auto-seeds position from style_matcher. The
+    seed is in-memory only — not persisted."""
+
+    def test_no_seeding_when_position_in_delta(self, tmp_path, monkeypatch):
+        import json
+        from src.processor.style import load_style
+        # Global with no position group
+        (tmp_path / "subtitle_styles.yaml").write_text(
+            "text:\n  font_size: 4.0\n"
+        )
+        monkeypatch.setattr("src.processor.style._GLOBAL_PATH",
+                            tmp_path / "subtitle_styles.yaml")
+        srt_dir = tmp_path / "srt"
+        srt_dir.mkdir()
+        monkeypatch.setattr("src.processor.style._SRT_DIR", srt_dir)
+        # Per-video delta sets position.margin_v
+        (srt_dir / "vid_style.json").write_text(json.dumps({
+            "position": {"margin_v": 12.5}
+        }))
+        spec = load_style("vid")
+        # Manual position wins; no seed
+        assert spec.position.margin_v == 12.5
+
+    def test_seeds_position_when_no_delta_position(self, tmp_path, monkeypatch):
+        from src.processor.style import load_style
+        (tmp_path / "subtitle_styles.yaml").write_text("text:\n  font_size: 4.0\n")
+        monkeypatch.setattr("src.processor.style._GLOBAL_PATH",
+                            tmp_path / "subtitle_styles.yaml")
+        srt_dir = tmp_path / "srt"
+        srt_dir.mkdir()
+        monkeypatch.setattr("src.processor.style._SRT_DIR", srt_dir)
+        # No per-video file at all
+        ocr_region = {"x": 100, "y": 1000, "width": 880, "height": 80}
+        spec = load_style("vid",
+                          source_dims=(1080, 1920),
+                          ocr_region=ocr_region)
+        # Seeded margin_v should NOT be the default 5.0; it should reflect
+        # the region's location (~43% from bottom).
+        assert spec.position.margin_v != 5.0
+        assert 35 < spec.position.margin_v < 55
+
+    def test_seed_not_persisted(self, tmp_path, monkeypatch):
+        from src.processor.style import load_style
+        (tmp_path / "subtitle_styles.yaml").write_text("text:\n  font_size: 4.0\n")
+        monkeypatch.setattr("src.processor.style._GLOBAL_PATH",
+                            tmp_path / "subtitle_styles.yaml")
+        srt_dir = tmp_path / "srt"
+        srt_dir.mkdir()
+        monkeypatch.setattr("src.processor.style._SRT_DIR", srt_dir)
+        ocr_region = {"x": 100, "y": 1000, "width": 880, "height": 80}
+        load_style("vid", source_dims=(1080, 1920), ocr_region=ocr_region)
+        # No per-video file should be created
+        assert not (srt_dir / "vid_style.json").exists()

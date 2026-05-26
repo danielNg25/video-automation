@@ -101,34 +101,48 @@ def _per_video_path(video_id: str) -> Path:
     return _SRT_DIR / f"{video_id}_style.json"
 
 
-def load_style(video_id: str | None = None, source_dims: tuple[int, int] | None = None) -> SubtitleStyleSpec:
+def load_style(
+    video_id: str | None = None,
+    source_dims: tuple[int, int] | None = None,
+    ocr_region: dict | None = None,
+) -> SubtitleStyleSpec:
     """Return the merged spec for a video, or the pure global default.
 
-    If a per-video JSON exists in the legacy flat-px shape, it's migrated
-    to the new nested percent shape and rewritten to disk. `source_dims`
-    is `(width, height)` of the source video and is required for migration
-    of legacy files. Pass None if you don't have it (the migrator will
-    fall back to 1080x1920 — best-effort).
+    Migration of legacy per-video JSONs runs here when the on-disk file
+    matches the legacy shape. If `ocr_region` is provided and the
+    per-video delta has no `position` override, position is seeded from
+    style_matcher.suggest_position(). The seed is in-memory only.
     """
     global_dict: dict = (yaml.safe_load(_GLOBAL_PATH.read_text()) or {}) if _GLOBAL_PATH.exists() else {}
     if video_id is None:
         return SubtitleStyleSpec.model_validate(global_dict)
 
     per_video = _per_video_path(video_id)
-    if not per_video.exists():
-        return SubtitleStyleSpec.model_validate(global_dict)
-
-    delta: dict = json.loads(per_video.read_text())
-    if source_dims is not None:
-        migrated = _migrate_if_legacy(delta, source_dims[0], source_dims[1])
-    else:
-        migrated = _migrate_if_legacy(delta, source_w=1080, source_h=1920)
-    if migrated is not delta:
-        # Rewrite on disk so this only runs once.
-        per_video.write_text(json.dumps(migrated, indent=2))
-        delta = migrated
+    delta: dict = {}
+    if per_video.exists():
+        delta = json.loads(per_video.read_text())
+        if source_dims is not None:
+            migrated = _migrate_if_legacy(delta, source_dims[0], source_dims[1])
+        else:
+            migrated = _migrate_if_legacy(delta, source_w=1080, source_h=1920)
+        if migrated is not delta:
+            # Rewrite on disk so this only runs once.
+            per_video.write_text(json.dumps(migrated, indent=2))
+            delta = migrated
 
     merged = _deep_merge(global_dict, delta)
+
+    # Seed position from OCR region when no manual override is present.
+    if ocr_region is not None and source_dims is not None and "position" not in delta:
+        from src.processor.style_matcher import SubtitleStyleMatcher
+        matcher = SubtitleStyleMatcher()
+        seed = matcher.suggest_position(
+            ocr_region,
+            video_width=source_dims[0], video_height=source_dims[1],
+            output_width=source_dims[0], output_height=source_dims[1],
+        )
+        merged["position"] = seed.model_dump()
+
     return SubtitleStyleSpec.model_validate(merged)
 
 
