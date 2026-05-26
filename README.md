@@ -473,6 +473,34 @@ douyin-automation/
 
 ---
 
+### Subtitle Style Canonical Spec (2026-05-26)
+
+> Design doc: [`docs/superpowers/specs/2026-05-26-subtitle-style-canonical-spec-design.md`](docs/superpowers/specs/2026-05-26-subtitle-style-canonical-spec-design.md)
+> Plan: [`docs/superpowers/plans/2026-05-26-subtitle-style-canonical-spec.md`](docs/superpowers/plans/2026-05-26-subtitle-style-canonical-spec.md)
+
+- [x] **Task 1** — `SubtitleStyleSpec` Pydantic models — `src/processor/style.py` + `tests/test_style_spec.py`
+- [x] **Task 2** — `_deep_merge` helper — `src/processor/style.py`
+- [x] **Task 3** — `load_style` + `save_style_delta` + `save_global_default` — `src/processor/style.py`
+- [x] **Task 4** — `_migrate_if_legacy` (flat-px → nested percent) — `src/processor/style.py`
+- [x] **Task 5** — `render_for_ffmpeg` (ASS + PNG overlays from one spec) — `src/processor/style_render.py`
+- [x] **Task 6** — `config/subtitle_styles.yaml` rewritten in new shape
+- [x] **Task 7** — `style_matcher.suggest_position` returning `PositionStyle` in pct
+- [x] **Task 8** — OCR position seeding wired into `load_style`
+- [x] **Task 9** — `_run_export_ffmpeg` uses `load_style` + `render_for_ffmpeg`
+- [x] **Task 10** — `preview_frame` + `preview_clip` use `render_for_ffmpeg`
+- [x] **Task 11** — Style endpoints (`/api/subtitle-styles`, `/api/videos/{id}/style`) take/return `SubtitleStyleSpec`
+- [x] **Task 12** — Dead code removed: `srt_to_ass`, `generate_subtitle_background_images`, both `_load_video_style` impls (kept `_build_style_string` — still used by legacy multi-platform path)
+- [x] **Task 13** — TS types for `SubtitleStyleSpec` — `ui-app/src/api/types.ts`
+- [x] **Task 14** — API client updated for nested spec — `ui-app/src/api/client.ts`
+- [x] **Task 15** — `diffSpec` helper — `ui-app/src/utils/diffSpec.ts`
+- [x] **Task 16** — `SubtitleRenderer` component (replaces `SubtitleOverlay`) — `ui-app/src/components/editor/SubtitleRenderer.tsx`
+- [x] **Task 17** — StylePanel reorganized around schema sections + new color/alignment controls
+- [x] **Task 18** — EditorTab uses `globalDefault` / `savedSpec` / `draftSpec` model + delta save
+- [x] **Task 19** — Dockerfile ships Liberation + Roboto fonts alongside DejaVu / Noto CJK
+- [x] **Task 20** — Integration test `tests/test_export_style.py::test_export_honors_full_spec` — full spec → rendered MP4, pixel-level assertion
+
+---
+
 ### One-Time Setup Checklist
 
 - [ ] Docker installed, Douyin API container running

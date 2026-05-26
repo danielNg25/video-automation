@@ -5,7 +5,6 @@ import type {
   SrtResponse,
   DashboardStats,
   ProcessRequest,
-  SubtitleStyleConfig,
   PlatformSpec,
   SaveSrtRequest,
   PreviewClipRequest,
@@ -15,6 +14,8 @@ import type {
   TTSProviderInfo,
   SubtitleRegion,
   BlurSettings,
+  SubtitleStyleSpec,
+  SubtitleStyleDelta,
 } from './types';
 
 const BASE = '/api';
@@ -97,28 +98,41 @@ export function postProcess(req: ProcessRequest): Promise<TaskResponse> {
   });
 }
 
-export function getSubtitleStyles(): Promise<SubtitleStyleConfig> {
+export function getSubtitleStyleDefault(): Promise<SubtitleStyleSpec> {
   return request('/subtitle-styles');
 }
 
-export function putSubtitleStyleDefault(style: Record<string, unknown>): Promise<SubtitleStyleConfig> {
+export function putSubtitleStyleDefault(spec: SubtitleStyleSpec): Promise<SubtitleStyleSpec> {
   return request('/subtitle-styles', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(style),
+    body: JSON.stringify(spec),
   });
 }
 
-export function getVideoStyle(videoId: string): Promise<{ video_id: string; style: Record<string, unknown>; is_custom: boolean }> {
+export interface VideoStyleResponse {
+  video_id: string;
+  style: SubtitleStyleSpec;
+  is_custom: boolean;
+}
+
+export function getVideoStyle(videoId: string): Promise<VideoStyleResponse> {
   return request(`/videos/${videoId}/style`);
 }
 
-export function putVideoStyle(videoId: string, style: Record<string, unknown>): Promise<{ video_id: string; style: Record<string, unknown>; is_custom: boolean }> {
+export function putVideoStyle(
+  videoId: string,
+  delta: SubtitleStyleDelta,
+): Promise<VideoStyleResponse> {
   return request(`/videos/${videoId}/style`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(style),
+    body: JSON.stringify(delta),
   });
+}
+
+export function deleteVideoStyle(videoId: string): Promise<VideoStyleResponse> {
+  return request(`/videos/${videoId}/style`, { method: 'DELETE' });
 }
 
 export function getPlatforms(): Promise<Record<string, PlatformSpec>> {

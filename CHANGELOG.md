@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Subtitle style system rebuilt around a single canonical `SubtitleStyleSpec`.** Replaces three drifting code paths (HTML overlay, libass `force_style` preview, ASS+PNG export) with one Pydantic schema consumed by every renderer. Storage is percentage-of-canvas so the spec is resolution-independent. Per-video files store only the user's *delta* over `config/subtitle_styles.yaml`; the loader deep-merges. Migration: existing flat-px JSONs auto-convert on first load post-upgrade. Blur joins the spec (off by default), decoupled from position. `style_matcher.match_style` is renamed `suggest_position` — a one-shot OCR-region seed rather than a forced override. Implementation: `src/processor/style.py` (schema + loader + migrator), `src/processor/style_render.py` (ASS file + PNG overlays from one spec), `ui-app/src/components/editor/SubtitleRenderer.tsx` (TS-side renderer). Endpoints `GET/PUT /api/subtitle-styles` and `GET/PUT/DELETE /api/videos/{id}/style` take/return `SubtitleStyleSpec`. Per-platform style overrides are removed (the `platforms:` YAML section is dropped).
+
+### Added
+- StylePanel controls for text color, outline color, shadow color, and 9-way alignment (previously only editable by hand-writing the YAML). Background shape segmented control (none/rect/rounded), padding sliders, and the blur section now live in the spec — toggling blur off in the editor actually disables blur in the export.
+- `PUT /api/videos/{id}/style` accepts a delta (partial spec). FE computes the diff vs the global default via `diffSpec` and persists only changed fields.
+- `DELETE /api/videos/{id}/style` removes per-video customizations entirely; subsequent reads return the pure global default.
+- "Re-align to OCR region" button in StylePanel (visible when an OCR region exists) strips `position` from the per-video delta so the loader re-seeds on next load.
+- `tests/test_export_style.py::test_export_honors_full_spec` integration test renders a fixture video end-to-end, then probes the output frame with PIL to assert the yellow rounded background and red outline pixels actually land where the spec says.
+- Docker image now ships `fonts-liberation` + `fonts-roboto` alongside the existing DejaVu + Noto CJK. The FE dropdown's Arial/Helvetica/Courier names resolve via fontconfig substitution.
+
+### Removed
+- `_build_style_string` is left in place for now (the legacy multi-platform `process_for_all_platforms` pipeline still calls it). `srt_to_ass` and `generate_subtitle_background_images` are deleted — folded into `style_render.render_for_ffmpeg`. The two duplicated `_load_video_style` impls in `process.py` and `editor.py` are gone. Per-platform YAML overrides removed.
+
+- `SubtitleStyleSpec` canonical Pydantic schema (`src/processor/style.py`) with six sub-models (`TextStyle`, `PositionStyle`, `OutlineStyle`, `ShadowStyle`, `BackgroundStyle`, `BlurStyle`). All spatial values stored as canvas-percentage floats; validated literals for font name, alignment, background shape, and blur mode; `opacity` constrained `ge=0, le=100`. Seven unit tests in `tests/test_style_spec.py` cover defaults, partial init, JSON round-trip, and validation rejection.
+
 ### Fixed
 - Editor → Save persisted every style field **except** `background_color`. Picking yellow in the StylePanel and exporting produced a black background because the saved JSON had no `background_color` entry, and `generate_subtitle_background_images` falls back to `(0,0,0)` whenever the field is missing or not `#RRGGBB`. `stylePayload` and the preview-clip `stylePayloadInline` in `EditorTab.tsx` now both include `background_color: style.backgroundColor`.
 - `_build_style_string` (preview-frame + preview-clip burn-in) treated `background_opacity` as a raw 0-255 ASS alpha. The rest of the system (StylePanel slider, `SubtitleOverlay` CSS, `generate_subtitle_background_images` on the export path) treats it as a 0-100 percentage. Brought all three paths onto the percentage scale; ASS alpha is now derived via `255 - pct*255/100`. The function also learned to convert `#RRGGBB` `<input type="color">` values to `&HAABBGGRR` ASS literals, so the editor's burned-frame preview now shows the same colour the export produces. The preview-clip stylePayloadInline drops its now-redundant `Math.round(opacity * 2.55)` conversion. 7 new unit tests cover hex→ASS conversion, percentage→alpha inversion, ASS literal pass-through, and the opacity-only black fallback.

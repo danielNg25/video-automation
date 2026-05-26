@@ -22,9 +22,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         fontconfig \
         fonts-dejavu \
         fonts-noto-cjk \
+        fonts-liberation \
+        fonts-roboto \
         libgl1 \
         libglib2.0-0 \
         build-essential \
+    && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

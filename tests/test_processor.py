@@ -13,7 +13,6 @@ from src.processor.subtitle import (
     merge_subtitles,
     parse_srt,
     select_subtitle_for_platform,
-    srt_to_ass,
 )
 
 # ── Sample SRT content ──────────────────────────────────────────────
@@ -111,55 +110,6 @@ class TestTimestamps:
         assert _seconds_to_srt_timestamp(0.0) == "00:00:00,000"
         assert _seconds_to_srt_timestamp(61.5) == "00:01:01,500"
         assert _seconds_to_srt_timestamp(3661.999) == "01:01:01,999"
-
-
-# ── TestSrtToAss ─────────────────────────────────────────────────────
-
-
-class TestSrtToAss:
-    def test_valid_ass_sections(self, tmp_path):
-        srt = tmp_path / "test.srt"
-        srt.write_text(SAMPLE_SRT_EN, encoding="utf-8")
-
-        ass_path = tmp_path / "test.ass"
-        style = {"font_name": "Arial", "font_size": 24}
-        result = srt_to_ass(srt, style, ass_path)
-
-        content = result.read_text(encoding="utf-8")
-        assert "[Script Info]" in content
-        assert "[V4+ Styles]" in content
-        assert "[Events]" in content
-        assert "Dialogue:" in content
-
-    def test_style_applied(self, tmp_path):
-        srt = tmp_path / "test.srt"
-        srt.write_text(SAMPLE_SRT_EN, encoding="utf-8")
-
-        ass_path = tmp_path / "test.ass"
-        style = {
-            "font_name": "Roboto",
-            "font_size": 28,
-            "primary_color": "&H00FF0000",
-            "outline_width": 3,
-            "margin_v": 50,
-        }
-        result = srt_to_ass(srt, style, ass_path)
-
-        content = result.read_text(encoding="utf-8")
-        assert "Roboto" in content
-        assert "28" in content
-        assert "&H00FF0000" in content
-
-    def test_segment_count(self, tmp_path):
-        srt = tmp_path / "test.srt"
-        srt.write_text(SAMPLE_SRT_EN, encoding="utf-8")
-
-        ass_path = tmp_path / "test.ass"
-        result = srt_to_ass(srt, {}, ass_path)
-
-        content = result.read_text(encoding="utf-8")
-        dialogue_count = content.count("Dialogue:")
-        assert dialogue_count == 3
 
 
 # ── TestBreakLongLines ───────────────────────────────────────────────
