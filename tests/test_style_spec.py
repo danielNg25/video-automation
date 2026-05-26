@@ -220,3 +220,55 @@ class TestLoadStyle:
         spec = load_style()
         assert spec.text.font_name == "Arial"
         assert spec.background.shape == "none"
+
+
+class TestMigrateIfLegacy:
+    def test_new_shape_passes_through_unchanged(self):
+        from src.processor.style import _migrate_if_legacy
+        delta = {"text": {"font_size": 3.0}, "background": {"color": "#FFFF00"}}
+        # Source dims irrelevant for already-new shape
+        result = _migrate_if_legacy(delta, source_w=720, source_h=1280)
+        assert result == delta
+
+    def test_legacy_flat_px_to_nested_pct(self):
+        from src.processor.style import _migrate_if_legacy
+        legacy = {
+            "font_name": "Arial",
+            "font_size": 37,                  # px → pct of 1280
+            "outline_width": 2,
+            "margin_v": 393,                  # px → pct of 1280
+            "margin_h": 0,
+            "bold": True,
+            "shadow_depth": 1,
+            "background_color": "#FFFF00",
+            "background_opacity": 90,
+        }
+        out = _migrate_if_legacy(legacy, source_w=720, source_h=1280)
+        # Nested shape, percentages
+        assert out["text"]["font_name"] == "Arial"
+        assert out["text"]["font_size"] == pytest.approx(37 * 100 / 1280, abs=0.01)
+        assert out["text"]["bold"] is True
+        assert out["position"]["margin_v"] == pytest.approx(393 * 100 / 1280, abs=0.01)
+        assert out["position"]["margin_h"] == 0
+        assert out["outline"]["width"] == pytest.approx(2 * 100 / 1280, abs=0.01)
+        assert out["shadow"]["depth"] == pytest.approx(1 * 100 / 1280, abs=0.01)
+        assert out["background"]["color"] == "#FFFF00"
+        assert out["background"]["opacity"] == 90
+        # Legacy bg with opacity > 0 means "yes, render the bg" — set shape
+        assert out["background"]["shape"] == "rounded"
+
+    def test_legacy_no_bg_color_keeps_shape_none(self):
+        from src.processor.style import _migrate_if_legacy
+        legacy = {"font_size": 24, "background_opacity": 0}
+        out = _migrate_if_legacy(legacy, source_w=720, source_h=1280)
+        # opacity 0 → no background
+        assert out["background"]["shape"] == "none"
+
+    def test_partial_legacy_only_migrates_present_fields(self):
+        from src.processor.style import _migrate_if_legacy
+        legacy = {"font_size": 30}  # only one field
+        out = _migrate_if_legacy(legacy, source_w=720, source_h=1280)
+        assert "text" in out
+        assert out["text"]["font_size"] == pytest.approx(30 * 100 / 1280, abs=0.01)
+        assert "position" not in out  # margin_v not in legacy → don't fabricate
+        assert "outline" not in out

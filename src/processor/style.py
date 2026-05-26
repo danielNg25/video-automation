@@ -101,11 +101,14 @@ def _per_video_path(video_id: str) -> Path:
     return _SRT_DIR / f"{video_id}_style.json"
 
 
-def load_style(video_id: str | None = None) -> SubtitleStyleSpec:
+def load_style(video_id: str | None = None, source_dims: tuple[int, int] | None = None) -> SubtitleStyleSpec:
     """Return the merged spec for a video, or the pure global default.
 
-    Reads `config/subtitle_styles.yaml` as the seed and (when video_id is
-    given) deep-merges `data/srt/{video_id}_style.json` on top.
+    If a per-video JSON exists in the legacy flat-px shape, it's migrated
+    to the new nested percent shape and rewritten to disk. `source_dims`
+    is `(width, height)` of the source video and is required for migration
+    of legacy files. Pass None if you don't have it (the migrator will
+    fall back to 1080x1920 — best-effort).
     """
     global_dict: dict = (yaml.safe_load(_GLOBAL_PATH.read_text()) or {}) if _GLOBAL_PATH.exists() else {}
     if video_id is None:
@@ -116,8 +119,82 @@ def load_style(video_id: str | None = None) -> SubtitleStyleSpec:
         return SubtitleStyleSpec.model_validate(global_dict)
 
     delta: dict = json.loads(per_video.read_text())
+    if source_dims is not None:
+        migrated = _migrate_if_legacy(delta, source_dims[0], source_dims[1])
+    else:
+        migrated = _migrate_if_legacy(delta, source_w=1080, source_h=1920)
+    if migrated is not delta:
+        # Rewrite on disk so this only runs once.
+        per_video.write_text(json.dumps(migrated, indent=2))
+        delta = migrated
+
     merged = _deep_merge(global_dict, delta)
     return SubtitleStyleSpec.model_validate(merged)
+
+
+# Legacy snake_case → (new group, new key, scaling reference).
+# scaling reference: "h" → divide by source_h * 100, "w" → divide by source_w * 100,
+# "none" → pass scalar through.
+_LEGACY_FIELD_MAP: dict[str, tuple[str, str, str]] = {
+    "font_name":          ("text",       "font_name",   "none"),
+    "font_size":          ("text",       "font_size",   "h"),
+    "color":              ("text",       "color",       "none"),
+    "primary_color":      ("text",       "color",       "none"),
+    "bold":               ("text",       "bold",        "none"),
+    "alignment":          ("position",   "alignment",   "none"),
+    "margin_v":           ("position",   "margin_v",    "h"),
+    "margin_h":           ("position",   "margin_h",    "w"),
+    "outline_width":      ("outline",    "width",       "h"),
+    "outline_color":      ("outline",    "color",       "none"),
+    "shadow_depth":       ("shadow",     "depth",       "h"),
+    "shadow_color":       ("shadow",     "color",       "none"),
+    "background_color":   ("background", "color",       "none"),
+    "background_opacity": ("background", "opacity",     "none"),
+    "blur_enabled":       ("blur",       "enabled",     "none"),
+    "blur_mode":          ("blur",       "mode",        "none"),
+    "blur_strength":      ("blur",       "strength",    "none"),
+}
+
+_NEW_GROUPS = {"text", "position", "outline", "shadow", "background", "blur"}
+
+
+def _migrate_if_legacy(delta: dict, source_w: int, source_h: int) -> dict:
+    """Convert a flat px-based per-video JSON to nested percent-based shape.
+
+    A delta is "legacy" if any top-level key is in the legacy map and not
+    in the new group names. New-shape deltas are returned unchanged.
+
+    The opacity-only legacy case (background_opacity > 0 but no
+    background_color) means "yes, render a background" — map that to
+    shape="rounded" (the current export behavior) so the visual output
+    is preserved across the migration.
+    """
+    has_legacy = any(k in _LEGACY_FIELD_MAP for k in delta.keys())
+    has_new_groups = any(k in _NEW_GROUPS for k in delta.keys())
+    if has_new_groups or not has_legacy:
+        return delta  # already new shape (or empty)
+
+    out: dict = {}
+    for key, raw in delta.items():
+        if key not in _LEGACY_FIELD_MAP:
+            continue  # ignore unknown legacy keys
+        group, new_key, scale = _LEGACY_FIELD_MAP[key]
+        if scale == "h":
+            value = raw * 100 / source_h
+        elif scale == "w":
+            value = raw * 100 / source_w
+        else:
+            value = raw
+        out.setdefault(group, {})[new_key] = value
+
+    # Legacy "background_opacity > 0" implies the user wanted a bg drawn.
+    # The old codebase rendered it via the rounded-rect PNG overlay.
+    if "background" in out and out["background"].get("opacity", 0) > 0:
+        out["background"].setdefault("shape", "rounded")
+    elif "background" in out:
+        out["background"].setdefault("shape", "none")
+
+    return out
 
 
 def save_style_delta(video_id: str, delta: dict) -> None:
