@@ -12,7 +12,7 @@ import yaml
 from fastapi import APIRouter, HTTPException
 from starlette.responses import FileResponse
 
-from src.api.deps import get_config, get_data_dir, get_task_manager
+from src.api.deps import get_data_dir, get_task_manager
 from src.api.models import (
     PreviewClipRequest,
     PreviewFrameRequest,
@@ -333,48 +333,47 @@ async def preview_frame(video_id: str, request: PreviewFrameRequest):
             detail=f"SRT file not found: {video_id}_{request.language}.srt",
         )
 
-    video_path = Path(video.file_path)
-
-    # Build subtitle filter
     from src.processor.ffmpeg import FFmpegProcessor
+    from src.processor.style import SubtitleStyleSpec, load_style
+    from src.processor.style_render import render_for_ffmpeg
 
+    video_path = Path(video.file_path)
     proc = FFmpegProcessor()
-    escaped_sub = proc._escape_filter_path(srt_path)
+    info = proc.get_video_info(video_path)
+    src_w, src_h = info["width"], info["height"]
 
+    # request.subtitle_style holds the live editor draft. Validate it as a
+    # full SubtitleStyleSpec. Falls back to the merged global+per-video
+    # default when the FE didn't send one.
     if request.subtitle_style:
-        style_str = proc._build_style_string(request.subtitle_style)
-        vf = f"subtitles='{escaped_sub}':force_style='{style_str}'"
+        spec = SubtitleStyleSpec.model_validate(request.subtitle_style)
     else:
-        vf = f"subtitles='{escaped_sub}'"
+        spec = load_style(video_id=video_id, source_dims=(src_w, src_h))
 
-    # Render single frame
-    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-        out_path = tmp.name
+    with tempfile.TemporaryDirectory() as tmp:
+        artifacts = render_for_ffmpeg(spec, srt_path, src_w, src_h, Path(tmp))
+        escaped = proc._escape_filter_path(artifacts.ass_path)
+        vf = f"ass='{escaped}'"
 
-    try:
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-y",
-                "-ss",
-                str(request.timestamp),
-                "-i",
-                str(video_path),
-                "-vf",
-                vf,
-                "-frames:v",
-                "1",
-                "-q:v",
-                "2",
-                out_path,
-            ],
-            capture_output=True,
-            check=True,
-            timeout=30,
-        )
-    except subprocess.CalledProcessError as e:
-        stderr = (e.stderr or b"").decode()[-200:]
-        raise HTTPException(status_code=500, detail=f"ffmpeg failed: {stderr}")
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as jpg:
+            out_path = jpg.name
+
+        try:
+            subprocess.run(
+                [
+                    "ffmpeg", "-y",
+                    "-ss", str(request.timestamp),
+                    "-i", str(video_path),
+                    "-vf", vf,
+                    "-frames:v", "1",
+                    "-q:v", "2",
+                    out_path,
+                ],
+                capture_output=True, check=True, timeout=30,
+            )
+        except subprocess.CalledProcessError as e:
+            stderr = (e.stderr or b"").decode()[-200:]
+            raise HTTPException(status_code=500, detail=f"ffmpeg failed: {stderr}")
 
     return FileResponse(
         path=out_path,
@@ -387,7 +386,6 @@ async def preview_frame(video_id: str, request: PreviewFrameRequest):
 async def preview_clip(video_id: str, request: PreviewClipRequest):
     """Render a short clip with burned-in subtitles (background task + SSE)."""
     tm = get_task_manager()
-    config = get_config()
 
     video = tm.video_index.get(video_id)
     if not video:
@@ -415,50 +413,75 @@ async def preview_clip(video_id: str, request: PreviewClipRequest):
 
         try:
             from src.processor.ffmpeg import FFmpegProcessor
+            from src.processor.style import SubtitleStyleSpec, load_style
+            from src.processor.style_render import render_for_ffmpeg
+            from src.processor.subtitle import build_background_overlay_filter
 
+            video_path = Path(video.file_path)
             proc = FFmpegProcessor()
-            escaped_sub = proc._escape_filter_path(srt_path)
+            info = proc.get_video_info(video_path)
+            src_w, src_h = info["width"], info["height"]
 
+            # Live editor draft, or merged default.
             if request.subtitle_style:
-                style_str = proc._build_style_string(request.subtitle_style)
-                vf = f"subtitles='{escaped_sub}':force_style='{style_str}'"
+                spec = SubtitleStyleSpec.model_validate(request.subtitle_style)
             else:
-                vf = f"subtitles='{escaped_sub}'"
+                spec = load_style(video_id=video_id, source_dims=(src_w, src_h))
 
             output_dir = data_dir / "output"
             output_dir.mkdir(parents=True, exist_ok=True)
             clip_path = output_dir / f"{video_id}_preview.mp4"
+            bg_dir = output_dir / "bg_preview_tmp"
 
+            artifacts = render_for_ffmpeg(spec, srt_path, src_w, src_h, bg_dir)
+            ass_path = artifacts.ass_path
+            bg_images = artifacts.bg_pngs
+            if bg_images:
+                bg_images = [
+                    img for img in bg_images
+                    if img.get("path") and Path(img["path"]).exists()
+                ] or None
+
+            # Build the ffmpeg command. Source==output here (preview keeps
+            # source dims), so scale_pad is a no-op for even dims.
             cmd = [
-                "ffmpeg",
-                "-y",
-                "-ss",
-                str(request.start),
-                "-i",
-                str(Path(video.file_path)),
-                "-t",
-                str(request.duration),
-                "-vf",
-                vf,
-                "-c:v",
-                "libx264",
-                "-preset",
-                "ultrafast",
-                "-crf",
-                "23",
-                "-c:a",
-                "aac",
-                "-movflags",
-                "+faststart",
+                "ffmpeg", "-y",
+                "-ss", str(request.start),
+                "-i", str(video_path),
+                "-t", str(request.duration),
+            ]
+
+            ass_suffix = f",ass='{proc._escape_filter_path(ass_path)}'" if ass_path else ""
+
+            if bg_images:
+                # Add PNG inputs and build overlay chain.
+                for img in bg_images:
+                    cmd += ["-i", img["path"]]
+                overlay_fc = build_background_overlay_filter(bg_images)
+                if ass_suffix:
+                    fc = f"[0:v]null[bg_base];{overlay_fc};[bg_out]{ass_suffix.lstrip(',')}[out]"
+                else:
+                    fc = f"[0:v]null[bg_base];{overlay_fc}".replace("[bg_out]", "[out]")
+                cmd += [
+                    "-filter_complex", fc,
+                    "-map", "[out]",
+                ]
+            else:
+                vf = f"null{ass_suffix}"
+                cmd += ["-vf", vf]
+
+            cmd += [
+                "-c:v", "libx264",
+                "-preset", "ultrafast",
+                "-crf", "23",
+                "-c:a", "aac",
+                "-movflags", "+faststart",
                 str(clip_path),
             ]
 
             await asyncio.to_thread(
                 subprocess.run,
-                cmd,
-                capture_output=True,
-                check=True,
-                timeout=120,
+                cmd, capture_output=True, check=True, timeout=120,
             )
 
             task_obj.status = "completed"
