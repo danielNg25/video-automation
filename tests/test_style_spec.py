@@ -209,3 +209,14 @@ class TestLoadStyle:
         assert path.exists()
         loaded = yaml.safe_load(path.read_text())
         assert loaded["text"]["font_size"] == 5.5
+
+    def test_load_handles_empty_global_yaml(self, tmp_path, monkeypatch):
+        from src.processor.style import load_style
+        path = tmp_path / "subtitle_styles.yaml"
+        path.write_text("")  # empty file → yaml.safe_load returns None
+        monkeypatch.setattr("src.processor.style._GLOBAL_PATH", path)
+        monkeypatch.setattr("src.processor.style._SRT_DIR", tmp_path / "srt")
+        # Should not crash; should return pure defaults.
+        spec = load_style()
+        assert spec.text.font_name == "Arial"
+        assert spec.background.shape == "none"

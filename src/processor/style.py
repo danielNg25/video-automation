@@ -107,7 +107,7 @@ def load_style(video_id: str | None = None) -> SubtitleStyleSpec:
     Reads `config/subtitle_styles.yaml` as the seed and (when video_id is
     given) deep-merges `data/srt/{video_id}_style.json` on top.
     """
-    global_dict: dict = yaml.safe_load(_GLOBAL_PATH.read_text()) if _GLOBAL_PATH.exists() else {}
+    global_dict: dict = (yaml.safe_load(_GLOBAL_PATH.read_text()) or {}) if _GLOBAL_PATH.exists() else {}
     if video_id is None:
         return SubtitleStyleSpec.model_validate(global_dict)
 
