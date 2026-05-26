@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import subprocess
 from pathlib import Path
 
@@ -160,28 +159,11 @@ async def get_processed_video(video_id: str, platform: str):
     )
 
 
-def _load_subtitle_style(video_id: str) -> dict:
-    """Load subtitle style: per-video override → global default."""
-    # Per-video style
-    style_path = Path("data/srt") / f"{video_id}_style.json"
-    if style_path.exists():
-        with open(style_path) as f:
-            return json.load(f)
-    # Global default
-    config_path = Path("config/subtitle_styles.yaml")
-    if config_path.exists():
-        with open(config_path) as f:
-            styles = yaml.safe_load(f) or {}
-        return styles.get("default", {})
-    return {}
-
-
 def _run_export_ffmpeg(
     video_path: Path,
     subtitle_path: Path | None,
     tts_path: Path | None,
     output_path: Path,
-    style: dict,
     resolution: str | None,
     video_volume: float,
     tts_volume: float,
@@ -218,28 +200,34 @@ def _run_export_ffmpeg(
         )
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Auto-detect blur region from OCR metadata (respects saved blur_enabled flag)
-    blur_filter = None
-    blur_enabled = style.get("blur_enabled", True)  # default on if not saved
-    if video_id and blur_enabled:
-        from src.processor.region_detector import load_subtitle_region
-        region = load_subtitle_region(Path("data/srt"), video_id)
-        if region:
-            blur_mode = style.get("blur_mode", "blur")
-            blur_strength = style.get("blur_strength", 15)
-            blur_filter = FFmpegProcessor._build_blur_filter(region, blur_strength=blur_strength, blur_mode=blur_mode)
+    # Load canonical spec; it carries blur + position + everything else.
+    from src.processor.style import load_style
+    from src.processor.style_render import render_for_ffmpeg
+    from src.processor.region_detector import load_subtitle_region
 
-            # Apply style matching. Pass output dims so the matcher applies
-            # the same scale + letterbox-pad math the video goes through. When
-            # output == source (the new default), scale=1 and pad=0, so the
-            # region passes through unchanged in source coords.
-            from src.processor.style_matcher import SubtitleStyleMatcher
-            matcher = SubtitleStyleMatcher()
-            matched = matcher.match_style(
-                region, src_w, src_h, style,
-                output_width=int(w), output_height=int(h),
-            )
-            style = {**style, **matched}
+    ocr_region = None
+    region_obj = None
+    if video_id:
+        region_obj = load_subtitle_region(Path("data/srt"), video_id)
+        if region_obj:
+            ocr_region = {
+                "x": region_obj.x, "y": region_obj.y,
+                "width": region_obj.width, "height": region_obj.height,
+            }
+    spec = load_style(
+        video_id=video_id,
+        source_dims=(src_w, src_h),
+        ocr_region=ocr_region,
+    )
+
+    # Blur is independent of position now (no more "blur on ⇒ override position").
+    blur_filter = None
+    if spec.blur.enabled and region_obj is not None:
+        blur_filter = FFmpegProcessor._build_blur_filter(
+            region_obj,
+            blur_strength=spec.blur.strength,
+            blur_mode=spec.blur.mode,
+        )
 
     # Build video filter. When output equals source we skip scale+pad entirely
     # so blur, burned subtitle, and rounded-rect bg PNGs all share one coord
@@ -261,22 +249,11 @@ def _run_export_ffmpeg(
     ass_path = None
     bg_images = None
     if subtitle_path and subtitle_path.exists():
-        from src.processor.subtitle import srt_to_ass, generate_subtitle_background_images
-        ass_path = subtitle_path.with_suffix(".export.ass")
-        # Use the EXPORT resolution as the ASS canvas so ass=… maps 1:1 to
-        # output pixels. Combined with style_matcher's letterbox-aware coords
-        # this puts the burned subtitle directly over the blurred area.
-        srt_to_ass(subtitle_path, style, ass_path, play_res_x=int(w), play_res_y=int(h))
-        # Generate rounded-rect background PNGs
         bg_dir = output_path.parent / "bg_tmp"
-        bg_images = generate_subtitle_background_images(
-            subtitle_path, style, bg_dir, int(w), int(h),
-        )
-        # Treat an empty list the same as None — building an overlay chain
-        # with zero PNG inputs produces a malformed filter graph.
-        if not bg_images:
-            bg_images = None
-        else:
+        artifacts = render_for_ffmpeg(spec, subtitle_path, int(w), int(h), bg_dir)
+        ass_path = artifacts.ass_path
+        bg_images = artifacts.bg_pngs
+        if bg_images:
             # Drop any entry whose PNG didn't actually land on disk; an empty
             # `-i path` arg or a missing file will silently kill the whole
             # filter chain (libx264 sees EOF before getting any frames).
@@ -430,14 +407,13 @@ async def export_video(video_id: str, request: ExportRequest):
             srt_path = Path("data/srt") / f"{video_id}_{request.subtitle_language}.srt" if request.subtitle_language else None
             tts_path = Path("data/tts") / request.tts_file if request.tts_file else None
             output_path = Path("data/output") / f"{video_id}_export.mp4"
-            style = _load_subtitle_style(video_id)
 
             tm._emit(task.task_id, "progress", {"progress": 0.2, "message": "Rendering video..."})
 
             await asyncio.to_thread(
                 _run_export_ffmpeg,
                 video_path, srt_path, tts_path, output_path,
-                style, request.resolution,
+                request.resolution,
                 request.video_volume, request.tts_volume,
                 video_id=video_id,
             )
@@ -473,7 +449,6 @@ async def preview_export(video_id: str, request: ExportRequest):
     srt_path = Path("data/srt") / f"{video_id}_{request.subtitle_language}.srt" if request.subtitle_language else None
     tts_path = Path("data/tts") / request.tts_file if request.tts_file else None
     output_path = Path("data/output") / f"{video_id}_preview.mp4"
-    style = _load_subtitle_style(video_id)
 
     # Seek to 1/3 of video for a representative preview
     midpoint = max(0, (video.duration or 30) / 3)
@@ -481,7 +456,7 @@ async def preview_export(video_id: str, request: ExportRequest):
     await asyncio.to_thread(
         _run_export_ffmpeg,
         video_path, srt_path, tts_path, output_path,
-        style, request.resolution,
+        request.resolution,
         request.video_volume, request.tts_volume,
         seek_seconds=midpoint, duration_seconds=5,
         video_id=video_id,
