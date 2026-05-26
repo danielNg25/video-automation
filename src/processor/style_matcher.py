@@ -12,6 +12,21 @@ if TYPE_CHECKING:
 logger = setup_logger(__name__)
 
 
+def _ass_alignment_to_str(code: int) -> str:
+    """Convert an ASS numeric alignment code (1-9) to a semantic string.
+
+    ASS layout (numpad mnemonic):
+        7=top-left    8=top-center    9=top-right
+        4=center-left 5=center-center 6=center-right
+        1=bottom-left 2=bottom-center 3=bottom-right
+    """
+    return {
+        1: "bottom-left",   2: "bottom-center",  3: "bottom-right",
+        4: "center-left",   5: "center-center",  6: "center-right",
+        7: "top-left",      8: "top-center",     9: "top-right",
+    }.get(code, "bottom-center")
+
+
 class SubtitleStyleMatcher:
     """Derives subtitle styling to position new subtitles where the originals were."""
 
@@ -122,3 +137,56 @@ class SubtitleStyleMatcher:
             f"scale={scale:.3f}, pad_y={pad_y})"
         )
         return style
+
+    def suggest_position(
+        self,
+        region: "dict | SubtitleRegion",
+        video_width: int,
+        video_height: int,
+        output_width: int,
+        output_height: int,
+    ) -> "PositionStyle":
+        """Suggest a PositionStyle from the OCR-detected subtitle region.
+
+        Same math as the old match_style, but returns only alignment +
+        margin_v + margin_h as percentages of the OUTPUT canvas. The caller
+        (load_style) uses this to seed position.* when the user hasn't
+        customized it.
+
+        Args:
+            region: Detected subtitle region — either a SubtitleRegion instance
+                or a plain dict with keys x, y, width, height.
+            video_width: Source video frame width.
+            video_height: Source video frame height.
+            output_width: Final export / canvas width.
+            output_height: Final export / canvas height.
+
+        Returns:
+            PositionStyle with alignment, margin_v, and margin_h expressed as
+            percentages of the output canvas dimensions.
+        """
+        from src.processor.region_detector import SubtitleRegion
+        from src.processor.style import PositionStyle
+
+        # Accept plain dicts (common in tests and API layer) by converting them
+        # to SubtitleRegion so match_style receives the expected type.
+        if isinstance(region, dict):
+            region = SubtitleRegion.from_dict(region)
+
+        # Reuse the existing geometry math via match_style; its returned dict
+        # has margin_v and margin_h in OUTPUT pixel coords and alignment as an
+        # ASS integer code (1-9). We convert both spatial values to percentages.
+        legacy = self.match_style(
+            region,
+            video_width,
+            video_height,
+            base_style=None,
+            output_width=output_width,
+            output_height=output_height,
+        )
+
+        return PositionStyle(
+            alignment=_ass_alignment_to_str(legacy.get("alignment", 2)),
+            margin_v=float(legacy.get("margin_v", 30)) * 100.0 / output_height,
+            margin_h=float(legacy.get("margin_h", 0)) * 100.0 / output_width,
+        )
