@@ -121,7 +121,6 @@ def _write_ass(
         f"PlayResX: {canvas_w}\n"
         f"PlayResY: {canvas_h}\n"
         "WrapStyle: 0\n"
-        f"; BorderStyle={border_style}\n"
         "\n"
         "[V4+ Styles]\n"
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, "

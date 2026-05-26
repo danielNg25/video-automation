@@ -24,6 +24,15 @@ def srt_file(tmp_path):
     return path
 
 
+def _border_style(ass_text: str) -> int:
+    """Parse the BorderStyle field (index 15, 0-based) out of the Style line."""
+    for line in ass_text.splitlines():
+        if line.startswith("Style: Default,"):
+            fields = line[len("Style: "):].split(",")
+            return int(fields[15])
+    raise ValueError("No Style: Default line found in ASS")
+
+
 class TestBackgroundShape:
     def test_shape_none_emits_no_box_no_pngs(self, srt_file, tmp_path):
         from src.processor.style import SubtitleStyleSpec
@@ -32,7 +41,7 @@ class TestBackgroundShape:
         spec.background.shape = "none"
         out = render_for_ffmpeg(spec, srt_file, 1080, 1920, tmp_path)
         ass_text = out.ass_path.read_text()
-        assert "BorderStyle=3" not in ass_text  # no box in ASS
+        assert _border_style(ass_text) == 1  # outline-only, no libass box
         assert out.bg_pngs is None
 
     def test_shape_rect_uses_libass_box(self, srt_file, tmp_path):
@@ -44,8 +53,7 @@ class TestBackgroundShape:
         spec.background.opacity = 80
         out = render_for_ffmpeg(spec, srt_file, 1080, 1920, tmp_path)
         ass_text = out.ass_path.read_text()
-        # libass renders rect bg via BackColour + BorderStyle=3.
-        assert "BorderStyle=3" in ass_text
+        assert _border_style(ass_text) == 3  # libass-drawn rectangle box
         # Yellow #FFFF00 with 80% opacity → ASS alpha = 255 - 204 = 51 = 0x33,
         # ASS BBGGRR for yellow = 00FFFF; full literal &H3300FFFF.
         assert "&H3300FFFF" in ass_text
@@ -60,10 +68,9 @@ class TestBackgroundShape:
         spec.background.opacity = 90
         out = render_for_ffmpeg(spec, srt_file, 1080, 1920, tmp_path)
         ass_text = out.ass_path.read_text()
-        assert "BorderStyle=1" in ass_text  # no libass box
+        assert _border_style(ass_text) == 1  # no libass box; PNG handles rounded
         assert out.bg_pngs is not None
         assert len(out.bg_pngs) == 2  # one per segment
-        # Each PNG file actually exists on disk.
         for entry in out.bg_pngs:
             assert Path(entry["path"]).exists()
 
