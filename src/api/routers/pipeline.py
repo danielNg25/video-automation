@@ -52,7 +52,7 @@ async def start_pipeline(request: PipelineRequest):
     config = get_config()
 
     task = tm.create_task("pipeline")
-    asyncio.create_task(
+    task._asyncio_task = asyncio.create_task(
         tm.run_pipeline(
             task.task_id,
             url=request.url,
@@ -83,7 +83,7 @@ async def start_full_pipeline(request: FullPipelineRequest):
         platforms=request.platforms,
     )
 
-    asyncio.create_task(
+    task._asyncio_task = asyncio.create_task(
         _run_full_pipeline(
             task_id=task.task_id,
             url=request.url,
@@ -284,7 +284,7 @@ async def start_batch_pipeline(request: BatchPipelineRequest):
         platforms=request.platforms,
     )
 
-    asyncio.create_task(
+    batch_task._asyncio_task = asyncio.create_task(
         _run_batch_pipeline(
             batch_id=batch_id,
             task_ids=task_ids,
@@ -614,7 +614,7 @@ async def retry_pipeline(task_id: str):
     config = get_config()
     new_task = tm.create_task("full_pipeline")
 
-    asyncio.create_task(
+    new_task._asyncio_task = asyncio.create_task(
         _run_full_pipeline(
             task_id=new_task.task_id,
             url=state.url,

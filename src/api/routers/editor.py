@@ -505,5 +505,5 @@ async def preview_clip(video_id: str, request: PreviewClipRequest):
             task_obj.error = str(e)
             tm._emit(task.task_id, "error", {"message": str(e)})
 
-    asyncio.create_task(run_preview())
+    task._asyncio_task = asyncio.create_task(run_preview())
     return TaskResponse(task_id=task.task_id, status=task.status)

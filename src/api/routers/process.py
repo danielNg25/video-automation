@@ -54,7 +54,7 @@ async def start_process(request: ProcessRequest):
         }
 
     task = tm.create_task("process")
-    asyncio.create_task(
+    task._asyncio_task = asyncio.create_task(
         tm.run_process(
             task.task_id,
             request.video_id,
@@ -399,7 +399,7 @@ async def export_video(video_id: str, request: ExportRequest):
             task_obj.error = str(e)
             tm._emit(task.task_id, "error", {"message": str(e)})
 
-    asyncio.create_task(run_export())
+    task._asyncio_task = asyncio.create_task(run_export())
     return TaskResponse(task_id=task.task_id, status=task.status)
 
 

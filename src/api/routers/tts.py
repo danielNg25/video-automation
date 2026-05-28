@@ -31,7 +31,7 @@ async def start_tts(request: TTSRequest):
         raise HTTPException(status_code=404, detail=f"Video {request.video_id} not found")
 
     task = tm.create_task("tts")
-    asyncio.create_task(
+    task._asyncio_task = asyncio.create_task(
         tm.run_tts(
             task.task_id,
             request.video_id,
@@ -146,7 +146,7 @@ async def sync_dub(video_id: str, request: SyncDubRequest):
             task_obj.message = f"Dub sync failed: {e}"
             tm._emit(task.task_id, "error", {"message": str(e)})
 
-    asyncio.create_task(_runner())
+    task._asyncio_task = asyncio.create_task(_runner())
     return TaskResponse(task_id=task.task_id, status=task.status)
 
 
