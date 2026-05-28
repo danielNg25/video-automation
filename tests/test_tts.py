@@ -200,7 +200,6 @@ class TestNaturalSpeedAnchoring:
             "_fallback_split_subtitles", "_segments_from_chunks",
             "DEFAULT_DUB_PLAYBACK_SPEED",
             "MAX_SAFE_SPEED_RATIO",
-            "SHORTENING_MAX_PASSES",
         ):
             assert not hasattr(A, name), f"{name!r} should be removed"
         # Surfaces that stay (used downstream).
@@ -269,6 +268,199 @@ class TestShortenTextsBatchFloor:
         }]
         out = await translator.shorten_texts_batch(items)
         assert out[0] == candidate
+
+
+# ── Iterative LLM shortening (Stage 3 loop) ──
+
+
+class TestIterativeShortening:
+    """The assembler's Stage 3 runs the LLM batched-shortening call in a loop
+    of up to SHORTENING_MAX_PASSES. Each pass re-detects sentences whose
+    current clip still overruns its planner-allocated span at effective_speed,
+    tightens shorten_pct one notch via planner._tighten, and re-batches."""
+
+    def _make_assembler_with_plan(
+        self,
+        *,
+        clip_duration: float,
+        final_duration: float,
+        translator,
+        provider,
+        tmp_path,
+    ):
+        """Build a one-sentence DubPlan + matching slot anchored to a real
+        on-disk dummy clip. Returns (assembler, plan, sentence_groups, slots, tmp_path)."""
+        from src.tts.assembler import SegmentSlot, SentenceGroup, TTSAssembler
+        from src.tts.planner import DubPlan, SentencePlan
+
+        dummy_clip = tmp_path / "seg_0000.mp3"
+        dummy_clip.write_bytes(b"fake-audio")
+
+        slot = SegmentSlot(
+            index=0,
+            clip_path=dummy_clip,
+            clip_duration=clip_duration,
+            window_start=0.0,
+            window_end=final_duration,
+        )
+        sentence = SentencePlan(
+            index=0,
+            segment_indices=[0],
+            original_text="long original text",
+            target_text="long original text",
+            natural_synth_duration=clip_duration,
+            original_start=0.0,
+            original_end=final_duration,
+            final_start=0.0,
+            final_duration=final_duration,
+            drift_in=0.0,
+            drift_out=0.0,
+            shorten_pct=0.85,
+            push_amount=0.0,
+            reclaimed_silence=0.0,
+            needs_review=False,
+            reason=None,
+        )
+        plan = DubPlan(
+            sentences=[sentence],
+            playback_speed=1.5,
+            total_drift_end=0.0,
+            drift_cap_hits=0,
+        )
+        sentence_groups = [SentenceGroup(
+            segment_indices=[0],
+            text="long original text",
+            start=0.0,
+            end=final_duration,
+        )]
+        assembler = TTSAssembler(max_concurrent=2, translator=translator)
+        return assembler, plan, sentence_groups, [slot]
+
+    def test_max_passes_constant_exposed(self):
+        from src.tts.assembler import SHORTENING_MAX_PASSES
+        assert SHORTENING_MAX_PASSES == 3
+
+    @pytest.mark.asyncio
+    async def test_converges_when_first_pass_fits(self, tmp_path):
+        """If pass-1's re-synthesised clip fits within final_duration *
+        effective_speed, the loop must not invoke the translator a second
+        time."""
+        from unittest.mock import AsyncMock
+
+        translator = AsyncMock()
+        translator.shorten_texts_batch = AsyncMock(side_effect=[["short text"]])
+        provider = AsyncMock()
+        provider.synthesize = AsyncMock(return_value=b"audio")
+
+        # clip 6s, final_duration 2s, speed 1.5 → planned natural = 3.0s.
+        # Pass-1 mock returns new_dur=3.0 → fits exactly, no retry.
+        assembler, plan, groups, slots = self._make_assembler_with_plan(
+            clip_duration=6.0, final_duration=2.0,
+            translator=translator, provider=provider, tmp_path=tmp_path,
+        )
+        with patch("src.tts.assembler._get_audio_duration", return_value=3.0):
+            await assembler._apply_shortening(
+                plan=plan, sentence_groups=groups, slots=slots,
+                provider=provider, voice="v", kwargs={}, tmp=tmp_path,
+                effective_speed=1.5,
+            )
+        assert translator.shorten_texts_batch.await_count == 1
+        assert slots[0].clip_duration == 3.0
+        # 3.0 / 1.5 = 2.0 == final_duration → fits, no review flag.
+        assert plan.sentences[0].needs_review is False
+
+    @pytest.mark.asyncio
+    async def test_iterates_when_first_pass_still_overruns(self, tmp_path):
+        """Pass-1 produces a shorter clip that still overruns; iteration must
+        tighten shorten_pct and call the translator again."""
+        from unittest.mock import AsyncMock
+
+        translator = AsyncMock()
+        translator.shorten_texts_batch = AsyncMock(side_effect=[
+            ["medium text"],   # pass 1: 0.85 target
+            ["short text"],    # pass 2: 0.75 target
+        ])
+        provider = AsyncMock()
+        provider.synthesize = AsyncMock(return_value=b"audio")
+
+        # final_duration 2.0, speed 1.5 → planned natural = 3.0s.
+        # Pass-1 produces 5.0s (still > 3.0 → overrun); pass-2 produces 3.0s (fits).
+        duration_iter = iter([5.0, 3.0])
+        assembler, plan, groups, slots = self._make_assembler_with_plan(
+            clip_duration=6.0, final_duration=2.0,
+            translator=translator, provider=provider, tmp_path=tmp_path,
+        )
+        with patch(
+            "src.tts.assembler._get_audio_duration",
+            side_effect=lambda _p: next(duration_iter),
+        ):
+            await assembler._apply_shortening(
+                plan=plan, sentence_groups=groups, slots=slots,
+                provider=provider, voice="v", kwargs={}, tmp=tmp_path,
+                effective_speed=1.5,
+            )
+        assert translator.shorten_texts_batch.await_count == 2
+        # Second-pass batch must request a tighter target than pass 1.
+        pass2_batch = translator.shorten_texts_batch.await_args_list[1].args[0]
+        assert pass2_batch[0]["target_pct"] < 85
+        # Final clip is the pass-2 result (3.0s natural fits 2.0s * 1.5).
+        assert slots[0].clip_duration == 3.0
+        assert plan.sentences[0].needs_review is False
+
+    @pytest.mark.asyncio
+    async def test_caps_at_max_passes_and_flags_review(self, tmp_path):
+        """When every pass produces a still-too-long clip, the loop must
+        terminate after SHORTENING_MAX_PASSES total LLM calls and flag the
+        sentence for review."""
+        from unittest.mock import AsyncMock
+
+        from src.tts.assembler import SHORTENING_MAX_PASSES
+
+        translator = AsyncMock()
+        # Provide more responses than the loop should ever need.
+        translator.shorten_texts_batch = AsyncMock(side_effect=[
+            ["t1"], ["t2"], ["t3"], ["t4"], ["t5"],
+        ])
+        provider = AsyncMock()
+        provider.synthesize = AsyncMock(return_value=b"audio")
+
+        # Each pass shrinks slightly but never enough to fit.
+        # final_duration=1.0, speed=1.5 → planned=1.5s. Returns 5,4,3.
+        duration_iter = iter([5.0, 4.0, 3.0, 2.5, 2.0])
+        assembler, plan, groups, slots = self._make_assembler_with_plan(
+            clip_duration=6.0, final_duration=1.0,
+            translator=translator, provider=provider, tmp_path=tmp_path,
+        )
+        with patch(
+            "src.tts.assembler._get_audio_duration",
+            side_effect=lambda _p: next(duration_iter),
+        ):
+            await assembler._apply_shortening(
+                plan=plan, sentence_groups=groups, slots=slots,
+                provider=provider, voice="v", kwargs={}, tmp=tmp_path,
+                effective_speed=1.5,
+            )
+        assert translator.shorten_texts_batch.await_count == SHORTENING_MAX_PASSES
+        assert plan.sentences[0].needs_review is True
+
+    @pytest.mark.asyncio
+    async def test_no_translator_skips_loop(self, tmp_path):
+        """No translator → mark flagged sentences needs_review without any
+        LLM call. Existing single-pass behaviour preserved."""
+        from src.tts.assembler import TTSAssembler
+
+        assembler, plan, groups, slots = self._make_assembler_with_plan(
+            clip_duration=6.0, final_duration=2.0,
+            translator=None, provider=MagicMock(), tmp_path=tmp_path,
+        )
+        assembler = TTSAssembler(max_concurrent=2, translator=None)
+        await assembler._apply_shortening(
+            plan=plan, sentence_groups=groups, slots=slots,
+            provider=MagicMock(), voice="v", kwargs={}, tmp=tmp_path,
+            effective_speed=1.5,
+        )
+        assert plan.sentences[0].needs_review is True
+        assert plan.sentences[0].reason == "shorten_no_llm"
 
 
 # ── Shared TTS runner (pipeline ↔ per-video parity) ──

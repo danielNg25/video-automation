@@ -43,6 +43,13 @@ logger = setup_logger(__name__)
 # natural pause and shift downstream timestamps.
 MAX_MERGE_GAP_SECONDS = 1.5
 
+# Stage 3 LLM-shortening iteration cap. After the planner-assigned target,
+# any sentence whose current clip still overruns `final_duration *
+# effective_speed` is retried with a stricter shorten_pct (one notch down
+# the SHORTEN_TARGETS ladder) until it fits or we hit this many total
+# batched LLM calls.
+SHORTENING_MAX_PASSES = 3
+
 # Punctuation that signals end of a sentence (used by the heuristic merger).
 _SENTENCE_END_CHARS = set('.!?。！？…)）"」』')
 
@@ -324,34 +331,30 @@ class TTSAssembler:
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._translator = translator  # LLMTranslator or None
 
-    async def _apply_shortening(
-        self, *, plan, sentence_groups, slots, provider, voice, kwargs,
-        tmp, effective_speed,
+    async def _run_shortening_pass(
+        self, *, targets, slots, provider, voice, kwargs, tmp,
+        effective_speed, pass_idx,
     ):
-        """Stage 3: ask the LLM to shorten every sentence the plan flagged
-        (shorten_pct < 1.0). Single batched LLM call; re-synthesise each
-        result concurrently. Accept the new clip if it's shorter than the
-        original; otherwise keep the original and flag for review."""
+        """One batched LLM-shortening call plus concurrent re-synthesis.
+
+        For each `targets` SentencePlan, sends its currently-playing text
+        (sp.target_text, falling back to sp.original_text) to the LLM at the
+        sp.shorten_pct the caller picked for this pass. Accepts the new
+        clip only when it is strictly shorter than the slot's current clip.
+        Mutates per sp: target_text (only on accept), needs_review, reason;
+        and slots[sp.index].clip_path / clip_duration on accept.
+        """
         from src.tts.planner import SHORTEN_UNDERSHOOT_OK
 
-        if not self._translator:
-            # No LLM — skip shortening; plan's shorten_pct decisions become
-            # advisory only and the synth duration overrides everything.
-            for sp in plan.sentences:
-                if sp.shorten_pct < 1.0:
-                    sp.needs_review = True
-                    sp.reason = "shorten_no_llm"
-            return
-
-        targets = [sp for sp in plan.sentences if sp.shorten_pct < 1.0]
         if not targets:
             return
 
         batch = []
         for sp in targets:
             slot = slots[sp.index]
+            current_text = sp.target_text or sp.original_text
             batch.append({
-                "text": sp.original_text,
+                "text": current_text,
                 "target_pct": int(sp.shorten_pct * 100),
                 "current_duration": slot.clip_duration,
                 "target_duration": sp.final_duration,
@@ -364,56 +367,138 @@ class TTSAssembler:
         try:
             shortened_texts = await self._translator.shorten_texts_batch(batch)
         except Exception as e:
-            logger.warning(f"Stage 3 batched shortening failed: {e}")
+            logger.warning(
+                f"Stage 3 pass {pass_idx}: batched shortening failed: {e}"
+            )
             for sp in targets:
                 sp.needs_review = True
                 sp.reason = "reshorten_failed"
             return
 
-        # Re-synthesise each shortened text concurrently
-        resynth = []
-        for sp, text in zip(targets, shortened_texts):
-            if text == sp.original_text:
-                # LLM returned no change — drop shortening for this sentence
-                sp.shorten_pct = 1.0
+        # Build the re-synth set: skip sentences where the LLM returned the
+        # same text it received (no progress this pass; the iteration loop
+        # may still try a stricter target on the next pass).
+        resynth: list[tuple] = []
+        for sp, new_text in zip(targets, shortened_texts):
+            current_text = sp.target_text or sp.original_text
+            if new_text == current_text:
+                sp.needs_review = True
+                sp.reason = "llm_no_shorter_text"
                 continue
-            sp.target_text = text
-            resynth.append((sp, text))
+            resynth.append((sp, new_text))
 
         if not resynth:
             return
 
-        async def _synth(sp, text):
+        async def _synth(text):
             async with self._semaphore:
                 return await provider.synthesize(text, voice, **kwargs)
 
         results = await asyncio.gather(
-            *[_synth(sp, text) for sp, text in resynth],
+            *[_synth(text) for _sp, text in resynth],
             return_exceptions=True,
         )
 
-        for (sp, text), audio in zip(resynth, results):
+        for (sp, new_text), audio in zip(resynth, results):
             slot = slots[sp.index]
             if isinstance(audio, Exception) or audio is None or len(audio) == 0:
+                # Synth failure — keep current clip + target_text.
                 sp.needs_review = True
                 sp.reason = "reshorten_failed"
-                sp.target_text = sp.original_text
                 continue
-            new_clip = tmp / f"reshort_{sp.index:04d}.mp3"
+            new_clip = tmp / f"reshort_p{pass_idx}_{sp.index:04d}.mp3"
             new_clip.write_bytes(audio)
             new_dur = _get_audio_duration(new_clip)
             if new_dur <= 0 or new_dur >= slot.clip_duration:
+                # Not strictly shorter than what we already have. Keep
+                # current slot state and target_text; flag for review.
                 sp.needs_review = True
                 sp.reason = "reshorten_not_shorter"
-                sp.target_text = sp.original_text
                 continue
+            # Accept the shorter clip and commit its text.
+            sp.target_text = new_text
+            slot.clip_path = new_clip
+            slot.clip_duration = new_dur
             planned = sp.final_duration * effective_speed
             ratio = new_dur / planned if planned > 0 else 0.0
             if ratio > 1.0 + SHORTEN_UNDERSHOOT_OK:
                 sp.needs_review = True
                 sp.reason = "shorten_undershot"
-            slot.clip_path = new_clip
-            slot.clip_duration = new_dur
+            else:
+                sp.needs_review = False
+                sp.reason = None
+
+    async def _apply_shortening(
+        self, *, plan, sentence_groups, slots, provider, voice, kwargs,
+        tmp, effective_speed,
+    ):
+        """Stage 3: iteratively shorten sentences whose clips overrun their
+        planner-allocated span at effective_speed.
+
+        Pass 1 targets every planner-flagged sentence (shorten_pct < 1.0)
+        with the planner's chosen target. Passes 2..SHORTENING_MAX_PASSES
+        re-derive targets from sentences whose CURRENT clip (potentially
+        already shortened in an earlier pass) still satisfies
+        ``clip_duration / effective_speed > sp.final_duration``. Each retry
+        tightens sp.shorten_pct one notch via planner._tighten; sentences
+        at SHORTEN_FLOOR are flagged for review and skipped.
+        """
+        from src.tts.planner import _tighten
+
+        if not self._translator:
+            # No LLM — skip shortening; planner-flagged sentences just get
+            # the review flag.
+            for sp in plan.sentences:
+                if sp.shorten_pct < 1.0:
+                    sp.needs_review = True
+                    sp.reason = "shorten_no_llm"
+            return
+
+        # Pass 1: planner-flagged sentences only.
+        initial_targets = [sp for sp in plan.sentences if sp.shorten_pct < 1.0]
+        if not initial_targets:
+            return
+
+        await self._run_shortening_pass(
+            targets=initial_targets, slots=slots, provider=provider,
+            voice=voice, kwargs=kwargs, tmp=tmp,
+            effective_speed=effective_speed, pass_idx=1,
+        )
+
+        # Passes 2..N: tighten unrecovered slots and retry.
+        for pass_idx in range(2, SHORTENING_MAX_PASSES + 1):
+            retry_targets: list = []
+            for sp in plan.sentences:
+                slot = slots[sp.index]
+                if slot.clip_path is None or slot.clip_duration <= 0:
+                    continue
+                if sp.final_duration <= 0:
+                    continue
+                if slot.clip_duration / effective_speed <= sp.final_duration:
+                    continue  # fits
+                next_pct = _tighten(sp.shorten_pct)
+                if next_pct is None or next_pct >= sp.shorten_pct:
+                    sp.needs_review = True
+                    sp.reason = sp.reason or "shorten_floor_reached"
+                    continue
+                sp.shorten_pct = next_pct
+                retry_targets.append(sp)
+
+            if not retry_targets:
+                logger.info(
+                    f"Stage 3 shortening converged after pass {pass_idx - 1}"
+                )
+                break
+
+            logger.info(
+                f"Stage 3 shortening pass {pass_idx}/{SHORTENING_MAX_PASSES}: "
+                f"{len(retry_targets)} slot(s) still overrun"
+            )
+            await self._run_shortening_pass(
+                targets=retry_targets, slots=slots, provider=provider,
+                voice=voice, kwargs=kwargs, tmp=tmp,
+                effective_speed=effective_speed, pass_idx=pass_idx,
+            )
 
     async def generate_full_track(
         self,
