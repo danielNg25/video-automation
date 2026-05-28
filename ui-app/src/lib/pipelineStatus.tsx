@@ -18,7 +18,7 @@ export const PIPELINE_STAGE_ORDER: PipelineStageName[] = [
   'process',
 ];
 
-export type PipelineRunStatus = 'idle' | 'running' | 'completed' | 'failed';
+export type PipelineRunStatus = 'idle' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 export type PipelineMode = 'single' | 'batch';
 
@@ -210,7 +210,9 @@ export function PipelineStatusProvider({ children }: { children: ReactNode }) {
               ? 'completed'
               : d.status === 'failed'
                 ? 'failed'
-                : 'running',
+                : d.status === 'cancelled'
+                  ? 'cancelled'
+                  : 'running',
           progress: total > 0 ? children.reduce((a, c) => a + c.progress, 0) / total : 0,
           message: typeof d.message === 'string' ? d.message : '',
           children,
@@ -241,7 +243,9 @@ export function PipelineStatusProvider({ children }: { children: ReactNode }) {
             ? 'completed'
             : d.status === 'failed'
               ? 'failed'
-              : 'running',
+              : d.status === 'cancelled'
+                ? 'cancelled'
+                : 'running',
         currentStage,
         stageProgress: typeof d.stage_progress === 'number' ? d.stage_progress : 0,
         completedStages,
