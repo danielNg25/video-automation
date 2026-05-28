@@ -350,6 +350,34 @@ class TaskManager:
         for queue in self._subscribers.get(task_id, []):
             queue.put_nowait(entry)
 
+    async def run_subprocess_tracked(
+        self,
+        task_id: str,
+        cmd: list[str],
+        **kwargs,
+    ) -> subprocess.CompletedProcess:
+        """Run a subprocess on a background thread, storing its Popen on the
+        Task so cancel_task can kill it. Use this wherever a subprocess might
+        run for more than ~1s (ffmpeg, yt-dlp, OCR).
+
+        Captures stdout/stderr by default (callers can override via kwargs).
+        Returns a `subprocess.CompletedProcess`. Does NOT raise on non-zero
+        exit — callers handle that themselves (so a killed subprocess still
+        flows through normally).
+        """
+        kwargs.setdefault("stdout", subprocess.PIPE)
+        kwargs.setdefault("stderr", subprocess.PIPE)
+        proc = subprocess.Popen(cmd, **kwargs)
+        task = self.tasks.get(task_id)
+        if task is not None:
+            task._running_subprocess = proc
+        try:
+            stdout, stderr = await asyncio.to_thread(proc.communicate)
+            return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+        finally:
+            if task is not None and task._running_subprocess is proc:
+                task._running_subprocess = None
+
     async def subscribe(self, task_id: str):
         """Async generator that yields SSE events for a task."""
         queue: asyncio.Queue = asyncio.Queue()
