@@ -538,3 +538,17 @@ export function subscribeSSE(
 
   return es;
 }
+
+// ── Task cancellation ────────────────────────────────────────────────
+
+export interface CancelTaskResponse {
+  task_id: string;
+  status: 'cancelled' | 'cancelling' | 'completed' | 'failed';
+  cleaned: boolean;
+  video_id: string | null;
+  message?: string;
+}
+
+export function cancelTask(taskId: string): Promise<CancelTaskResponse> {
+  return request(`/tasks/${taskId}/cancel`, { method: 'POST' });
+}
