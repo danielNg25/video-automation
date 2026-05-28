@@ -487,10 +487,11 @@ async def preview_clip(video_id: str, request: PreviewClipRequest):
                 str(clip_path),
             ]
 
-            await asyncio.to_thread(
-                subprocess.run,
-                cmd, capture_output=True, check=True, timeout=120,
-            )
+            result = await tm.run_subprocess_tracked(task.task_id, cmd, text=True)
+            if result.returncode != 0:
+                raise subprocess.CalledProcessError(
+                    result.returncode, cmd, output=result.stdout, stderr=result.stderr,
+                )
 
             task_obj.status = "completed"
             task_obj.progress = 1.0
