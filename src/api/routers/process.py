@@ -125,7 +125,7 @@ async def get_processed_video(video_id: str, platform: str):
     )
 
 
-def _run_export_ffmpeg(
+async def _run_export_ffmpeg(
     video_path: Path,
     subtitle_path: Path | None,
     tts_path: Path | None,
@@ -136,6 +136,7 @@ def _run_export_ffmpeg(
     seek_seconds: float | None = None,
     duration_seconds: float | None = None,
     video_id: str | None = None,
+    task_id: str | None = None,
 ) -> None:
     """Run ffmpeg export with optional subtitles, blur, and TTS mixing.
 
@@ -300,7 +301,13 @@ def _run_export_ffmpeg(
             len(cmd1[cmd1.index("-vf") + 1]) if "-vf" in cmd1 else 0
         ),
     )
-    result = subprocess.run(cmd1, capture_output=True, text=True, timeout=600)
+    tm = get_task_manager() if task_id else None
+    if tm is not None:
+        # No explicit timeout — cancellation is now user-driven via cancel_task.
+        # A hung ffmpeg will be killed by the user clicking Stop.
+        result = await tm.run_subprocess_tracked(task_id, cmd1, text=True)
+    else:
+        result = subprocess.run(cmd1, capture_output=True, text=True, timeout=600)
 
     # Clean up background PNG temp dir
     if bg_images:
@@ -342,7 +349,10 @@ def _run_export_ffmpeg(
             "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
             str(output_path),
         ]
-        result = subprocess.run(cmd2, capture_output=True, text=True, timeout=600)
+        if tm is not None:
+            result = await tm.run_subprocess_tracked(task_id, cmd2, text=True)
+        else:
+            result = subprocess.run(cmd2, capture_output=True, text=True, timeout=600)
         intermediate.unlink(missing_ok=True)
         if result.returncode != 0:
             logger.error("ffmpeg audio-mix step 2 failed.\nCommand: %s\nStderr (tail):\n%s",
@@ -376,12 +386,12 @@ async def export_video(video_id: str, request: ExportRequest):
 
             tm._emit(task.task_id, "progress", {"progress": 0.2, "message": "Rendering video..."})
 
-            await asyncio.to_thread(
-                _run_export_ffmpeg,
+            await _run_export_ffmpeg(
                 video_path, srt_path, tts_path, output_path,
                 request.resolution,
                 request.video_volume, request.tts_volume,
                 video_id=video_id,
+                task_id=task.task_id,
             )
 
             # Update video status to exported
@@ -419,8 +429,7 @@ async def preview_export(video_id: str, request: ExportRequest):
     # Seek to 1/3 of video for a representative preview
     midpoint = max(0, (video.duration or 30) / 3)
 
-    await asyncio.to_thread(
-        _run_export_ffmpeg,
+    await _run_export_ffmpeg(
         video_path, srt_path, tts_path, output_path,
         request.resolution,
         request.video_volume, request.tts_volume,
