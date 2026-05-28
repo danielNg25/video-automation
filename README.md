@@ -523,6 +523,16 @@ douyin-automation/
 
 ---
 
+### Iterative TTS LLM Shortening (2026-05-28)
+
+- [x] `SHORTENING_MAX_PASSES = 3` exposed by `src/tts/assembler.py`
+- [x] `_run_shortening_pass` helper extracts the batched-LLM + re-synth + swap-if-shorter body
+- [x] `_apply_shortening` loops up to MAX passes, tightening `shorten_pct` via `planner._tighten` between passes for slots whose clip still satisfies `clip_duration / effective_speed > final_duration`
+- [x] Sentences at the SHORTEN_FLOOR flagged with reason `shorten_floor_reached`; converged slots clear stale `needs_review`
+- [x] 5 unit tests in `tests/test_tts.py::TestIterativeShortening` (constant, first-pass convergence, multi-pass iteration, floor cap, no-translator skip)
+
+---
+
 ### One-Time Setup Checklist
 
 - [ ] Docker installed, Douyin API container running
