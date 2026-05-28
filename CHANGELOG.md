@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Cancel a running pipeline + automatic cleanup.** New `POST /api/tasks/{task_id}/cancel` endpoint kills any tracked ffmpeg / OCR / yt-dlp subprocess, cancels the asyncio task (5s timeout), and runs `delete_video` for full per-video cleanup. Batch-aware: cancelling a batch parent cancels every in-flight child with cleanup; per-child cancel works independently without affecting siblings. **FE:** new `⊗ Stop` button on the pipeline tracker (single + batch) with a confirm modal — "All progress will be discarded… This can't be undone." Idempotent on terminal states (cancelling a completed task is a clear no-op). The `Task` model gains `_asyncio_task`, `_running_subprocess`, `_child_task_ids` internal handles. Long-running subprocesses now route through `TaskManager.run_subprocess_tracked` so the cancel kill is instant rather than waiting for the subprocess to return. The OCR transcribe loop checks `task.status == "cancelling"` between frames and exits early with partial data. `PipelineRunStatus` gains `'cancelled'` so the polling tracker stops cleanly when the BE marks a task cancelled.
+
 ### Fixed
 - `make setup` now recovers from the Windows + Docker Desktop / WSL2 trap where a missing bind-mount source (`config/douyin_web_config.yaml`) gets auto-created as an empty directory on a failed `docker compose up`, then permanently blocks subsequent runs with `not a directory: Are you trying to mount a directory onto a file?`. The target now detects the directory case, removes it, and replaces it with the real config file from `config/douyin_web_config.example.yaml`. Same logic applies to `config/config.yaml`. Recovery shrinks from a 4-step manual cleanup to `docker compose down && make setup && make docker-up`.
 
