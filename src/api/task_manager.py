@@ -378,6 +378,84 @@ class TaskManager:
             if task is not None and task._running_subprocess is proc:
                 task._running_subprocess = None
 
+    async def cancel_task(self, task_id: str) -> dict:
+        """Cancel a running task, kill its subprocess, and delete_video its
+        output. Idempotent on terminal states. Raises KeyError if task_id is
+        unknown.
+
+        Returns: {task_id, status, cleaned, video_id, [message]}.
+        """
+        task = self.tasks.get(task_id)
+        if task is None:
+            raise KeyError(task_id)
+
+        if task.status in {"completed", "failed", "cancelled"}:
+            return {
+                "task_id": task_id,
+                "status": task.status,
+                "cleaned": False,
+                "video_id": task.video_id,
+                "message": f"Task already in terminal state: {task.status}",
+            }
+
+        if task.status == "cancelling":
+            return {
+                "task_id": task_id,
+                "status": "cancelling",
+                "cleaned": False,
+                "video_id": task.video_id,
+                "message": "Already cancelling",
+            }
+
+        task.status = "cancelling"
+        self._emit(task_id, "cancelling", {"message": "Stopping..."})
+
+        # Recurse into batch children FIRST so we don't race the parent's
+        # cleanup. Errors in child cancels are logged but don't block.
+        for child_id in list(task._child_task_ids):
+            try:
+                await self.cancel_task(child_id)
+            except Exception as e:
+                logger.warning(f"Failed to cancel child {child_id}: {e}")
+
+        # Kill the tracked subprocess (instant teardown of long ffmpeg / yt-dlp).
+        if task._running_subprocess is not None:
+            try:
+                task._running_subprocess.kill()
+            except (ProcessLookupError, OSError):
+                pass  # already exited
+
+        # Cancel the coroutine. Wait up to 5s for it to exit cleanly.
+        if task._asyncio_task is not None and not task._asyncio_task.done():
+            task._asyncio_task.cancel()
+            try:
+                await asyncio.wait_for(task._asyncio_task, timeout=5.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+
+        # Cleanup. Best-effort — failure here doesn't unmark cancellation.
+        cleaned = False
+        if task.video_id:
+            try:
+                self.delete_video(task.video_id)
+                cleaned = True
+            except Exception as e:
+                logger.error(f"delete_video({task.video_id}) failed during cancel: {e}")
+
+        task.status = "cancelled"
+        task.message = "Cancelled by user"
+        self._emit(task_id, "cancelled", {
+            "video_id": task.video_id,
+            "cleaned": cleaned,
+        })
+
+        return {
+            "task_id": task_id,
+            "status": "cancelled",
+            "cleaned": cleaned,
+            "video_id": task.video_id,
+        }
+
     async def subscribe(self, task_id: str):
         """Async generator that yields SSE events for a task."""
         queue: asyncio.Queue = asyncio.Queue()
