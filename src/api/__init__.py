@@ -16,6 +16,7 @@ from src.api.routers import (
     process,
     replacement,
     settings,
+    tasks,
     transcribe,
     translate,
     tts,
@@ -49,6 +50,7 @@ def create_app() -> FastAPI:
     app.include_router(tts.router)
     app.include_router(replacement.router)
     app.include_router(events.router)
+    app.include_router(tasks.router)
 
     # Mount static dirs BEFORE the SPA catch-all so concrete paths win.
     data_dir = get_data_dir()
