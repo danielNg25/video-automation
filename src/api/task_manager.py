@@ -31,6 +31,12 @@ class Task:
     created_at: datetime = field(default_factory=datetime.now)
     events: list[dict] = field(default_factory=list)
 
+    # Cancellation handles — not serialized over API/SSE. The leading
+    # underscore signals "internal", matching the existing _emit pattern.
+    _asyncio_task: asyncio.Task | None = None
+    _running_subprocess: subprocess.Popen | None = None
+    _child_task_ids: list[str] = field(default_factory=list)
+
 
 def _default_tts_mix_for_platform(underlay_db: float | None) -> dict:
     """Build a default {original_volume, tts_volume} pair for a single platform.
@@ -344,6 +350,112 @@ class TaskManager:
         for queue in self._subscribers.get(task_id, []):
             queue.put_nowait(entry)
 
+    async def run_subprocess_tracked(
+        self,
+        task_id: str,
+        cmd: list[str],
+        **kwargs,
+    ) -> subprocess.CompletedProcess:
+        """Run a subprocess on a background thread, storing its Popen on the
+        Task so cancel_task can kill it. Use this wherever a subprocess might
+        run for more than ~1s (ffmpeg, yt-dlp, OCR).
+
+        Captures stdout/stderr by default (callers can override via kwargs).
+        Returns a `subprocess.CompletedProcess`. Does NOT raise on non-zero
+        exit — callers handle that themselves (so a killed subprocess still
+        flows through normally).
+        """
+        kwargs.setdefault("stdout", subprocess.PIPE)
+        kwargs.setdefault("stderr", subprocess.PIPE)
+        proc = subprocess.Popen(cmd, **kwargs)
+        task = self.tasks.get(task_id)
+        if task is not None:
+            task._running_subprocess = proc
+        try:
+            stdout, stderr = await asyncio.to_thread(proc.communicate)
+            return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+        finally:
+            if task is not None and task._running_subprocess is proc:
+                task._running_subprocess = None
+
+    async def cancel_task(self, task_id: str) -> dict:
+        """Cancel a running task, kill its subprocess, and delete_video its
+        output. Idempotent on terminal states. Raises KeyError if task_id is
+        unknown.
+
+        Returns: {task_id, status, cleaned, video_id, [message]}.
+        """
+        task = self.tasks.get(task_id)
+        if task is None:
+            raise KeyError(task_id)
+
+        if task.status in {"completed", "failed", "cancelled"}:
+            return {
+                "task_id": task_id,
+                "status": task.status,
+                "cleaned": False,
+                "video_id": task.video_id,
+                "message": f"Task already in terminal state: {task.status}",
+            }
+
+        if task.status == "cancelling":
+            return {
+                "task_id": task_id,
+                "status": "cancelling",
+                "cleaned": False,
+                "video_id": task.video_id,
+                "message": "Already cancelling",
+            }
+
+        task.status = "cancelling"
+        self._emit(task_id, "cancelling", {"message": "Stopping..."})
+
+        # Recurse into batch children FIRST so we don't race the parent's
+        # cleanup. Errors in child cancels are logged but don't block.
+        for child_id in list(task._child_task_ids):
+            try:
+                await self.cancel_task(child_id)
+            except Exception as e:
+                logger.warning(f"Failed to cancel child {child_id}: {e}")
+
+        # Kill the tracked subprocess (instant teardown of long ffmpeg / yt-dlp).
+        if task._running_subprocess is not None:
+            try:
+                task._running_subprocess.kill()
+            except (ProcessLookupError, OSError):
+                pass  # already exited
+
+        # Cancel the coroutine. Wait up to 5s for it to exit cleanly.
+        if task._asyncio_task is not None and not task._asyncio_task.done():
+            task._asyncio_task.cancel()
+            try:
+                await asyncio.wait_for(task._asyncio_task, timeout=5.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+
+        # Cleanup. Best-effort — failure here doesn't unmark cancellation.
+        cleaned = False
+        if task.video_id:
+            try:
+                self.delete_video(task.video_id)
+                cleaned = True
+            except Exception as e:
+                logger.error(f"delete_video({task.video_id}) failed during cancel: {e}")
+
+        task.status = "cancelled"
+        task.message = "Cancelled by user"
+        self._emit(task_id, "cancelled", {
+            "video_id": task.video_id,
+            "cleaned": cleaned,
+        })
+
+        return {
+            "task_id": task_id,
+            "status": "cancelled",
+            "cleaned": cleaned,
+            "video_id": task.video_id,
+        }
+
     async def subscribe(self, task_id: str):
         """Async generator that yields SSE events for a task."""
         queue: asyncio.Queue = asyncio.Queue()
@@ -502,7 +614,7 @@ class TaskManager:
 
             # Run CPU-bound transcription in a thread
             segments = await asyncio.to_thread(
-                transcriber.transcribe, video_path, language, task_type
+                transcriber.transcribe, video_path, language, task_type, task_id
             )
 
             task.message = "Generating SRT file..."
@@ -1040,3 +1152,25 @@ class TaskManager:
             "successRate": round(success_rate, 1),
             "activeTasks": active,
         }
+
+
+# Module-level accessor for code that can't import src.api.deps without a
+# circular import (e.g. transcriber/ocr.py, which is imported by task_manager
+# itself via run_transcribe). The instance is set by src.api.deps.get_task_manager
+# right after the TaskManager() constructor call.
+_TASK_MANAGER_INSTANCE: TaskManager | None = None
+
+
+def get_task_manager_instance() -> TaskManager | None:
+    """Return the global TaskManager singleton if initialised, else None.
+
+    Returns None during test runs that don't go through the FastAPI app,
+    so callers must handle the None case gracefully.
+    """
+    return _TASK_MANAGER_INSTANCE
+
+
+def _set_task_manager_instance(tm: TaskManager) -> None:
+    """Called by src.api.deps after constructing the singleton."""
+    global _TASK_MANAGER_INSTANCE
+    _TASK_MANAGER_INSTANCE = tm

@@ -16,7 +16,7 @@ import pytest
 
 
 @pytest.mark.integration
-def test_export_honors_full_spec(tmp_path, monkeypatch):
+async def test_export_honors_full_spec(tmp_path, monkeypatch):
     # Lay out the fixture directories the loaders expect:
     #   config/subtitle_styles.yaml           ← global default
     #   data/raw/{vid}.mp4                    ← source video
@@ -74,7 +74,7 @@ def test_export_honors_full_spec(tmp_path, monkeypatch):
     # 4. Run the export ffmpeg helper directly (avoids spinning up the API).
     from src.api.routers.process import _run_export_ffmpeg
     output = out_dir / f"{video_id}_export.mp4"
-    _run_export_ffmpeg(
+    await _run_export_ffmpeg(
         video_path=video_path,
         subtitle_path=srt,
         tts_path=None,

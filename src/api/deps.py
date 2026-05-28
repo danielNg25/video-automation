@@ -41,7 +41,8 @@ def get_task_manager() -> TaskManager:
     """Return the singleton TaskManager instance."""
     global _task_manager
     if _task_manager is None:
-        from src.api.task_manager import TaskManager
+        from src.api.task_manager import TaskManager, _set_task_manager_instance
 
         _task_manager = TaskManager()
+        _set_task_manager_instance(_task_manager)
     return _task_manager

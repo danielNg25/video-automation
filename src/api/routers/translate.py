@@ -59,7 +59,7 @@ async def start_translate(request: TranslateRequest):
         effective_config["translation"] = trans_cfg
 
     task = tm.create_task("translate")
-    asyncio.create_task(
+    task._asyncio_task = asyncio.create_task(
         tm.run_translate(
             task.task_id,
             request.video_id,

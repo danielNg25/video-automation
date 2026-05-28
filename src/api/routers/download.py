@@ -22,7 +22,7 @@ async def start_download(request: DownloadRequest):
     tm = get_task_manager()
     config = get_config()
     task = tm.create_task("download")
-    asyncio.create_task(tm.run_download(task.task_id, request.url, config))
+    task._asyncio_task = asyncio.create_task(tm.run_download(task.task_id, request.url, config))
     return TaskResponse(task_id=task.task_id, status=task.status)
 
 

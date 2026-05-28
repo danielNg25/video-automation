@@ -52,7 +52,7 @@ async def start_pipeline(request: PipelineRequest):
     config = get_config()
 
     task = tm.create_task("pipeline")
-    asyncio.create_task(
+    task._asyncio_task = asyncio.create_task(
         tm.run_pipeline(
             task.task_id,
             url=request.url,
@@ -83,7 +83,7 @@ async def start_full_pipeline(request: FullPipelineRequest):
         platforms=request.platforms,
     )
 
-    asyncio.create_task(
+    task._asyncio_task = asyncio.create_task(
         _run_full_pipeline(
             task_id=task.task_id,
             url=request.url,
@@ -284,7 +284,7 @@ async def start_batch_pipeline(request: BatchPipelineRequest):
         platforms=request.platforms,
     )
 
-    asyncio.create_task(
+    batch_task._asyncio_task = asyncio.create_task(
         _run_batch_pipeline(
             batch_id=batch_id,
             task_ids=task_ids,
@@ -385,11 +385,16 @@ async def _run_batch_pipeline(
                 "errors": errors,
             })
 
-    tasks = [
-        process_one(i, url, tid)
-        for i, (url, tid) in enumerate(zip(urls, task_ids))
-    ]
-    await asyncio.gather(*tasks, return_exceptions=True)
+    child_asyncio_tasks = []
+    for i, (url, tid) in enumerate(zip(urls, task_ids)):
+        child = tm.tasks[tid]
+        # Each child gets its own asyncio.Task so it can be cancelled
+        # independently. Parent's _child_task_ids records the link.
+        child._asyncio_task = asyncio.create_task(process_one(i, url, tid))
+        batch_task._child_task_ids.append(tid)
+        child_asyncio_tasks.append(child._asyncio_task)
+
+    await asyncio.gather(*child_asyncio_tasks, return_exceptions=True)
 
     # Summarize
     succeeded = sum(1 for tid in task_ids if tm.tasks.get(tid, None) and tm.tasks[tid].status == "completed")
@@ -614,7 +619,7 @@ async def retry_pipeline(task_id: str):
     config = get_config()
     new_task = tm.create_task("full_pipeline")
 
-    asyncio.create_task(
+    new_task._asyncio_task = asyncio.create_task(
         _run_full_pipeline(
             task_id=new_task.task_id,
             url=state.url,

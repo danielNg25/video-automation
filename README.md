@@ -501,6 +501,28 @@ douyin-automation/
 
 ---
 
+### Cancel Pipeline With Cleanup (2026-05-28)
+
+> Design: [`docs/superpowers/specs/2026-05-28-cancel-pipeline-with-cleanup-design.md`](docs/superpowers/specs/2026-05-28-cancel-pipeline-with-cleanup-design.md)
+> Plan: [`docs/superpowers/plans/2026-05-28-cancel-pipeline-with-cleanup.md`](docs/superpowers/plans/2026-05-28-cancel-pipeline-with-cleanup.md)
+
+- [x] **Task 1** — `Task` dataclass gains `_asyncio_task` / `_running_subprocess` / `_child_task_ids`
+- [x] **Task 2** — `TaskManager.run_subprocess_tracked` async helper
+- [x] **Task 3** — `TaskManager.cancel_task` with subprocess kill + `delete_video` cleanup (8 unit tests)
+- [x] **Task 4** — `POST /api/tasks/{id}/cancel` endpoint (3 endpoint tests)
+- [x] **Task 5** — Dispatch sites store `_asyncio_task` (pipeline, process, editor, tts, download, transcribe, translate)
+- [x] **Task 6** — Batch supervisor wraps children in individual `asyncio.create_task`
+- [x] **Task 7** — `_run_export_ffmpeg` converted sync→async; tracks ffmpeg subprocess
+- [x] **Task 8** — `preview_clip` tracks ffmpeg subprocess
+- [x] **Task 9** — OCR transcribe loop checks `task.status == "cancelling"` between frames
+- [x] **Task 10** — `cancelTask` FE client + `CancelTaskResponse` type
+- [x] **Task 11** — `StopButton` component with confirm modal (4 vitest tests)
+- [x] **Task 12** — Pipeline tracker renders StopButton on single + batch
+- [x] **Task 13** — `PipelineRunStatus` adds `'cancelled'`, polling mapper handles it
+- [x] **Task 14** — Integration test: real subprocess kill + `delete_video` cleanup
+
+---
+
 ### One-Time Setup Checklist
 
 - [ ] Docker installed, Douyin API container running

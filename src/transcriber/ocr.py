@@ -129,7 +129,11 @@ class OCRTranscriber(BaseTranscriber):
         return self._ocr_engine
 
     def transcribe(
-        self, video_path: str, language: str = "zh", task: str = "transcribe"
+        self,
+        video_path: str,
+        language: str = "zh",
+        task: str = "transcribe",
+        task_id: str | None = None,
     ) -> list[dict]:
         """Extract subtitles from burned-in text in video frames.
 
@@ -182,7 +186,7 @@ class OCRTranscriber(BaseTranscriber):
 
             if self.ocr_region:
                 return self._ocr_with_manual_region(
-                    frames, ocr, frame_height, frame_width
+                    frames, ocr, frame_height, frame_width, task_id=task_id
                 )
 
             # Single streaming pass: OCR every frame, build a rolling
@@ -208,6 +212,16 @@ class OCRTranscriber(BaseTranscriber):
             )
 
             for i, frame_path in enumerate(frames):
+                # Cancel check: short-circuit if the task is being cancelled.
+                if task_id is not None:
+                    from src.api.task_manager import get_task_manager_instance
+                    tm = get_task_manager_instance()
+                    if tm is not None:
+                        t = tm.tasks.get(task_id)
+                        if t is not None and t.status == "cancelling":
+                            logger.info(f"OCR loop cancelled at frame {i}/{len(frames)}")
+                            return self._deduplicate_frames(frame_texts)
+
                 pct = 0.10 + (i / total_frames) * 0.75
                 if i % 10 == 0:
                     self._emit_progress(
@@ -262,6 +276,7 @@ class OCRTranscriber(BaseTranscriber):
         ocr,
         frame_height: int,
         frame_width: int,
+        task_id: str | None = None,
     ) -> list[dict]:
         """OCR using a manually specified region."""
         region = self.ocr_region
@@ -278,6 +293,16 @@ class OCRTranscriber(BaseTranscriber):
         frame_texts = []
 
         for i, frame_path in enumerate(frames):
+            # Cancel check: short-circuit if the task is being cancelled.
+            if task_id is not None:
+                from src.api.task_manager import get_task_manager_instance
+                tm = get_task_manager_instance()
+                if tm is not None:
+                    t = tm.tasks.get(task_id)
+                    if t is not None and t.status == "cancelling":
+                        logger.info(f"OCR loop cancelled at frame {i}/{len(frames)}")
+                        return self._deduplicate_frames(frame_texts)
+
             pct = 0.15 + (i / total_frames) * 0.65
             if i % 10 == 0:
                 self._emit_progress(
