@@ -31,6 +31,12 @@ class Task:
     created_at: datetime = field(default_factory=datetime.now)
     events: list[dict] = field(default_factory=list)
 
+    # Cancellation handles — not serialized over API/SSE. The leading
+    # underscore signals "internal", matching the existing _emit pattern.
+    _asyncio_task: asyncio.Task | None = None
+    _running_subprocess: subprocess.Popen | None = None
+    _child_task_ids: list[str] = field(default_factory=list)
+
 
 def _default_tts_mix_for_platform(underlay_db: float | None) -> dict:
     """Build a default {original_volume, tts_volume} pair for a single platform.
