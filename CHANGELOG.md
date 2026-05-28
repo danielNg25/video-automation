@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- `make setup` now recovers from the Windows + Docker Desktop / WSL2 trap where a missing bind-mount source (`config/douyin_web_config.yaml`) gets auto-created as an empty directory on a failed `docker compose up`, then permanently blocks subsequent runs with `not a directory: Are you trying to mount a directory onto a file?`. The target now detects the directory case, removes it, and replaces it with the real config file from `config/douyin_web_config.example.yaml`. Same logic applies to `config/config.yaml`. Recovery shrinks from a 4-step manual cleanup to `docker compose down && make setup && make docker-up`.
+
 ### Changed
 - **Subtitle style system rebuilt around a single canonical `SubtitleStyleSpec`.** Replaces three drifting code paths (HTML overlay, libass `force_style` preview, ASS+PNG export) with one Pydantic schema consumed by every renderer. Storage is percentage-of-canvas so the spec is resolution-independent. Per-video files store only the user's *delta* over `config/subtitle_styles.yaml`; the loader deep-merges. Migration: existing flat-px JSONs auto-convert on first load post-upgrade. Blur joins the spec (off by default), decoupled from position. `style_matcher.match_style` is renamed `suggest_position` — a one-shot OCR-region seed rather than a forced override. Implementation: `src/processor/style.py` (schema + loader + migrator), `src/processor/style_render.py` (ASS file + PNG overlays from one spec), `ui-app/src/components/editor/SubtitleRenderer.tsx` (TS-side renderer). Endpoints `GET/PUT /api/subtitle-styles` and `GET/PUT/DELETE /api/videos/{id}/style` take/return `SubtitleStyleSpec`. Per-platform style overrides are removed (the `platforms:` YAML section is dropped).
 

@@ -32,18 +32,32 @@ check: lint test
 # One-time bootstrap: seed local config files from their .example templates so
 # bind-mounted paths exist before `docker compose up`. Idempotent — won't
 # overwrite a config you've already filled in.
+#
+# Also recovers from a known Windows + Docker Desktop / WSL2 trap: when a bind
+# mount source is missing on `docker compose up`, Docker Desktop auto-creates
+# the path as an empty DIRECTORY. The next run then fails with "not a
+# directory: Are you trying to mount a directory onto a file?" because the
+# in-container target is a file. We detect that directory case and remove it
+# before seeding so the recovery is `make setup && make docker-up`.
 setup:
-	@if [ ! -f config/config.yaml ]; then \
-		cp config/config.example.yaml config/config.yaml; \
-		echo "Created config/config.yaml from example."; \
-	fi
-	@if [ ! -f config/douyin_web_config.yaml ]; then \
-		cp config/douyin_web_config.example.yaml config/douyin_web_config.yaml; \
-		echo "Created config/douyin_web_config.yaml from example."; \
-		echo "  → Edit it and replace PASTE_YOUR_DOUYIN_COOKIE_HERE with a real"; \
-		echo "    Cookie header to enable the primary Douyin API path."; \
-		echo "    (Without a real cookie, downloads fall back to yt-dlp.)"; \
-	fi
+	@for pair in \
+		"config/config.yaml:config/config.example.yaml" \
+		"config/douyin_web_config.yaml:config/douyin_web_config.example.yaml"; do \
+		dst="$${pair%%:*}"; src="$${pair##*:}"; \
+		if [ -d "$$dst" ]; then \
+			echo "Removing empty directory at $$dst (Docker Desktop auto-create artifact)."; \
+			rmdir "$$dst" 2>/dev/null || rm -rf "$$dst"; \
+		fi; \
+		if [ ! -f "$$dst" ]; then \
+			cp "$$src" "$$dst"; \
+			echo "Created $$dst from example."; \
+			if [ "$$dst" = "config/douyin_web_config.yaml" ]; then \
+				echo "  → Edit it and replace PASTE_YOUR_DOUYIN_COOKIE_HERE with a real"; \
+				echo "    Cookie header to enable the primary Douyin API path."; \
+				echo "    (Without a real cookie, downloads fall back to yt-dlp.)"; \
+			fi; \
+		fi; \
+	done
 
 # Docker (full stack: douyin-api + app). Runs setup first so the bind-mount
 # sources exist — important on fresh clones (especially Windows/WSL2, where a
