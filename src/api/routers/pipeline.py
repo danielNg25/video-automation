@@ -385,11 +385,16 @@ async def _run_batch_pipeline(
                 "errors": errors,
             })
 
-    tasks = [
-        process_one(i, url, tid)
-        for i, (url, tid) in enumerate(zip(urls, task_ids))
-    ]
-    await asyncio.gather(*tasks, return_exceptions=True)
+    child_asyncio_tasks = []
+    for i, (url, tid) in enumerate(zip(urls, task_ids)):
+        child = tm.tasks[tid]
+        # Each child gets its own asyncio.Task so it can be cancelled
+        # independently. Parent's _child_task_ids records the link.
+        child._asyncio_task = asyncio.create_task(process_one(i, url, tid))
+        batch_task._child_task_ids.append(tid)
+        child_asyncio_tasks.append(child._asyncio_task)
+
+    await asyncio.gather(*child_asyncio_tasks, return_exceptions=True)
 
     # Summarize
     succeeded = sum(1 for tid in task_ids if tm.tasks.get(tid, None) and tm.tasks[tid].status == "completed")
