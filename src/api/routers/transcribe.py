@@ -44,7 +44,7 @@ async def start_transcribe(request: TranscribeRequest):
         raise HTTPException(status_code=404, detail=f"Video {request.video_id} not found")
 
     task = tm.create_task("transcribe")
-    asyncio.create_task(
+    task._asyncio_task = asyncio.create_task(
         tm.run_transcribe(
             task.task_id,
             request.video_id,
