@@ -614,7 +614,7 @@ class TaskManager:
 
             # Run CPU-bound transcription in a thread
             segments = await asyncio.to_thread(
-                transcriber.transcribe, video_path, language, task_type
+                transcriber.transcribe, video_path, language, task_type, task_id
             )
 
             task.message = "Generating SRT file..."
@@ -1152,3 +1152,25 @@ class TaskManager:
             "successRate": round(success_rate, 1),
             "activeTasks": active,
         }
+
+
+# Module-level accessor for code that can't import src.api.deps without a
+# circular import (e.g. transcriber/ocr.py, which is imported by task_manager
+# itself via run_transcribe). The instance is set by src.api.deps.get_task_manager
+# right after the TaskManager() constructor call.
+_TASK_MANAGER_INSTANCE: TaskManager | None = None
+
+
+def get_task_manager_instance() -> TaskManager | None:
+    """Return the global TaskManager singleton if initialised, else None.
+
+    Returns None during test runs that don't go through the FastAPI app,
+    so callers must handle the None case gracefully.
+    """
+    return _TASK_MANAGER_INSTANCE
+
+
+def _set_task_manager_instance(tm: TaskManager) -> None:
+    """Called by src.api.deps after constructing the singleton."""
+    global _TASK_MANAGER_INSTANCE
+    _TASK_MANAGER_INSTANCE = tm
