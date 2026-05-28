@@ -155,7 +155,7 @@ Step 2.1 wasn't completed. Run `make setup` (or `cp config/douyin_web_config.exa
 
 ### Windows/WSL2: `error mounting "/run/desktop/mnt/host/wsl/docker-desktop-bind-mounts/…" … not a directory: Are you trying to mount a directory onto a file?`
 
-Same root cause as above. On Windows + Docker Desktop, a missing bind-mount source auto-creates as an empty directory, then fails to mount onto the file path inside the container. Fix: run `make setup` before `docker compose up`. If it already failed once, remove the auto-created empty source first — `docker compose down`, delete the empty `config/douyin_web_config.yaml` directory if Docker Desktop made one, then `make setup && make docker-up`.
+Same root cause as above. On Windows + Docker Desktop, a missing bind-mount source auto-creates as an empty directory, then fails to mount onto the file path inside the container. Fix: `docker compose down && make setup && make docker-up`. The `setup` target detects the empty directory and replaces it with the real config file from the example template, so the recovery is one command after the down.
 
 ### Backend logs `Connection refused` to the Douyin helper
 
