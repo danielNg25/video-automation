@@ -8,6 +8,7 @@ import { loadApiKeys, loadLLMPrefs, saveLLMPrefs, storageGet, storageSet } from 
 import { usePipelineStatus } from '../lib/pipelineStatus';
 import { PipelineStageTracker } from '../components/PipelineStageTracker';
 import { PipelineRunsTable } from '../components/PipelineRunsTable';
+import { StopButton } from '../components/pipeline/StopButton';
 
 function PipelinePage() {
   const navigate = useNavigate();
@@ -16,7 +17,7 @@ function PipelinePage() {
   const [error, setError] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
-  const { status: pipelineStatus, startPolling } = usePipelineStatus();
+  const { status: pipelineStatus, startPolling, stopPolling } = usePipelineStatus();
   const isPipeline = pipelineStatus.status === 'running';
 
   // Download-only state
@@ -340,9 +341,22 @@ function PipelinePage() {
             {/* Batch progress */}
             {batchResults && (
               <div className="space-y-1.5">
-                <div className="flex justify-between text-[10px] font-mono">
+                <div className="flex justify-between items-center text-[10px] font-mono">
                   <span className="text-primary">Processing {batchResults.completed}/{batchResults.total} videos...</span>
-                  <span className="text-zinc-500">{Math.round((batchResults.completed / batchResults.total) * 100)}%</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-zinc-500">{Math.round((batchResults.completed / batchResults.total) * 100)}%</span>
+                    {pipelineStatus.status === 'running' && pipelineStatus.taskId && (
+                      <StopButton
+                        taskId={pipelineStatus.taskId}
+                        count={batchResults.total > 1 ? batchResults.total : undefined}
+                        onCancelled={() => {
+                          stopPolling();
+                          setBatchResults(null);
+                          loadVideos();
+                        }}
+                      />
+                    )}
+                  </div>
                 </div>
                 <div className="w-full h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
                   <div className="h-full bg-primary transition-all duration-300"
@@ -379,8 +393,19 @@ function PipelinePage() {
 
         {/* Per-stage pipeline tracker — visible only during a single-URL pipeline run */}
         {isPipeline && pipelineStatus.mode === 'single' && (
-          <div className="bg-surface-container-low rounded-xl p-5">
+          <div className="bg-surface-container-low rounded-xl p-5 space-y-4">
             <PipelineStageTracker status={pipelineStatus} />
+            {pipelineStatus.taskId && (
+              <div className="flex justify-end">
+                <StopButton
+                  taskId={pipelineStatus.taskId}
+                  onCancelled={() => {
+                    stopPolling();
+                    loadVideos();
+                  }}
+                />
+              </div>
+            )}
           </div>
         )}
 
