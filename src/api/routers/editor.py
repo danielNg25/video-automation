@@ -3,22 +3,19 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import subprocess
 import tempfile
 from pathlib import Path
 
-import yaml
 from fastapi import APIRouter, HTTPException
 from starlette.responses import FileResponse
 
-from src.api.deps import get_data_dir, get_task_manager
+from src.api.deps import get_config, get_data_dir, get_task_manager
 from src.api.models import (
     PreviewClipRequest,
     PreviewFrameRequest,
     SaveSrtRequest,
     SrtResponse,
-    SubtitleSegment,
     TaskResponse,
 )
 from src.api.routers.transcribe import _resolve_srt_path
@@ -26,7 +23,6 @@ from src.processor.region_detector import load_subtitle_region
 from src.processor.style import SubtitleStyleSpec, load_style, save_style_delta
 from src.processor.subtitle import (
     _timestamp_to_seconds,
-    parse_srt,
     write_srt,
 )
 
@@ -88,8 +84,9 @@ async def serve_preview_mix(video_id: str, language: str):
 
     Mix recipe:
     - Video stream from raw MP4 (stream-copied, fast).
-    - Audio: raw original at ``underlay_db`` (from ``dub_meta`` or default
-      -18 dB), mixed with dub WAV at 0 dB. Re-encoded as AAC.
+    - Audio: raw original at ``underlay_db`` (from ``config.yaml``'s
+      ``tts.underlay_db`` or default -18 dB), mixed with dub WAV at 0 dB.
+      Re-encoded as AAC.
     - Cached at ``data/preview/{video_id}_{language}_dub_mix.mp4``.
     - Cache freshness: cached file's mtime must be newer than the dub WAV's
       mtime AND the raw MP4's mtime. Otherwise regenerate.
@@ -118,9 +115,13 @@ async def serve_preview_mix(video_id: str, language: str):
         )
     dub_wav = candidates[0]
 
-    # Determine underlay_db: prefer dub_meta, else default
-    meta = load_dub_meta(tts_dir, video_id, language)
-    underlay_db = meta.underlay_db if meta is not None else -18.0
+    # Determine underlay_db from config (same source the runner uses when
+    # generating the dub); fall back to the assembler's default of -18 dB.
+    cfg_underlay = get_config().get("tts", {}).get("underlay_db")
+    try:
+        underlay_db = float(cfg_underlay) if cfg_underlay is not None else -18.0
+    except (TypeError, ValueError):
+        underlay_db = -18.0
 
     # Output path + cache check
     preview_dir = Path("data/preview")
@@ -284,7 +285,7 @@ async def preview_frame(video_id: str, request: PreviewFrameRequest):
         )
 
     from src.processor.ffmpeg import FFmpegProcessor
-    from src.processor.style import SubtitleStyleSpec, load_style
+    from src.processor.style import load_style
     from src.processor.style_render import render_for_ffmpeg
 
     video_path = Path(video.file_path)
