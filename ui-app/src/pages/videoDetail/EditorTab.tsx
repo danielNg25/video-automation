@@ -251,14 +251,27 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete }: Props) {
   const handleAddSegment = useCallback(
     (afterIndex: number) => {
       setSegments((prev) => {
-        const afterSeg = prev[afterIndex];
-        const afterEnd = srtTimestampToSeconds(afterSeg.endTime);
-        const nextStart = afterIndex + 1 < prev.length
-          ? srtTimestampToSeconds(prev[afterIndex + 1].startTime)
-          : afterEnd + 2;
-        const gap = nextStart - afterEnd;
-        const newStart = afterEnd + 0.1;
-        const newEnd = afterEnd + Math.min(gap, 2);
+        let newStart: number;
+        let newEnd: number;
+        let insertAt: number;
+
+        if (afterIndex < 0 || prev.length === 0) {
+          // Empty-list case: insert a row at t=0 with up to 2s duration.
+          newStart = 0;
+          const cap = playerState.duration > 0 ? playerState.duration : 2;
+          newEnd = Math.min(2, cap);
+          insertAt = 0;
+        } else {
+          const afterSeg = prev[afterIndex];
+          const afterEnd = srtTimestampToSeconds(afterSeg.endTime);
+          const nextStart = afterIndex + 1 < prev.length
+            ? srtTimestampToSeconds(prev[afterIndex + 1].startTime)
+            : afterEnd + 2;
+          const gap = nextStart - afterEnd;
+          newStart = afterEnd + 0.1;
+          newEnd = afterEnd + Math.min(gap, 2);
+          insertAt = afterIndex + 1;
+        }
 
         const newSeg: SubtitleSegment = {
           id: Date.now(),
@@ -267,11 +280,11 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete }: Props) {
           text: '',
         };
         const result = [...prev];
-        result.splice(afterIndex + 1, 0, newSeg);
+        result.splice(insertAt, 0, newSeg);
         return result;
       });
     },
-    [],
+    [playerState.duration],
   );
 
   const handleTimelineResize = useCallback(

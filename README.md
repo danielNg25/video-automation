@@ -523,6 +523,20 @@ douyin-automation/
 
 ---
 
+### Subtitle Editor Bug Fixes (2026-05-29)
+
+> Sub-project 1 of 3 in the dub-sync rebuild. See [`docs/superpowers/specs/2026-05-29-subtitle-editor-bug-fixes-design.md`](docs/superpowers/specs/2026-05-29-subtitle-editor-bug-fixes-design.md) and [`docs/superpowers/plans/2026-05-29-subtitle-editor-bug-fixes.md`](docs/superpowers/plans/2026-05-29-subtitle-editor-bug-fixes.md).
+
+- [x] **Task 1** — Remove `onClick={onSeek}` from time inputs and textarea (+ regression test that the # index label still seeks)
+- [x] **Task 2** — Controlled time inputs via a `TimestampInput` subcomponent: live error border on invalid format, Enter commits, Esc reverts, parent enforces `start < end`; switched to derived-state reset to satisfy `react-hooks/set-state-in-effect`
+- [x] **Task 3** — Always-visible action toolbar on the active row; hover-only on inactive rows
+- [x] **Task 4** — Sticky `+ Add subtitle` button at list bottom; `EditorTab.handleAddSegment` guards `afterIndex < 0` for the empty-list case
+- [x] **Task 5** — CHANGELOG + README updates
+
+**Not in this PR:** subtitle versioning + dub-version picker (sub-project 2) and standalone text→voice tool (sub-project 3) — separate specs and PRs.
+
+---
+
 ### One-Time Setup Checklist
 
 - [ ] Docker installed, Douyin API container running
