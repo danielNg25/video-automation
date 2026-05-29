@@ -3,6 +3,12 @@ export interface TaskResponse {
   status: string;
 }
 
+export interface VersionEntry {
+  id: string;
+  name: string | null;
+  created_at: string;
+}
+
 export interface DubStatusEntry {
   language: string;
   out_of_sync: boolean;

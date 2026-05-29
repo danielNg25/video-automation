@@ -333,6 +333,7 @@ export interface TTSAudioEntry {
   voice: string;
   size: number;
   created_at: number;
+  version: string;
 }
 
 export async function deleteTTSAudio(videoId: string, filename: string): Promise<void> {
