@@ -432,6 +432,7 @@ class TTSAssembler:
         provider_name: str | None = None,  # kept for back-compat; no longer used
         underlay_db: float | None = None,  # kept for back-compat; no longer used
         version: str = "draft",
+        enable_shortening: bool = True,
     ) -> tuple[Path, list[dict]]:
         """Generate a full-length TTS audio track from subtitle segments.
 
@@ -482,7 +483,10 @@ class TTSAssembler:
                 playback_speed = None
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Generating dub for version={version} ...")
+        logger.info(
+            f"Generating dub for version={version} "
+            f"shortening={'on' if enable_shortening else 'off'}"
+        )
 
         voice = voice_profile["voice"]
         kwargs = {}
@@ -613,11 +617,21 @@ class TTSAssembler:
             )
 
             # === Stage 3: Batch re-synthesise shortened sentences ===
-            await self._apply_shortening(
-                plan=dub_plan, sentence_groups=sentence_groups, slots=slots,
-                provider=provider, voice=voice, kwargs=kwargs, tmp=tmp,
-                effective_speed=effective_speed,
-            )
+            if enable_shortening:
+                await self._apply_shortening(
+                    plan=dub_plan, sentence_groups=sentence_groups, slots=slots,
+                    provider=provider, voice=voice, kwargs=kwargs, tmp=tmp,
+                    effective_speed=effective_speed,
+                )
+            else:
+                # Shortening disabled — flag the planner's recommendations for
+                # visibility but don't ask the LLM to compress text. Clips that
+                # would have shortened may overrun; the atempo pass at
+                # effective_speed is still the only timing nudge they get.
+                for sp in dub_plan.sentences:
+                    if sp.shorten_pct < 1.0:
+                        sp.needs_review = True
+                        sp.reason = "shorten_disabled"
 
             if on_progress:
                 on_progress(total, total, "Shortening complete")

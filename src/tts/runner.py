@@ -131,6 +131,7 @@ async def run_tts_track(
     llm_backend: str | None = None,
     playback_speed: float | None = None,
     version: str = "draft",
+    enable_shortening: bool = True,
     on_progress: Callable[[int, int, str], None] | None = None,
 ) -> dict:
     # Coerce request-supplied playback_speed in case it arrived as a string
@@ -251,6 +252,7 @@ async def run_tts_track(
         language=language,
         provider_name=provider_name,
         underlay_db=underlay_db_val,
+        enable_shortening=enable_shortening,
     )
 
     # ── Output duration via ffprobe (informational) ────────────────

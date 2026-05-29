@@ -502,3 +502,84 @@ class TestBatchProcessorTTS:
             srt_path.unlink(missing_ok=True)
 
 
+class TestShorteningToggle:
+    @pytest.mark.asyncio
+    async def test_apply_shortening_skipped_when_disabled(self, tmp_path):
+        """generate_full_track must not call `_apply_shortening` when
+        enable_shortening=False. Planner-flagged sentences get
+        reason='shorten_disabled' so the audit trail makes the decision
+        visible."""
+        from unittest.mock import AsyncMock, patch
+
+        from src.tts.assembler import TTSAssembler
+
+        translator = AsyncMock()
+        translator.shorten_texts_batch = AsyncMock()
+        provider = AsyncMock()
+        provider.synthesize = AsyncMock(return_value=b"audio")
+
+        assembler = TTSAssembler(max_concurrent=2, translator=translator)
+
+        # Patch the assembler's _apply_shortening so we can assert it
+        # wasn't awaited. Patch the heavy ffmpeg/audio helpers so the
+        # function actually runs end-to-end on a mocked segment.
+        with patch.object(
+            assembler, "_apply_shortening", AsyncMock()
+        ) as apply_mock, patch(
+            "src.tts.assembler._get_audio_duration", return_value=2.0
+        ), patch(
+            "src.tts.assembler._concatenate_with_silence"
+        ):
+            await assembler.generate_full_track(
+                provider=provider,
+                segments=[{
+                    "start": 0.0, "end": 1.0,
+                    "text": "hi", "index": 0,
+                }],
+                voice_profile={"voice": "v"},
+                video_duration=1.0,
+                output_path=tmp_path / "out.wav",
+                playback_speed=1.5,
+                enable_shortening=False,
+            )
+
+        apply_mock.assert_not_awaited()
+        translator.shorten_texts_batch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_apply_shortening_called_when_enabled(self, tmp_path):
+        """The default path still calls `_apply_shortening` — the toggle is
+        opt-out, not opt-in."""
+        from unittest.mock import AsyncMock, patch
+
+        from src.tts.assembler import TTSAssembler
+
+        translator = AsyncMock()
+        provider = AsyncMock()
+        provider.synthesize = AsyncMock(return_value=b"audio")
+
+        assembler = TTSAssembler(max_concurrent=2, translator=translator)
+
+        with patch.object(
+            assembler, "_apply_shortening", AsyncMock()
+        ) as apply_mock, patch(
+            "src.tts.assembler._get_audio_duration", return_value=2.0
+        ), patch(
+            "src.tts.assembler._concatenate_with_silence"
+        ):
+            await assembler.generate_full_track(
+                provider=provider,
+                segments=[{
+                    "start": 0.0, "end": 1.0,
+                    "text": "hi", "index": 0,
+                }],
+                voice_profile={"voice": "v"},
+                video_duration=1.0,
+                output_path=tmp_path / "out.wav",
+                playback_speed=1.5,
+                enable_shortening=True,
+            )
+
+        apply_mock.assert_awaited_once()
+
+

@@ -242,6 +242,7 @@ class TTSRequest(BaseModel):
     # (1.5×) is used.
     playback_speed: float | None = None
     version: str = "draft"
+    enable_shortening: bool = True
 
 
 

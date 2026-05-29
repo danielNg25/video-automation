@@ -679,6 +679,7 @@ class TaskManager:
         llm_backend: str | None = None,
         playback_speed: float | None = None,
         version: str = "draft",
+        enable_shortening: bool = True,
     ):
         """Execute a TTS generation task in the background.
 
@@ -718,6 +719,7 @@ class TaskManager:
                 llm_backend=llm_backend,
                 playback_speed=playback_speed,
                 version=version,
+                enable_shortening=enable_shortening,
                 on_progress=on_progress,
             )
 

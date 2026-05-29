@@ -53,6 +53,7 @@ async def start_tts(request: TTSRequest):
             llm_backend=request.llm_backend,
             playback_speed=request.playback_speed,
             version=request.version,
+            enable_shortening=request.enable_shortening,
         )
     )
     return TaskResponse(task_id=task.task_id, status=task.status)
