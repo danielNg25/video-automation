@@ -142,6 +142,17 @@ function VideoDetailPage() {
     storageSet('tts_selected_provider', selectedTtsProvider);
   }, []); // run once on mount
 
+  // Auto-fetch the voice list whenever the relevant inputs change. Without
+  // this, opening DubTab on a fresh mount shows "Loading voices..." forever
+  // because nothing else triggers loadVoicesForProvider until the user
+  // manually changes a picker. Fires on mount with the default provider, on
+  // provider switch, when the per-provider API key finishes loading, and on
+  // language change (the closure captures ttsLanguage).
+  useEffect(() => {
+    if (!selectedTtsProvider) return;
+    loadVoicesForProvider(selectedTtsProvider, ttsApiKey || undefined);
+  }, [selectedTtsProvider, ttsApiKey, loadVoicesForProvider]);
+
   // Load video + supporting data on mount
   useEffect(() => {
     if (!videoId) return;
