@@ -559,6 +559,17 @@ douyin-automation/
 
 ---
 
+### Dub-Shortening Toggle (2026-05-29)
+
+> Bundled into PR #19 (subtitle versioning) per scope decision during brainstorming. See [`docs/superpowers/specs/2026-05-29-dub-shortening-toggle-design.md`](docs/superpowers/specs/2026-05-29-dub-shortening-toggle-design.md) and [`docs/superpowers/plans/2026-05-29-dub-shortening-toggle.md`](docs/superpowers/plans/2026-05-29-dub-shortening-toggle.md).
+
+- [x] **Task 1** — BE plumbing + gate: `enable_shortening: bool = True` threads from `TTSRequest` → `run_tts` → `run_tts_track` → `generate_full_track`; `_apply_shortening` is skipped when disabled and planner-flagged sentences get `reason="shorten_disabled"`. 2 new tests in `TestShorteningToggle`.
+- [x] **Task 2** — FE plumbing: `postTTS` gains `shortenToFit` as the 6th positional arg; VideoDetail owns the `enableShortening` state with localStorage persistence (`tts_enable_shortening`).
+- [x] **Task 3** — DubTab "Shorten dub to fit timeline" checkbox between Playback Speed and Underlay (3 vitest).
+- [x] **Task 4** — CHANGELOG + README updates.
+
+---
+
 ### One-Time Setup Checklist
 
 - [ ] Docker installed, Douyin API container running
