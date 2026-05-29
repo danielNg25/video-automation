@@ -49,6 +49,9 @@ interface Props {
   // future generate-preview wiring and parity with the legacy fragment).
   llmBackend: string;
   llmApiKey: string;
+  // Shortening toggle — wired in Task 3
+  enableShortening?: boolean;
+  onChangeEnableShortening?: (next: boolean) => void;
 }
 
 export function DubTab(props: Props) {

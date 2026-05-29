@@ -86,6 +86,10 @@ function VideoDetailPage() {
     const saved = parseFloat(storageGet('tts_underlay_db') || '');
     return Number.isFinite(saved) && saved >= -24 && saved <= 0 ? saved : -18;
   });
+  const [enableShortening, setEnableShortening] = useState<boolean>(() => {
+    const stored = storageGet('tts_enable_shortening');
+    return stored === null ? true : stored === 'true';
+  });
   const [useDirectVoice, setUseDirectVoice] = useState(false);
   const [isGeneratingTts, setIsGeneratingTts] = useState(false);
   const [ttsProgress, setTtsProgress] = useState({ pct: 0, message: '' });
@@ -151,6 +155,10 @@ function VideoDetailPage() {
     // Persist the current selection so future mounts can resolve per-provider keys.
     storageSet('tts_selected_provider', selectedTtsProvider);
   }, []); // run once on mount
+
+  useEffect(() => {
+    storageSet('tts_enable_shortening', String(enableShortening));
+  }, [enableShortening]);
 
   // Auto-fetch the voice list whenever the relevant inputs change. Without
   // this, opening DubTab on a fresh mount shows "Loading voices..." forever
@@ -272,6 +280,7 @@ function VideoDetailPage() {
         selectedTtsProvider,
         voiceForRequest,
         selectedVersion,
+        enableShortening,
         ttsApiKey || undefined,
         llmApiKey || undefined,
         llmBackend || undefined,
@@ -493,6 +502,8 @@ function VideoDetailPage() {
             onGenerate={handleGenerateTts}
             llmBackend={llmBackend}
             llmApiKey={llmApiKey}
+            enableShortening={enableShortening}
+            onChangeEnableShortening={setEnableShortening}
           />
         )}
 
