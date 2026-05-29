@@ -23,6 +23,7 @@ from pydantic import BaseModel
 SRT_DIR = Path("data/srt")
 TTS_DIR = Path("data/tts")
 _VERSION_ID_RE = re.compile(r"^v(\d+)$")
+_VERSION_SLOT_RE = re.compile(r"^v\d+$")
 
 
 class VersionEntry(BaseModel):
@@ -100,6 +101,71 @@ def snapshot_working_draft(
     entries.append(entry)
     save_versions(video_id, language, entries)
     return entry
+
+
+def ensure_migrated(video_id: str, language: str) -> None:
+    """Migrate legacy dub-sync layout to the versions layout on first read.
+
+    No-op once `versions.json` exists. Otherwise:
+      1. If `{id}_{lang}.dubsync.srt` exists, use it as both the v1 source
+         and the new working draft, deleting the dubsync.srt afterwards.
+         Else use `{id}_{lang}.srt` as the v1 source (working draft is
+         unchanged).
+      2. If neither legacy SRT exists, write an empty versions.json and
+         return — brand-new videos with no transcript yet.
+      3. Rename every `{id}_{lang}_{provider}_{voice}.wav` whose third
+         underscore-separated token isn't already `draft` or `v{N}` to
+         `{id}_{lang}_v1_{provider}_{voice}.wav`.
+      4. Delete `data/tts/{id}/dub_meta_{lang}.json` if present.
+      5. Delete `data/tts/{id}/segments/` if present.
+      6. Write a single-entry versions.json: id=v1, name="migrated",
+         created_at = source SRT mtime.
+    """
+    versions_path = _versions_path(video_id, language)
+    if versions_path.exists():
+        return
+
+    legacy_srt = SRT_DIR / f"{video_id}_{language}.srt"
+    legacy_dubsync = SRT_DIR / f"{video_id}_{language}.dubsync.srt"
+
+    if not legacy_srt.exists() and not legacy_dubsync.exists():
+        save_versions(video_id, language, [])
+        return
+
+    source = legacy_dubsync if legacy_dubsync.exists() else legacy_srt
+    source_mtime = source.stat().st_mtime
+    v1_path = SRT_DIR / f"{video_id}_{language}.v1.srt"
+    shutil.copy2(source, v1_path)
+    if source == legacy_dubsync:
+        shutil.copy2(legacy_dubsync, legacy_srt)
+        legacy_dubsync.unlink()
+
+    for wav in TTS_DIR.glob(f"{video_id}_{language}_*.wav"):
+        stem_parts = wav.stem.split("_")
+        if len(stem_parts) >= 3:
+            third = stem_parts[2]
+            if third == "draft" or _VERSION_SLOT_RE.match(third):
+                continue
+        new_name = (
+            f"{stem_parts[0]}_{stem_parts[1]}_v1_"
+            f"{'_'.join(stem_parts[2:])}.wav"
+        )
+        wav.rename(TTS_DIR / new_name)
+
+    meta_json = TTS_DIR / video_id / f"dub_meta_{language}.json"
+    if meta_json.exists():
+        meta_json.unlink()
+    seg_dir = TTS_DIR / video_id / "segments"
+    if seg_dir.exists():
+        shutil.rmtree(seg_dir)
+
+    save_versions(video_id, language, [
+        VersionEntry(
+            id="v1",
+            name="migrated",
+            created_at=datetime.fromtimestamp(source_mtime, tz=timezone.utc),
+        )
+    ])
 
 
 def delete_version(video_id: str, language: str, version_id: str) -> bool:
