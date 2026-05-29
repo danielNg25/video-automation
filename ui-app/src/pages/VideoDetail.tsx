@@ -16,6 +16,7 @@ import type {
   TTSProviderInfo, VoiceInfo,
 } from '../api/types';
 import { loadApiKeys, loadLLMPrefs, storageGet, storageSet } from '../utils/storage';
+import { useVersions } from '../hooks/useVersions';
 
 type Tab = 'editor' | 'translate' | 'dub' | 'export';
 
@@ -91,6 +92,10 @@ function VideoDetailPage() {
   const [ttsGenerated, setTtsGenerated] = useState(false);
   const [ttsError, setTtsError] = useState('');
   const [ttsList, setTtsList] = useState<TTSAudioEntry[]>([]);
+
+  // Version state (shared across Editor + Dub tabs)
+  const { versions, createSnapshot, rename, remove } = useVersions(videoId, ttsLanguage);
+  const [selectedVersion, setSelectedVersion] = useState('draft');
 
   // Export state
   const [isExporting, setIsExporting] = useState(false);
@@ -261,7 +266,7 @@ function VideoDetailPage() {
         ttsLanguage,
         selectedTtsProvider,
         voiceForRequest,
-        'draft',
+        selectedVersion,
         ttsApiKey || undefined,
         llmApiKey || undefined,
         llmBackend || undefined,
@@ -401,6 +406,10 @@ function VideoDetailPage() {
             videoId={videoMeta.video_id}
             initialVideo={videoMeta}
             onSyncComplete={refreshVideoMeta}
+            versions={versions}
+            onCreateSnapshot={createSnapshot}
+            onRenameVersion={rename}
+            onDeleteVersion={remove}
           />
         )}
 
@@ -427,6 +436,9 @@ function VideoDetailPage() {
         {activeTab === 'dub' && videoMeta && (
           <DubTab
             videoId={videoMeta.video_id}
+            versions={versions}
+            selectedVersion={selectedVersion}
+            onVersionChange={setSelectedVersion}
             ttsProviders={ttsProviders}
             selectedTtsProvider={selectedTtsProvider}
             onChangeTtsProvider={handleTtsProviderChange}

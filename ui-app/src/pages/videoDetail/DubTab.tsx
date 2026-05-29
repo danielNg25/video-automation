@@ -5,11 +5,16 @@ import { TTSPreview } from '../../components/TTSPreview';
 import { deleteTTSAudio, getTTSAudioUrl } from '../../api/client';
 import type { TTSAudioEntry } from '../../api/client';
 import type {
-  TTSProviderInfo, VoiceInfo,
+  TTSProviderInfo, VoiceInfo, VersionEntry,
 } from '../../api/types';
+import { VersionPicker } from '../../components/dub/VersionPicker';
 
 interface Props {
   videoId: string;
+  // Version state (parent owns)
+  versions: VersionEntry[];
+  selectedVersion: string;
+  onVersionChange: (v: string) => void;
   // Provider / voice state (parent owns)
   ttsProviders: TTSProviderInfo[];
   selectedTtsProvider: string;
@@ -49,6 +54,7 @@ interface Props {
 export function DubTab(props: Props) {
   const {
     videoId,
+    versions, selectedVersion, onVersionChange,
     ttsProviders, selectedTtsProvider, onChangeTtsProvider,
     ttsVoices, selectedVoiceId, onChangeSelectedVoiceId,
     voiceIdInput, onChangeVoiceIdInput, voiceIdSaved, onSaveVoiceId,
@@ -87,6 +93,13 @@ export function DubTab(props: Props) {
           {selectedTtsProvider}
         </span>
       </div>
+
+      {/* Version picker */}
+      <VersionPicker
+        versions={versions}
+        value={selectedVersion}
+        onChange={onVersionChange}
+      />
 
       {/* Provider + Language */}
       <div className="grid grid-cols-2 gap-3">
@@ -332,9 +345,14 @@ export function DubTab(props: Props) {
                   >
                     <span className="material-symbols-outlined text-sm">{isPlaying ? 'stop' : 'play_arrow'}</span>
                   </button>
-                  <div className="flex-1 min-w-0">
-                    <span className="text-[11px] font-semibold text-on-surface">{entry.voice}</span>
-                    <span className="text-[9px] text-zinc-500 ml-2">{entry.provider} · {entry.language} · {sizeMb}MB</span>
+                  <div className="flex-1 min-w-0 flex items-center gap-1.5 min-w-0">
+                    {entry.version && (
+                      <span className="shrink-0 bg-primary/15 text-primary text-[9px] font-semibold px-1.5 py-0.5 rounded">
+                        {entry.version}
+                      </span>
+                    )}
+                    <span className="text-[11px] font-semibold text-on-surface truncate">{entry.voice}</span>
+                    <span className="text-[9px] text-zinc-500 shrink-0">{entry.provider} · {entry.language} · {sizeMb}MB</span>
                   </div>
                   <span className="text-[9px] font-mono text-zinc-600">{ago}</span>
                   <button

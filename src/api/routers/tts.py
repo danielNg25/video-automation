@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -15,6 +16,15 @@ from src.api.models import (
     TTSRequest,
     VoiceInfo,
 )
+
+_FNAME_RE = re.compile(
+    r"^(?P<video_id>[^_]+)_(?P<lang>[^_]+)_(?P<version>v\d+|draft)_(?P<provider>[^_]+)_(?P<voice>.+)\.wav$"
+)
+
+
+def _parse_dub_filename(name: str) -> dict | None:
+    m = _FNAME_RE.match(name)
+    return m.groupdict() if m else None
 
 router = APIRouter()
 
@@ -89,14 +99,22 @@ async def list_tts_audio(video_id: str):
 
     results = []
     for f in tts_dir.glob(f"{video_id}_*.wav"):
-        # Parse filename: {video_id}_{lang}_{provider}_{voice}.wav
-        # or legacy: {video_id}_{lang}.wav
-        stem = f.stem  # without .wav
-        parts = stem[len(video_id) + 1:]  # remove "{video_id}_"
-        segments = parts.split("_", 2)  # lang, provider, voice
-        language = segments[0] if len(segments) >= 1 else "unknown"
-        provider = segments[1] if len(segments) >= 2 else "unknown"
-        voice = segments[2] if len(segments) >= 3 else ""
+        parsed = _parse_dub_filename(f.name)
+        if parsed:
+            language = parsed["lang"]
+            provider = parsed["provider"]
+            voice = parsed["voice"]
+            version = parsed["version"]
+        else:
+            # Legacy filename: {video_id}_{lang}_{provider}_{voice}.wav
+            # (or even older: {video_id}_{lang}.wav) — best-effort parse.
+            stem = f.stem
+            parts = stem[len(video_id) + 1:]
+            segments = parts.split("_", 2)
+            language = segments[0] if len(segments) >= 1 else "unknown"
+            provider = segments[1] if len(segments) >= 2 else "unknown"
+            voice = segments[2] if len(segments) >= 3 else ""
+            version = "v1"
 
         stat = f.stat()
         results.append({
@@ -104,6 +122,7 @@ async def list_tts_audio(video_id: str):
             "language": language,
             "provider": provider,
             "voice": voice,
+            "version": version,
             "size": stat.st_size,
             "created_at": os.path.getmtime(f),
         })

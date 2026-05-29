@@ -26,7 +26,7 @@ import {
   // postDubSync, // REMOVED IN TASK 12
 } from '../../api/client';
 // import { storageGet, loadApiKeys, loadLLMPrefs } from '../../utils/storage'; // REMOVED IN TASK 12
-import type { VideoMetadata, SubtitleSegment, SubtitleRegion } from '../../api/types';
+import type { VideoMetadata, SubtitleSegment, SubtitleRegion, VersionEntry } from '../../api/types';
 import type { SubtitleStyleSpec } from '../../api/types';
 
 type RightTab = 'segments' | 'style';
@@ -35,6 +35,11 @@ interface Props {
   videoId: string;
   initialVideo?: VideoMetadata;
   onSyncComplete?: () => void;
+  // Version props — consumed by Task 12; accepted but not yet used here.
+  versions?: VersionEntry[];
+  onCreateSnapshot?: (name: string | null) => Promise<void>;
+  onRenameVersion?: (versionId: string, name: string | null) => Promise<void>;
+  onDeleteVersion?: (versionId: string) => Promise<void>;
 }
 
 export function EditorTab({ videoId, initialVideo, onSyncComplete: _onSyncComplete }: Props) {
