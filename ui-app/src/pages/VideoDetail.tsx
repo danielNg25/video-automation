@@ -93,8 +93,13 @@ function VideoDetailPage() {
   const [ttsError, setTtsError] = useState('');
   const [ttsList, setTtsList] = useState<TTSAudioEntry[]>([]);
 
-  // Version state (shared across Editor + Dub tabs)
-  const { versions, createSnapshot, rename, remove } = useVersions(videoId, ttsLanguage);
+  // Editor active language — lifted here so useVersions tracks the language
+  // the user is actually editing, not the TTS dub language.
+  const [activeLang, setActiveLang] = useState('');
+
+  // Version state (shared across Editor + Dub tabs) — scoped to the language
+  // the user is editing so VersionPanel always shows the right snapshots.
+  const { versions, createSnapshot, rename, remove } = useVersions(videoId, activeLang);
   const [selectedVersion, setSelectedVersion] = useState('draft');
 
   // Export state
@@ -410,6 +415,8 @@ function VideoDetailPage() {
             onCreateSnapshot={createSnapshot}
             onRenameVersion={rename}
             onDeleteVersion={remove}
+            activeLang={activeLang}
+            onActiveLangChange={setActiveLang}
           />
         )}
 

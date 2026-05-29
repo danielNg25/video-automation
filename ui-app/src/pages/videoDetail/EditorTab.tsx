@@ -38,9 +38,11 @@ interface Props {
   onCreateSnapshot: (name: string | null) => Promise<void>;
   onRenameVersion: (versionId: string, name: string | null) => Promise<void>;
   onDeleteVersion: (versionId: string) => Promise<void>;
+  activeLang: string;
+  onActiveLangChange: (lang: string) => void;
 }
 
-export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, onRenameVersion, onDeleteVersion }: Props) {
+export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, onRenameVersion, onDeleteVersion, activeLang, onActiveLangChange }: Props) {
   // Video player
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playerState, playerControls] = useVideoPlayer(videoRef);
@@ -52,7 +54,6 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
   const [availableLangs, setAvailableLangs] = useState<string[]>(
     initialVideo?.srt_languages ?? [],
   );
-  const [activeLang, setActiveLang] = useState<string>('');
 
   // UI state
   const [rightTab, setRightTab] = useState<RightTab>('segments');
@@ -113,37 +114,23 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
       .catch(() => {});
   }, [videoId]);
 
-  // Default-language selection: prefer languages with a `dubsync.srt` on disk
-  // (vi > en), fall back to first non-Chinese SRT, then any SRT.
+  // Default-language selection: fall back to first non-Chinese SRT, then any SRT.
   useEffect(() => {
-    if (activeLang) return; // user already chose
+    if (activeLang) return; // user already chose (or parent already set a value)
     if (!video) return;
 
-    // Priority 1: language with a dubsync.srt (preferring vi over en)
-    const dubLangs = (video.dub_status ?? []).map((d) => d.language);
-    for (const candidate of ['vi', 'en']) {
-      if (dubLangs.includes(candidate)) {
-        setActiveLang(candidate);
-        return;
-      }
-    }
-    if (dubLangs.length > 0) {
-      setActiveLang(dubLangs[0]);
-      return;
-    }
-
-    // Priority 2: first non-Chinese SRT language
+    // Priority 1: first non-Chinese SRT language
     const nonZh = (video.srt_languages ?? []).filter((l) => l !== 'zh');
     if (nonZh.length > 0) {
-      setActiveLang(nonZh[0]);
+      onActiveLangChange(nonZh[0]);
       return;
     }
 
-    // Priority 3: any SRT language (including zh)
+    // Priority 2: any SRT language (including zh)
     if (video.srt_languages.length > 0) {
-      setActiveLang(video.srt_languages[0]);
+      onActiveLangChange(video.srt_languages[0]);
     }
-  }, [video, activeLang]);
+  }, [video, activeLang, onActiveLangChange]);
 
   useEffect(() => {
     if (!videoId || !activeLang) return;
@@ -473,7 +460,7 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
             {/* Language selector */}
             <select
               value={activeLang}
-              onChange={(e) => setActiveLang(e.target.value)}
+              onChange={(e) => onActiveLangChange(e.target.value)}
               className="bg-surface-container-lowest border border-outline-variant/20 text-[11px] rounded px-1.5 py-0.5 text-on-surface"
             >
               {availableLangs.map((l) => (
