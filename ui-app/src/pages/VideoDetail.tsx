@@ -261,6 +261,7 @@ function VideoDetailPage() {
         ttsLanguage,
         selectedTtsProvider,
         voiceForRequest,
+        'draft',
         ttsApiKey || undefined,
         llmApiKey || undefined,
         llmBackend || undefined,

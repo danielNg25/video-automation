@@ -23,9 +23,9 @@ import {
   deleteVideoStyle,
   getSubtitleStyleDefault,
   getSubtitleRegion,
-  postDubSync,
+  // postDubSync, // REMOVED IN TASK 12
 } from '../../api/client';
-import { storageGet, loadApiKeys, loadLLMPrefs } from '../../utils/storage';
+// import { storageGet, loadApiKeys, loadLLMPrefs } from '../../utils/storage'; // REMOVED IN TASK 12
 import type { VideoMetadata, SubtitleSegment, SubtitleRegion } from '../../api/types';
 import type { SubtitleStyleSpec } from '../../api/types';
 
@@ -37,7 +37,7 @@ interface Props {
   onSyncComplete?: () => void;
 }
 
-export function EditorTab({ videoId, initialVideo, onSyncComplete }: Props) {
+export function EditorTab({ videoId, initialVideo, onSyncComplete: _onSyncComplete }: Props) {
   // Video player
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playerState, playerControls] = useVideoPlayer(videoRef);
@@ -60,9 +60,9 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete }: Props) {
   const [useProxy, setUseProxy] = useState(true);
   const [videoLoading, setVideoLoading] = useState(true);
 
-  // Sync-Dub state
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncProgress, setSyncProgress] = useState({ pct: 0, message: '' });
+  // Sync-Dub state — setters unused until Task 12 rewires handleSyncDub
+  const [isSyncing, _setIsSyncing] = useState(false);
+  const [syncProgress, _setSyncProgress] = useState({ pct: 0, message: '' });
   const [syncError, setSyncError] = useState<string>('');
 
   // Subtitle style — new nested spec model
@@ -404,59 +404,8 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete }: Props) {
   );
   const isOutOfSync = Boolean(dubStatusForActive?.out_of_sync);
 
-  const handleSyncDub = useCallback(async () => {
-    if (!video || !activeLang) return;
-    setSyncError('');
-    setIsSyncing(true);
-    setSyncProgress({ pct: 0, message: 'Starting sync…' });
-
-    const provider = storageGet('tts_selected_provider') || 'google';
-    const voiceId = storageGet(`tts_voice_id_${provider}`) || '';
-    const playbackSpeed = parseFloat(storageGet('tts_playback_speed') || '1.5');
-    const underlayDb = parseFloat(storageGet('tts_underlay_db') || '-18');
-
-    const apiKeys = loadApiKeys();
-    const apiKey = apiKeys[provider] || undefined;
-
-    const llmPrefs = loadLLMPrefs();
-    const llmBackend = llmPrefs.backend;
-    const llmApiKey = apiKeys[llmBackend] || undefined;
-
-    try {
-      const { task_id } = await postDubSync(video.video_id, {
-        language: activeLang,
-        provider,
-        voice_id: voiceId,
-        playback_speed: playbackSpeed,
-        underlay_db: underlayDb,
-        api_key: apiKey,
-        llm_api_key: llmApiKey,
-        llm_backend: llmBackend,
-      });
-
-      const es = subscribeSSE(task_id, (eventType, data) => {
-        if (eventType === 'progress') {
-          const pct = typeof data.progress === 'number' ? Math.round(data.progress * 100) : 0;
-          const msg = typeof data.message === 'string' ? data.message : 'Syncing…';
-          setSyncProgress({ pct, message: msg });
-        } else if (eventType === 'complete') {
-          setIsSyncing(false);
-          setSyncProgress({ pct: 100, message: 'Dub synced.' });
-          es.close();
-          // Refresh the parent's video metadata so dub_status updates and the banner clears
-          onSyncComplete?.();
-        } else if (eventType === 'error') {
-          setIsSyncing(false);
-          const errMsg = typeof data.message === 'string' ? data.message : 'Sync failed';
-          setSyncError(errMsg);
-          es.close();
-        }
-      });
-    } catch (e) {
-      setIsSyncing(false);
-      setSyncError(e instanceof Error ? e.message : 'Sync failed');
-    }
-  }, [video, activeLang, onSyncComplete]);
+  // REMOVED IN TASK 12: postDubSync deleted; full Sync Dub wiring lands in Task 12
+  const handleSyncDub = () => {}; // REMOVED IN TASK 12
 
   // --- Preview burn-in ---
   const handlePreviewBurnIn = useCallback(async () => {

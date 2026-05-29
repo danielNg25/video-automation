@@ -70,8 +70,14 @@ export function getSampleFrameUrl(videoId: string, timestamp: number = 1.0): str
   return `${BASE}/videos/${videoId}/sample-frame?timestamp=${timestamp}`;
 }
 
-export function getSrt(videoId: string, language: string = 'zh'): Promise<SrtResponse> {
-  return request(`/videos/${videoId}/srt?language=${language}`);
+export function getSrt(
+  videoId: string,
+  language: string = 'zh',
+  version: string = 'draft',
+): Promise<SrtResponse> {
+  return request(
+    `/videos/${videoId}/srt?language=${language}&version=${version}`,
+  );
 }
 
 export function patchVideoTitle(videoId: string, title: string): Promise<VideoMetadata> {
@@ -287,6 +293,7 @@ export function postTTS(
   language: string,
   provider: string,
   voice: string,
+  version: string = 'draft',
   apiKey?: string,
   llmApiKey?: string,
   llmBackend?: string,
@@ -301,6 +308,7 @@ export function postTTS(
       language,
       provider,
       voice,
+      version,
       api_key: apiKey ?? null,
       llm_api_key: llmApiKey ?? null,
       llm_backend: llmBackend ?? null,
@@ -499,30 +507,6 @@ export async function postPreviewBlur(
     throw new Error(text || `Blur preview failed (${res.status})`);
   }
   return res.blob();
-}
-
-export interface SyncDubBody {
-  language: string;
-  provider: string;
-  voice_id: string;
-  playback_speed?: number;
-  underlay_db?: number;
-  api_key?: string;
-  llm_api_key?: string;
-  llm_backend?: string;
-}
-
-export async function postDubSync(videoId: string, body: SyncDubBody): Promise<{ task_id: string }> {
-  const res = await fetch(`${BASE}/videos/${videoId}/dub/sync`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const errBody = await res.text().catch(() => '');
-    throw new Error(`Sync Dub failed: ${res.status} ${errBody}`);
-  }
-  return res.json();
 }
 
 export function subscribeSSE(
