@@ -23,11 +23,10 @@ import {
   deleteVideoStyle,
   getSubtitleStyleDefault,
   getSubtitleRegion,
-  // postDubSync, // REMOVED IN TASK 12
 } from '../../api/client';
-// import { storageGet, loadApiKeys, loadLLMPrefs } from '../../utils/storage'; // REMOVED IN TASK 12
 import type { VideoMetadata, SubtitleSegment, SubtitleRegion, VersionEntry } from '../../api/types';
 import type { SubtitleStyleSpec } from '../../api/types';
+import { VersionPanel } from '../../components/editor/VersionPanel';
 
 type RightTab = 'segments' | 'style';
 
@@ -35,14 +34,13 @@ interface Props {
   videoId: string;
   initialVideo?: VideoMetadata;
   onSyncComplete?: () => void;
-  // Version props — consumed by Task 12; accepted but not yet used here.
-  versions?: VersionEntry[];
-  onCreateSnapshot?: (name: string | null) => Promise<void>;
-  onRenameVersion?: (versionId: string, name: string | null) => Promise<void>;
-  onDeleteVersion?: (versionId: string) => Promise<void>;
+  versions: VersionEntry[];
+  onCreateSnapshot: (name: string | null) => Promise<void>;
+  onRenameVersion: (versionId: string, name: string | null) => Promise<void>;
+  onDeleteVersion: (versionId: string) => Promise<void>;
 }
 
-export function EditorTab({ videoId, initialVideo, onSyncComplete: _onSyncComplete }: Props) {
+export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, onRenameVersion, onDeleteVersion }: Props) {
   // Video player
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playerState, playerControls] = useVideoPlayer(videoRef);
@@ -64,11 +62,6 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete: _onSyncComple
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [useProxy, setUseProxy] = useState(true);
   const [videoLoading, setVideoLoading] = useState(true);
-
-  // Sync-Dub state — setters unused until Task 12 rewires handleSyncDub
-  const [isSyncing, _setIsSyncing] = useState(false);
-  const [syncProgress, _setSyncProgress] = useState({ pct: 0, message: '' });
-  const [syncError, setSyncError] = useState<string>('');
 
   // Subtitle style — new nested spec model
   const [globalDefault, setGlobalDefault] = useState<SubtitleStyleSpec | null>(null);
@@ -402,16 +395,6 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete: _onSyncComple
     return () => window.removeEventListener('keydown', handler);
   }, [playerControls, playerState.currentTime, handleSave]);
 
-  // --- Sync-Dub ---
-
-  const dubStatusForActive = (video?.dub_status ?? []).find(
-    (d) => d.language === activeLang,
-  );
-  const isOutOfSync = Boolean(dubStatusForActive?.out_of_sync);
-
-  // REMOVED IN TASK 12: postDubSync deleted; full Sync Dub wiring lands in Task 12
-  const handleSyncDub = () => {}; // REMOVED IN TASK 12
-
   // --- Preview burn-in ---
   const handlePreviewBurnIn = useCallback(async () => {
     if (!videoId || previewLoading) return;
@@ -550,6 +533,23 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete: _onSyncComple
               </span>
               {saving ? 'Saving...' : 'Save'}
             </button>
+
+            <button
+              onClick={async () => {
+                if (saving) return;
+                if (isDirty) {
+                  // Ensure the working draft is up to date before snapshotting.
+                  await handleSave();
+                }
+                await onCreateSnapshot(null);
+              }}
+              disabled={saving || segments.length === 0}
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium bg-secondary/20 text-secondary hover:bg-secondary/30 transition-colors disabled:opacity-50"
+              title="Save current draft as the next auto-numbered version"
+            >
+              <span className="material-symbols-outlined text-sm">bookmark_add</span>
+              Save as version
+            </button>
           </div>
         </div>
 
@@ -609,46 +609,6 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete: _onSyncComple
               <span className="font-mono text-[9px] text-on-surface-variant self-center">
                 {segments.length} segments
               </span>
-            </div>
-
-            {/* Sync-Dub banner */}
-            <div className="mx-4 mt-3 space-y-2">
-              {isOutOfSync && !isSyncing && !syncError && (
-                <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs p-3 rounded-md flex items-center gap-3">
-                  <span className="material-symbols-outlined text-sm">sync_problem</span>
-                  <span className="flex-1">
-                    Dub for <code className="font-mono">{activeLang}</code> is out of sync with current subtitles.
-                  </span>
-                  <button
-                    onClick={handleSyncDub}
-                    className="bg-amber-500 text-zinc-900 px-3 py-1.5 rounded font-bold text-[10px] uppercase tracking-wider hover:bg-amber-400 transition-colors"
-                  >
-                    Sync Dub
-                  </button>
-                </div>
-              )}
-
-              {isSyncing && (
-                <div className="bg-amber-500/10 border border-amber-500/30 p-3 rounded-md space-y-1">
-                  <div className="flex justify-between text-[10px] font-mono text-amber-300">
-                    <span>{syncProgress.message}</span>
-                    <span>{syncProgress.pct}%</span>
-                  </div>
-                  <div className="w-full bg-amber-500/20 h-1.5 rounded-full overflow-hidden">
-                    <div className="h-full bg-amber-400 transition-all" style={{ width: `${syncProgress.pct}%` }} />
-                  </div>
-                </div>
-              )}
-
-              {syncError && (
-                <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-xs p-3 rounded-md flex items-center gap-2">
-                  <span className="material-symbols-outlined text-sm">error</span>
-                  <span className="flex-1">Sync failed: {syncError}</span>
-                  <button onClick={() => setSyncError('')} className="text-red-300 hover:text-red-200">
-                    <span className="material-symbols-outlined text-sm">close</span>
-                  </button>
-                </div>
-              )}
             </div>
 
             {/* Tab content */}
@@ -711,6 +671,18 @@ export function EditorTab({ videoId, initialVideo, onSyncComplete: _onSyncComple
                   </div>
                 </div>
               )}
+            </div>
+
+            <div className="px-4 pb-4">
+              <VersionPanel
+                versions={versions}
+                onRename={(id, name) => onRenameVersion(id, name)}
+                onDelete={(id) => {
+                  if (confirm(`Delete ${id}? This also deletes any dub WAVs generated from this version.`)) {
+                    onDeleteVersion(id);
+                  }
+                }}
+              />
             </div>
           </div>
         </div>
