@@ -68,17 +68,17 @@ def _build_dub_status(video_id: str) -> list[dict]:
     """Enumerate languages with a persisted dub; flag which are out-of-sync.
 
     Sources:
-    - ``data/tts/{video_id}/dub_meta_{lang}.json`` — populated by the dub-sync
-      feature on first dub. Carries last-synced timestamp.
-    - ``data/srt/{video_id}_{lang}.dubsync.srt`` — populated by every dub
+    - ``data/tts/{video_id}/dub_meta_{lang}.json`` — legacy files written by
+      the old dub-sync system. Still read during migration to detect pre-v1
+      dubs; deleted by ``ensure_migrated``.
+    - ``data/srt/{video_id}_{lang}.dubsync.srt`` — written by every dub
       generation (legacy included). Presence = a dub exists for {lang}.
 
     A language is reported ``out_of_sync`` when:
     - it's listed in ``PipelineState.dub_out_of_sync_languages`` (edits since
       the last dub), OR
-    - it has a ``dubsync.srt`` but no ``dub_meta_{lang}.json`` (legacy dub —
-      we can't verify sync state without meta, so prompt the user to re-sync,
-      which populates the cache + meta).
+    - it has a ``dubsync.srt`` but no ``dub_meta_{lang}.json`` (legacy pre-v1
+      dub — we can't verify sync state; user should regenerate the dub).
     """
     import datetime as dt
 
@@ -90,7 +90,7 @@ def _build_dub_status(video_id: str) -> list[dict]:
     state = PipelineState.load(video_id)
     out_of_sync = set(state.dub_out_of_sync_languages)
 
-    # Languages with a dub_meta_*.json (modern dubs)
+    # Languages with a legacy dub_meta_*.json (pre-v1 dubs; deleted by migration)
     meta_languages: dict[str, float] = {}  # language → meta mtime
     if tts_data_dir.exists():
         for meta_file in tts_data_dir.glob("dub_meta_*.json"):
@@ -295,7 +295,7 @@ class TaskManager:
             except OSError as e:
                 logger.warning(f"Failed to delete {tts}: {e}")
 
-        # TTS per-segment cache + dub_meta (data/tts/{video_id}/)
+        # TTS per-version segment directory (data/tts/{video_id}/)
         tts_cache_dir = tts_dir / video_id
         if tts_cache_dir.exists():
             try:

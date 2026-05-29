@@ -251,16 +251,6 @@ class TTSRequest(BaseModel):
     version: str = "draft"
 
 
-class SyncDubRequest(BaseModel):
-    language: str
-    provider: str
-    voice_id: str
-    playback_speed: float = 1.5
-    underlay_db: float = -18.0
-    api_key: str | None = None
-    llm_api_key: str | None = None    # for LLM shortening (Stage 3)
-    llm_backend: str | None = None    # anthropic / openai / deepseek
-
 
 class TTSPreviewRequest(BaseModel):
     text: str

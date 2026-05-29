@@ -6,8 +6,8 @@ The working draft itself is NOT a version — it's the unsuffixed
 `{video_id}_{language}.v{N}.srt` and are indexed in a per-(video, language)
 `{video_id}_{language}.versions.json`.
 
-Migration from the legacy dubsync.srt / dub_meta layout lives in
-`migration.py`; this module is pure version-set bookkeeping.
+Migration from the legacy dubsync.srt layout lives in the
+``ensure_migrated`` function below; this module is pure version-set bookkeeping.
 """
 
 from __future__ import annotations
