@@ -171,7 +171,11 @@ export function SegmentList({
               <TimestampInput value={seg.endTime} onCommit={commitEnd(i)} />
 
               <div className="flex-1" />
-              <div className="opacity-0 group-hover:opacity-100 flex gap-0.5 transition-opacity">
+              <div
+                className={`flex gap-0.5 transition-opacity ${
+                  isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                }`}
+              >
                 <button
                   onClick={() => onSplit(i, currentTime)}
                   className="p-0.5 rounded hover:bg-primary/10 text-on-surface-variant hover:text-primary"

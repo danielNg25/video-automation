@@ -128,3 +128,23 @@ describe('SegmentList — time inputs are controlled with validation feedback', 
     expect(props.onUpdate).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('SegmentList — toolbar visibility', () => {
+  it('on the active row, the toolbar wrapper does not use the opacity-0 hover gate', () => {
+    // currentTime = 1.0 falls inside segment 1 (00:00:00 → 00:00:04). That row is active.
+    renderList({ currentTime: 1.0 });
+    const addBtn = screen.getAllByTitle(/add segment after/i)[0];
+    const toolbar = addBtn.parentElement!;
+    expect(toolbar.className).not.toMatch(/opacity-0/);
+  });
+
+  it('on an inactive row, the toolbar still uses opacity-0 / group-hover', () => {
+    // currentTime = 1.0 → segment 2 (at index 1) is inactive.
+    renderList({ currentTime: 1.0 });
+    const addBtns = screen.getAllByTitle(/add segment after/i);
+    // addBtns[1] is the second row's add button (inactive).
+    const inactiveToolbar = addBtns[1].parentElement!;
+    expect(inactiveToolbar.className).toMatch(/opacity-0/);
+    expect(inactiveToolbar.className).toMatch(/group-hover:opacity-100/);
+  });
+});
