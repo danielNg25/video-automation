@@ -67,7 +67,7 @@ async def sync_dub(video_id: str, request: SyncDubRequest):
     from src.api.routers.transcribe import _resolve_srt_path
     from src.processor.subtitle import parse_srt
 
-    srt_path, _ = _resolve_srt_path(video_id, request.language)
+    srt_path = _resolve_srt_path(video_id, request.language)
     if not srt_path.exists():
         raise HTTPException(
             status_code=404,

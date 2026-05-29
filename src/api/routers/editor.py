@@ -29,8 +29,6 @@ from src.processor.subtitle import (
     parse_srt,
     write_srt,
 )
-from src.tts.base import _clean_text
-from src.tts.dub_meta import load_dub_meta
 
 router = APIRouter()
 
@@ -178,25 +176,6 @@ async def serve_proxy_video(video_id: str):
     )
 
 
-def _check_dub_sync_against_meta(
-    data_dir: Path, video_id: str, language: str, new_texts: list[str]
-) -> bool:
-    """Return True if the dub is out of sync with the new SRT texts.
-
-    Compares cleaned per-segment text against the recorded ``segment_texts``
-    in ``dub_meta_{language}.json``. If no metadata exists, the dub has not
-    been generated for this language yet — no sync needed, return False.
-    """
-    meta = load_dub_meta(data_dir, video_id, language)
-    if meta is None:
-        return False
-    if len(meta.segment_texts) != len(new_texts):
-        return True
-    for old, new in zip(meta.segment_texts, new_texts):
-        if _clean_text(old) != _clean_text(new):
-            return True
-    return False
-
 
 @router.get("/api/videos/{video_id}/style")
 async def get_video_style(video_id: str):
@@ -252,76 +231,39 @@ async def delete_video_style(video_id: str):
 
 @router.put("/api/videos/{video_id}/srt", response_model=SrtResponse)
 async def save_srt(video_id: str, request: SaveSrtRequest):
-    """Save edited subtitle segments back to SRT file."""
+    """Overwrite the working-draft SRT for this (video, language).
+
+    Snapshots are immutable — the editor never writes them. The DubTab's
+    'Save as version' button uses POST /api/videos/{id}/versions to
+    create a snapshot from the current working draft.
+    """
+    from src.api.versions import ensure_migrated
+
     tm = get_task_manager()
     video = tm.video_index.get(video_id)
     if not video:
         raise HTTPException(status_code=404, detail=f"Video {video_id} not found")
 
-    # Resolve where to write: dubsync.srt when present, legacy otherwise.
-    srt_path, is_dubsync = _resolve_srt_path(video_id, request.language)
+    ensure_migrated(video_id, request.language)
+    srt_path = _resolve_srt_path(video_id, request.language, "draft")
+    srt_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Convert SubtitleSegment timestamps (HH:MM:SS,mmm) to seconds
-    segments = []
-    for seg in request.segments:
-        segments.append(
-            {
-                "start": _timestamp_to_seconds(seg.startTime),
-                "end": _timestamp_to_seconds(seg.endTime),
-                "text": seg.text,
-            }
-        )
-
+    segments = [
+        {
+            "index": seg.id,
+            "start": _timestamp_to_seconds(seg.startTime),
+            "end": _timestamp_to_seconds(seg.endTime),
+            "text": seg.text,
+        }
+        for seg in request.segments
+    ]
     write_srt(segments, srt_path)
-
-    # Update video index srt_languages
-    if request.language not in video.srt_languages:
-        video.srt_languages.append(request.language)
-        video.srt_languages.sort()
-        video.has_srt = True
-
-    # Check if this edit puts the dub out of sync with the saved dub_meta.
-    from src.utils.state import PipelineState
-
-    tts_data_dir = Path("data/tts")
-    new_texts = [seg["text"] for seg in segments]
-    is_dub_out_of_sync = _check_dub_sync_against_meta(
-        tts_data_dir, video_id, request.language, new_texts
-    )
-
-    state = PipelineState.load(video_id)
-    state_changed = False
-    if is_dub_out_of_sync:
-        if request.language not in state.dub_out_of_sync_languages:
-            state.dub_out_of_sync_languages.append(request.language)
-            state_changed = True
-    else:
-        if request.language in state.dub_out_of_sync_languages:
-            state.dub_out_of_sync_languages.remove(request.language)
-            state_changed = True
-    if state_changed:
-        state.save()
-
-    # Re-parse to return fresh data
-    parsed = parse_srt(srt_path)
-    response_segments = []
-    for i, seg in enumerate(parsed, start=1):
-        from src.processor.subtitle import _seconds_to_srt_timestamp
-
-        response_segments.append(
-            SubtitleSegment(
-                id=i,
-                startTime=_seconds_to_srt_timestamp(seg["start"]),
-                endTime=_seconds_to_srt_timestamp(seg["end"]),
-                text=seg["text"],
-            )
-        )
 
     return SrtResponse(
         video_id=video_id,
-        segments=response_segments,
+        segments=request.segments,
         language=request.language,
-        is_dubsync=is_dubsync,
+        is_dubsync=False,
     )
 
 
