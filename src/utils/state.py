@@ -34,7 +34,6 @@ class PipelineState:
     progress: float = 0.0  # 0.0–1.0
     message: str = ""  # human-readable progress message
     completed_stages: list[str] = field(default_factory=list)
-    dub_out_of_sync_languages: list[str] = field(default_factory=list)
     stage_results: dict = field(default_factory=dict)
     timestamps: dict = field(default_factory=dict)
     error: str | None = None

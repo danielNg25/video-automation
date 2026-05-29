@@ -195,10 +195,10 @@ async def _run_full_pipeline(
                 srt_langs = sorted({
                     p.stem.split("_", 1)[-1]
                     for p in srt_dir.glob(f"{vid}_*.srt")
+                    if "." not in p.stem  # skip .v{N}.srt snapshots
                 })
                 thumb_path = Path(f"data/raw/{vid}_thumb.jpg")
                 size_bytes = raw_path.stat().st_size if raw_path.exists() else 0
-                from src.api.task_manager import _build_dub_status
                 tm.video_index[vid] = VideoResponse(
                     video_id=vid,
                     title=saved_meta.get("title", vid),
@@ -215,7 +215,6 @@ async def _run_full_pipeline(
                     has_srt=bool(srt_langs),
                     srt_languages=srt_langs,
                     status="transcribed" if srt_langs else "downloaded",
-                    dub_status=_build_dub_status(vid),
                 )
 
             tm._emit(task_id, "complete", result)

@@ -16,7 +16,6 @@ import {
   subscribeSSE,
   getProcessedVideoUrl,
   getProxyVideoUrl,
-  getPreviewMixUrl,
   getVideoStyle,
   putVideoStyle,
   putSubtitleStyleDefault,
@@ -426,17 +425,8 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
 
   if (!videoId) return <div className="p-6 text-on-surface">No video ID</div>;
 
-  // Prefer the dub-mixed preview MP4 when the active language has a dub, so
-  // users hear the dub (with the original Chinese at underlay_db) instead of
-  // the raw original. Falls back to raw / proxy for languages without a dub
-  // or when viewing zh.
-  const hasDubForActiveLang = (video?.dub_status ?? []).some(
-    (d) => d.language === activeLang,
-  );
   const videoSrc = video
-    ? (hasDubForActiveLang && activeLang && activeLang !== 'zh'
-        ? getPreviewMixUrl(videoId, activeLang)
-        : (useProxy ? getProxyVideoUrl(videoId) : getRawVideoUrl(videoId)))
+    ? (useProxy ? getProxyVideoUrl(videoId) : getRawVideoUrl(videoId))
     : '';
 
   // Source dimensions for StylePanel — VideoMetadata has no width/height fields;

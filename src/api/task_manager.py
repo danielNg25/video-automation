@@ -64,74 +64,6 @@ def _detect_video_status(video_id: str, has_srt: bool, srt_langs: list[str]) -> 
     return "downloaded"
 
 
-def _build_dub_status(video_id: str) -> list[dict]:
-    """Enumerate languages with a persisted dub; flag which are out-of-sync.
-
-    Sources:
-    - ``data/tts/{video_id}/dub_meta_{lang}.json`` — legacy files written by
-      the old dub-sync system. Still read during migration to detect pre-v1
-      dubs; deleted by ``ensure_migrated``.
-    - ``data/srt/{video_id}_{lang}.dubsync.srt`` — written by every dub
-      generation (legacy included). Presence = a dub exists for {lang}.
-
-    A language is reported ``out_of_sync`` when:
-    - it's listed in ``PipelineState.dub_out_of_sync_languages`` (edits since
-      the last dub), OR
-    - it has a ``dubsync.srt`` but no ``dub_meta_{lang}.json`` (legacy pre-v1
-      dub — we can't verify sync state; user should regenerate the dub).
-    """
-    import datetime as dt
-
-    from src.utils.state import PipelineState
-
-    tts_data_dir = Path("data/tts") / video_id
-    srt_dir = Path("data/srt")
-
-    state = PipelineState.load(video_id)
-    out_of_sync = set(state.dub_out_of_sync_languages)
-
-    # Languages with a legacy dub_meta_*.json (pre-v1 dubs; deleted by migration)
-    meta_languages: dict[str, float] = {}  # language → meta mtime
-    if tts_data_dir.exists():
-        for meta_file in tts_data_dir.glob("dub_meta_*.json"):
-            lang = meta_file.stem.replace("dub_meta_", "", 1)
-            meta_languages[lang] = meta_file.stat().st_mtime
-
-    # Languages with a dubsync.srt (covers legacy dubs too)
-    srt_languages: dict[str, float] = {}  # language → srt mtime
-    for srt_file in srt_dir.glob(f"{video_id}_*.dubsync.srt"):
-        # stem is like "{video_id}_vi.dubsync"
-        stem = srt_file.stem
-        if not stem.endswith(".dubsync"):
-            continue
-        lang_part = stem[: -len(".dubsync")]
-        prefix = f"{video_id}_"
-        if not lang_part.startswith(prefix):
-            continue
-        lang = lang_part[len(prefix):]
-        if lang:
-            srt_languages[lang] = srt_file.stat().st_mtime
-
-    # Union: a dub exists if EITHER meta OR dubsync.srt does
-    all_languages = set(meta_languages.keys()) | set(srt_languages.keys())
-
-    entries = []
-    for lang in all_languages:
-        # last_synced_at: prefer meta mtime, else dubsync.srt mtime
-        mtime = meta_languages.get(lang, srt_languages.get(lang, 0.0))
-        last_synced_at = (
-            dt.datetime.utcfromtimestamp(mtime).isoformat() + "Z" if mtime > 0 else ""
-        )
-        # Legacy (no meta) → always out of sync until user syncs
-        is_legacy_no_meta = lang not in meta_languages and lang in srt_languages
-        entries.append({
-            "language": lang,
-            "out_of_sync": (lang in out_of_sync) or is_legacy_no_meta,
-            "last_synced_at": last_synced_at,
-        })
-    return sorted(entries, key=lambda e: e["language"])
-
-
 class TaskManager:
     def __init__(self):
         self.tasks: dict[str, Task] = {}
@@ -155,16 +87,13 @@ class TaskManager:
 
             srt_dir = Path("data/srt")
 
-            def _parse_srt_lang(stem: str) -> str:
-                """Extract language code from SRT filename stem, stripping .dubsync suffix."""
-                lang = stem.split("_")[-1]
-                if lang.endswith(".dubsync"):
-                    lang = lang[: -len(".dubsync")]
-                return lang
-
+            # Working-draft SRTs only: skip any stem containing a '.' (catches
+            # .v{N}.srt snapshots and any leftover .dubsync.srt from incomplete
+            # migrations).
             srt_langs = sorted({
-                _parse_srt_lang(f.stem)
+                f.stem.split("_")[-1]
                 for f in srt_dir.glob(f"{video_id}_*.srt")
+                if "." not in f.stem
             })
             has_srt = len(srt_langs) > 0
 
@@ -210,7 +139,6 @@ class TaskManager:
                 has_srt=has_srt,
                 srt_languages=srt_langs,
                 status=_detect_video_status(video_id, has_srt, srt_langs),
-                dub_status=_build_dub_status(video_id),
             )
 
         logger.info(f"Scanned {len(self.video_index)} existing videos")
@@ -532,7 +460,6 @@ class TaskManager:
                 thumbnail=thumbnail,
                 has_srt=False,
                 status="downloaded",
-                dub_status=_build_dub_status(video_id),
             )
             self.video_index[video_id] = video_resp
 
@@ -1017,7 +944,6 @@ class TaskManager:
                 thumbnail=thumbnail,
                 has_srt=False,
                 status="downloaded",
-                dub_status=_build_dub_status(video_id),
             )
             self.video_index[video_id] = video_resp
             task.video_id = video_id
