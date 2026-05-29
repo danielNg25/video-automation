@@ -559,16 +559,18 @@ class TestDefaultTtsMixForPlatform:
         assert abs(result["original_volume"] - 0.25119) < 1e-3
 
 
-class TestSubtitleSelectionPrefersDubsync:
-    def test_dubsync_preferred_over_legacy(self, tmp_path):
+class TestSubtitleSelection:
+    def test_working_draft_srt_is_used(self, tmp_path):
         from src.processor.subtitle import select_subtitle_for_platform
-        (tmp_path / "abc_vi.srt").write_text("1\n00:00:00,000 --> 00:00:01,000\nold\n\n")
-        (tmp_path / "abc_vi.dubsync.srt").write_text("1\n00:00:00,000 --> 00:00:01,000\nnew\n\n")
+        (tmp_path / "abc_vi.srt").write_text("1\n00:00:00,000 --> 00:00:01,000\nworking draft\n\n")
         out = select_subtitle_for_platform("abc", "tiktok", tmp_path, {"subtitle_language": "vi"})
-        assert out.name == "abc_vi.dubsync.srt"
+        assert out.name == "abc_vi.srt"
 
-    def test_legacy_used_when_dubsync_missing(self, tmp_path):
+    def test_stale_dubsync_is_ignored(self, tmp_path):
+        """If a pre-migration .dubsync.srt slips through, the burn-in
+        ignores it and reads the working draft only."""
         from src.processor.subtitle import select_subtitle_for_platform
-        (tmp_path / "abc_vi.srt").write_text("1\n00:00:00,000 --> 00:00:01,000\nlegacy\n\n")
+        (tmp_path / "abc_vi.srt").write_text("1\n00:00:00,000 --> 00:00:01,000\nworking\n\n")
+        (tmp_path / "abc_vi.dubsync.srt").write_text("1\n00:00:00,000 --> 00:00:01,000\nstale\n\n")
         out = select_subtitle_for_platform("abc", "tiktok", tmp_path, {"subtitle_language": "vi"})
         assert out.name == "abc_vi.srt"
