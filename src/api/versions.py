@@ -14,12 +14,14 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
 from pydantic import BaseModel
 
 SRT_DIR = Path("data/srt")
+TTS_DIR = Path("data/tts")
 _VERSION_ID_RE = re.compile(r"^v(\d+)$")
 
 
@@ -36,7 +38,8 @@ def _versions_path(video_id: str, language: str) -> Path:
 
 
 def load_versions(video_id: str, language: str) -> list[VersionEntry]:
-    """Return the sorted-by-creation-time list of snapshots, or [] if none."""
+    """Return snapshots in their stored order (= insertion order, which
+    is creation order under normal use), or [] if the file is missing."""
     path = _versions_path(video_id, language)
     if not path.exists():
         return []
@@ -82,8 +85,6 @@ def snapshot_working_draft(
     """Copy the current working-draft SRT to a new snapshot path and append
     an entry to versions.json. Raises FileNotFoundError if the working
     draft doesn't exist (caller should ensure_migrated first)."""
-    import shutil
-
     working_draft = SRT_DIR / f"{video_id}_{language}.srt"
     if not working_draft.exists():
         raise FileNotFoundError(
@@ -92,7 +93,7 @@ def snapshot_working_draft(
     entries = load_versions(video_id, language)
     new_id = next_version_id(entries)
     snap_path = SRT_DIR / f"{video_id}_{language}.{new_id}.srt"
-    shutil.copy(working_draft, snap_path)
+    shutil.copy2(working_draft, snap_path)
     entry = VersionEntry(
         id=new_id, name=name, created_at=datetime.now(timezone.utc)
     )
@@ -114,8 +115,7 @@ def delete_version(video_id: str, language: str, version_id: str) -> bool:
     if snap_path.exists():
         snap_path.unlink()
     # Delete every dub WAV that names this version.
-    tts_dir = Path("data/tts")
-    for wav in tts_dir.glob(
+    for wav in TTS_DIR.glob(
         f"{video_id}_{language}_{version_id}_*.wav"
     ):
         wav.unlink()
