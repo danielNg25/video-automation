@@ -172,4 +172,12 @@ describe('SegmentList — sticky "+ Add subtitle" button', () => {
     fireEvent.click(perRow);
     expect(props.onAdd).toHaveBeenCalledWith(0);
   });
+
+  it('the bottom button lives outside the scrollable list container', () => {
+    const { container } = renderList();
+    const scrollable = container.querySelector('[class*="overflow-y-auto"]') as HTMLElement;
+    const btn = screen.getByRole('button', { name: /add subtitle/i });
+    expect(scrollable).toBeTruthy();
+    expect(scrollable.contains(btn)).toBe(false);
+  });
 });

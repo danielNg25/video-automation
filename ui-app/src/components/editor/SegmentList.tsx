@@ -137,91 +137,93 @@ export function SegmentList({
   );
 
   return (
-    <div ref={listRef} className="flex-1 overflow-y-auto pr-1">
-      <div className="space-y-1">
-        {segments.length === 0 && (
-          <div className="text-center text-on-surface-variant text-xs py-8">
-            No subtitle segments
-          </div>
-        )}
-
-        {segments.map((seg, i) => {
-        const isActive = i === activeIndex;
-        const startSec = srtTimestampToSeconds(seg.startTime);
-
-        return (
-          <div
-            key={seg.id}
-            ref={isActive ? activeRef : undefined}
-            className={`group rounded-lg border px-3 py-2 transition-colors ${
-              isActive
-                ? 'border-primary/40 bg-primary/5'
-                : 'border-outline-variant/10 bg-surface-container-lowest hover:border-outline-variant/20'
-            }`}
-          >
-            <div className="flex items-center gap-2 mb-1.5">
-              <span
-                className="font-mono text-[9px] text-on-surface-variant w-5 text-right cursor-pointer hover:text-primary"
-                onClick={() => onSeek(startSec)}
-                title="Click to jump video to this segment"
-              >
-                {i + 1}
-              </span>
-              <TimestampInput value={seg.startTime} onCommit={commitStart(i)} />
-              <span className="text-[9px] text-on-surface-variant">→</span>
-              <TimestampInput value={seg.endTime} onCommit={commitEnd(i)} />
-
-              <div className="flex-1" />
-              <div
-                className={`flex gap-0.5 transition-opacity ${
-                  isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                }`}
-              >
-                <button
-                  onClick={() => onSplit(i, currentTime)}
-                  className="p-0.5 rounded hover:bg-primary/10 text-on-surface-variant hover:text-primary"
-                  title="Split at playhead"
-                >
-                  <span className="material-symbols-outlined text-[14px]">content_cut</span>
-                </button>
-                {i < segments.length - 1 && (
-                  <button
-                    onClick={() => onMerge(i)}
-                    className="p-0.5 rounded hover:bg-primary/10 text-on-surface-variant hover:text-primary"
-                    title="Merge with next"
-                  >
-                    <span className="material-symbols-outlined text-[14px]">merge</span>
-                  </button>
-                )}
-                <button
-                  onClick={() => onAdd(i)}
-                  className="p-0.5 rounded hover:bg-primary/10 text-on-surface-variant hover:text-primary"
-                  title="Add segment after"
-                >
-                  <span className="material-symbols-outlined text-[14px]">add</span>
-                </button>
-                <button
-                  onClick={() => onDelete(i)}
-                  className="p-0.5 rounded hover:bg-red-500/10 text-on-surface-variant hover:text-red-400"
-                  title="Delete segment"
-                >
-                  <span className="material-symbols-outlined text-[14px]">delete</span>
-                </button>
-              </div>
+    <div className="flex-1 min-h-0 flex flex-col">
+      <div ref={listRef} className="flex-1 overflow-y-auto pr-1">
+        <div className="space-y-1">
+          {segments.length === 0 && (
+            <div className="text-center text-on-surface-variant text-xs py-8">
+              No subtitle segments
             </div>
+          )}
 
-            <textarea
-              className="w-full bg-transparent text-xs text-on-surface resize-none border-none outline-none leading-relaxed min-h-[1.5em]"
-              value={seg.text}
-              rows={Math.max(1, seg.text.split('\n').length)}
-              onChange={(e) => onUpdate(i, { ...seg, text: e.target.value })}
-            />
-          </div>
-        );
-      })}
+          {segments.map((seg, i) => {
+          const isActive = i === activeIndex;
+          const startSec = srtTimestampToSeconds(seg.startTime);
+
+          return (
+            <div
+              key={seg.id}
+              ref={isActive ? activeRef : undefined}
+              className={`group rounded-lg border px-3 py-2 transition-colors ${
+                isActive
+                  ? 'border-primary/40 bg-primary/5'
+                  : 'border-outline-variant/10 bg-surface-container-lowest hover:border-outline-variant/20'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-1.5">
+                <span
+                  className="font-mono text-[9px] text-on-surface-variant w-5 text-right cursor-pointer hover:text-primary"
+                  onClick={() => onSeek(startSec)}
+                  title="Click to jump video to this segment"
+                >
+                  {i + 1}
+                </span>
+                <TimestampInput value={seg.startTime} onCommit={commitStart(i)} />
+                <span className="text-[9px] text-on-surface-variant">→</span>
+                <TimestampInput value={seg.endTime} onCommit={commitEnd(i)} />
+
+                <div className="flex-1" />
+                <div
+                  className={`flex gap-0.5 transition-opacity ${
+                    isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                  }`}
+                >
+                  <button
+                    onClick={() => onSplit(i, currentTime)}
+                    className="p-0.5 rounded hover:bg-primary/10 text-on-surface-variant hover:text-primary"
+                    title="Split at playhead"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">content_cut</span>
+                  </button>
+                  {i < segments.length - 1 && (
+                    <button
+                      onClick={() => onMerge(i)}
+                      className="p-0.5 rounded hover:bg-primary/10 text-on-surface-variant hover:text-primary"
+                      title="Merge with next"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">merge</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => onAdd(i)}
+                    className="p-0.5 rounded hover:bg-primary/10 text-on-surface-variant hover:text-primary"
+                    title="Add segment after"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">add</span>
+                  </button>
+                  <button
+                    onClick={() => onDelete(i)}
+                    className="p-0.5 rounded hover:bg-red-500/10 text-on-surface-variant hover:text-red-400"
+                    title="Delete segment"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">delete</span>
+                  </button>
+                </div>
+              </div>
+
+              <textarea
+                className="w-full bg-transparent text-xs text-on-surface resize-none border-none outline-none leading-relaxed min-h-[1.5em]"
+                value={seg.text}
+                rows={Math.max(1, seg.text.split('\n').length)}
+                onChange={(e) => onUpdate(i, { ...seg, text: e.target.value })}
+              />
+            </div>
+          );
+        })}
+        </div>
       </div>
 
-      <div className="pt-2 pb-1">
+      <div className="pt-2 pb-1 pr-1 border-t border-outline-variant/10 bg-surface mt-1">
         <button
           type="button"
           onClick={() => onAdd(segments.length - 1)}
