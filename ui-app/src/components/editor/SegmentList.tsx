@@ -92,7 +92,7 @@ export function SegmentList({
               <span
                 className="font-mono text-[9px] text-on-surface-variant w-5 text-right cursor-pointer hover:text-primary"
                 onClick={() => onSeek(startSec)}
-                title="Jump to segment"
+                title="Click to jump video to this segment"
               >
                 {i + 1}
               </span>
@@ -100,7 +100,6 @@ export function SegmentList({
                 className="font-mono text-[10px] bg-transparent border border-outline-variant/15 rounded px-1 py-0.5 w-[100px] text-on-surface focus:border-primary focus:outline-none"
                 defaultValue={seg.startTime}
                 onBlur={(e) => handleTimestampBlur(i, 'startTime', e.target.value)}
-                onClick={() => onSeek(srtTimestampToSeconds(seg.startTime))}
               />
               <span className="text-[9px] text-on-surface-variant">→</span>
               <input
@@ -151,7 +150,6 @@ export function SegmentList({
               value={seg.text}
               rows={Math.max(1, seg.text.split('\n').length)}
               onChange={(e) => onUpdate(i, { ...seg, text: e.target.value })}
-              onClick={() => onSeek(startSec)}
             />
           </div>
         );
