@@ -537,6 +537,28 @@ douyin-automation/
 
 ---
 
+### Subtitle Versioning + Dub-Version Picker (2026-05-29)
+
+> Sub-project 2 of 3 in the dub-sync rebuild. See [`docs/superpowers/specs/2026-05-29-subtitle-versioning-design.md`](docs/superpowers/specs/2026-05-29-subtitle-versioning-design.md) and [`docs/superpowers/plans/2026-05-29-subtitle-versioning.md`](docs/superpowers/plans/2026-05-29-subtitle-versioning.md).
+
+- [x] **Task 1** — `src/api/versions.py`: VersionEntry Pydantic model, load/save versions.json, next_version_id, snapshot_working_draft, delete_version (cascades to SRT + dub WAVs)
+- [x] **Task 2** — `ensure_migrated` lazily folds legacy `.dubsync.srt`/dub_meta/segment-cache into the new layout on first read
+- [x] **Task 3** — `/api/videos/{id}/versions` CRUD router (GET / POST / PATCH / DELETE)
+- [x] **Task 4** — `GET /api/videos/{id}/srt` accepts `version` query param; `PUT` writes the working draft only; `_check_dub_sync_against_meta` removed
+- [x] **Task 5** — `POST /api/tts` accepts `version`; output filename includes the version; assembler drops Stages 1.5/6/7 + `run_partial`
+- [x] **Task 6** — Deleted `sync_runner.py`, `dub_meta.py`, `dubsync_srt.py`, `segment_cache.py`, their tests, and the `POST /api/videos/{id}/dub/sync` route
+- [x] **Task 7** — FE versions API client + `useVersions` hook (4 vitest)
+- [x] **Task 8** — `getSrt`/`postTTS` accept `version`; `postDubSync` deleted
+- [x] **Task 9** — `VersionPicker` dropdown for DubTab (4 vitest)
+- [x] **Task 10** — `VersionPanel` for EditorTab footer (5 vitest)
+- [x] **Task 11** — DubTab + VideoDetail wired to the picker; audio library rows show version chips
+- [x] **Task 12** — EditorTab grows "Save as version", renders VersionPanel, drops the Sync Dub banner and SSE subscription
+- [x] **Task 13** — CHANGELOG + README updates
+
+**Not in this PR:** standalone text→voice tool (sub-project 3) — separate spec + PR.
+
+---
+
 ### One-Time Setup Checklist
 
 - [ ] Docker installed, Douyin API container running
