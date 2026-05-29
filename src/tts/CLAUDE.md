@@ -9,7 +9,6 @@ This module handles text-to-speech dubbing for the pipeline.
 - `assembler.py` — end-to-end dubbing orchestrator: synthesises per-segment clips, runs the planner, applies atempo, mixes underlay, writes the final WAV and `dubsync.srt`.
 - `planner.py` — pure-function timing/shortening core (see below).
 - `runner.py` — pipeline stage wrapper that calls the assembler and persists state.
-- `dubsync_srt.py` — writes `{video_id}_{lang}.dubsync.srt` from planner output for use by the processor's burn-in step.
 - `google_tts.py`, `openai_tts.py`, `elevenlabs.py` — provider implementations.
 
 ## Planner architecture (2026-05-20)

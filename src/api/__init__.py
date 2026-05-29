@@ -21,6 +21,9 @@ from src.api.routers import (
     translate,
     tts,
 )
+from src.api.routers import (
+    versions as versions_router,
+)
 
 UI_DIST = Path("ui-app/dist")
 
@@ -51,6 +54,7 @@ def create_app() -> FastAPI:
     app.include_router(replacement.router)
     app.include_router(events.router)
     app.include_router(tasks.router)
+    app.include_router(versions_router.router)
 
     # Mount static dirs BEFORE the SPA catch-all so concrete paths win.
     data_dir = get_data_dir()

@@ -3,22 +3,19 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import subprocess
 import tempfile
 from pathlib import Path
 
-import yaml
 from fastapi import APIRouter, HTTPException
 from starlette.responses import FileResponse
 
-from src.api.deps import get_data_dir, get_task_manager
+from src.api.deps import get_config, get_data_dir, get_task_manager
 from src.api.models import (
     PreviewClipRequest,
     PreviewFrameRequest,
     SaveSrtRequest,
     SrtResponse,
-    SubtitleSegment,
     TaskResponse,
 )
 from src.api.routers.transcribe import _resolve_srt_path
@@ -26,11 +23,8 @@ from src.processor.region_detector import load_subtitle_region
 from src.processor.style import SubtitleStyleSpec, load_style, save_style_delta
 from src.processor.subtitle import (
     _timestamp_to_seconds,
-    parse_srt,
     write_srt,
 )
-from src.tts.base import _clean_text
-from src.tts.dub_meta import load_dub_meta
 
 router = APIRouter()
 
@@ -90,8 +84,9 @@ async def serve_preview_mix(video_id: str, language: str):
 
     Mix recipe:
     - Video stream from raw MP4 (stream-copied, fast).
-    - Audio: raw original at ``underlay_db`` (from ``dub_meta`` or default
-      -18 dB), mixed with dub WAV at 0 dB. Re-encoded as AAC.
+    - Audio: raw original at ``underlay_db`` (from ``config.yaml``'s
+      ``tts.underlay_db`` or default -18 dB), mixed with dub WAV at 0 dB.
+      Re-encoded as AAC.
     - Cached at ``data/preview/{video_id}_{language}_dub_mix.mp4``.
     - Cache freshness: cached file's mtime must be newer than the dub WAV's
       mtime AND the raw MP4's mtime. Otherwise regenerate.
@@ -120,9 +115,13 @@ async def serve_preview_mix(video_id: str, language: str):
         )
     dub_wav = candidates[0]
 
-    # Determine underlay_db: prefer dub_meta, else default
-    meta = load_dub_meta(tts_dir, video_id, language)
-    underlay_db = meta.underlay_db if meta is not None else -18.0
+    # Determine underlay_db from config (same source the runner uses when
+    # generating the dub); fall back to the assembler's default of -18 dB.
+    cfg_underlay = get_config().get("tts", {}).get("underlay_db")
+    try:
+        underlay_db = float(cfg_underlay) if cfg_underlay is not None else -18.0
+    except (TypeError, ValueError):
+        underlay_db = -18.0
 
     # Output path + cache check
     preview_dir = Path("data/preview")
@@ -177,25 +176,6 @@ async def serve_proxy_video(video_id: str):
         filename=f"{video_id}_360p.mp4",
     )
 
-
-def _check_dub_sync_against_meta(
-    data_dir: Path, video_id: str, language: str, new_texts: list[str]
-) -> bool:
-    """Return True if the dub is out of sync with the new SRT texts.
-
-    Compares cleaned per-segment text against the recorded ``segment_texts``
-    in ``dub_meta_{language}.json``. If no metadata exists, the dub has not
-    been generated for this language yet — no sync needed, return False.
-    """
-    meta = load_dub_meta(data_dir, video_id, language)
-    if meta is None:
-        return False
-    if len(meta.segment_texts) != len(new_texts):
-        return True
-    for old, new in zip(meta.segment_texts, new_texts):
-        if _clean_text(old) != _clean_text(new):
-            return True
-    return False
 
 
 @router.get("/api/videos/{video_id}/style")
@@ -252,76 +232,39 @@ async def delete_video_style(video_id: str):
 
 @router.put("/api/videos/{video_id}/srt", response_model=SrtResponse)
 async def save_srt(video_id: str, request: SaveSrtRequest):
-    """Save edited subtitle segments back to SRT file."""
+    """Overwrite the working-draft SRT for this (video, language).
+
+    Snapshots are immutable — the editor never writes them. The DubTab's
+    'Save as version' button uses POST /api/videos/{id}/versions to
+    create a snapshot from the current working draft.
+    """
+    from src.api.versions import ensure_migrated
+
     tm = get_task_manager()
     video = tm.video_index.get(video_id)
     if not video:
         raise HTTPException(status_code=404, detail=f"Video {video_id} not found")
 
-    # Resolve where to write: dubsync.srt when present, legacy otherwise.
-    srt_path, is_dubsync = _resolve_srt_path(video_id, request.language)
+    ensure_migrated(video_id, request.language)
+    srt_path = _resolve_srt_path(video_id, request.language, "draft")
+    srt_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Convert SubtitleSegment timestamps (HH:MM:SS,mmm) to seconds
-    segments = []
-    for seg in request.segments:
-        segments.append(
-            {
-                "start": _timestamp_to_seconds(seg.startTime),
-                "end": _timestamp_to_seconds(seg.endTime),
-                "text": seg.text,
-            }
-        )
-
+    segments = [
+        {
+            "index": seg.id,
+            "start": _timestamp_to_seconds(seg.startTime),
+            "end": _timestamp_to_seconds(seg.endTime),
+            "text": seg.text,
+        }
+        for seg in request.segments
+    ]
     write_srt(segments, srt_path)
-
-    # Update video index srt_languages
-    if request.language not in video.srt_languages:
-        video.srt_languages.append(request.language)
-        video.srt_languages.sort()
-        video.has_srt = True
-
-    # Check if this edit puts the dub out of sync with the saved dub_meta.
-    from src.utils.state import PipelineState
-
-    tts_data_dir = Path("data/tts")
-    new_texts = [seg["text"] for seg in segments]
-    is_dub_out_of_sync = _check_dub_sync_against_meta(
-        tts_data_dir, video_id, request.language, new_texts
-    )
-
-    state = PipelineState.load(video_id)
-    state_changed = False
-    if is_dub_out_of_sync:
-        if request.language not in state.dub_out_of_sync_languages:
-            state.dub_out_of_sync_languages.append(request.language)
-            state_changed = True
-    else:
-        if request.language in state.dub_out_of_sync_languages:
-            state.dub_out_of_sync_languages.remove(request.language)
-            state_changed = True
-    if state_changed:
-        state.save()
-
-    # Re-parse to return fresh data
-    parsed = parse_srt(srt_path)
-    response_segments = []
-    for i, seg in enumerate(parsed, start=1):
-        from src.processor.subtitle import _seconds_to_srt_timestamp
-
-        response_segments.append(
-            SubtitleSegment(
-                id=i,
-                startTime=_seconds_to_srt_timestamp(seg["start"]),
-                endTime=_seconds_to_srt_timestamp(seg["end"]),
-                text=seg["text"],
-            )
-        )
 
     return SrtResponse(
         video_id=video_id,
-        segments=response_segments,
+        segments=request.segments,
         language=request.language,
-        is_dubsync=is_dubsync,
+        is_dubsync=False,
     )
 
 
@@ -342,7 +285,7 @@ async def preview_frame(video_id: str, request: PreviewFrameRequest):
         )
 
     from src.processor.ffmpeg import FFmpegProcessor
-    from src.processor.style import SubtitleStyleSpec, load_style
+    from src.processor.style import load_style
     from src.processor.style_render import render_for_ffmpeg
 
     video_path = Path(video.file_path)

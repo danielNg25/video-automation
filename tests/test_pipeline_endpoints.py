@@ -70,43 +70,6 @@ class TestGetPipelineStatusIncludesStageProgress:
         assert abs(body["stage_progress"] - 0.5) < 1e-6
 
 
-class TestVideoResponseIncludesDubStatus:
-    def test_video_response_includes_dub_status_field(self, tmp_path, monkeypatch):
-        """GET /api/videos response always includes dub_status (may be empty)."""
-        monkeypatch.chdir(tmp_path)
-
-        # Create a minimal raw video entry so the index scan finds something
-        raw_dir = tmp_path / "data" / "raw"
-        raw_dir.mkdir(parents=True)
-        # Write a stub mp4 (content doesn't matter for the index scan path —
-        # extract_metadata_from_file is mocked out by the fake file size check)
-        mp4 = raw_dir / "testvid001.mp4"
-        mp4.write_bytes(b"\x00" * 1024)
-
-        from src.api import create_app
-        from src.api.deps import get_task_manager
-
-        app = create_app()
-        tm = get_task_manager()
-
-        from src.api.models import VideoResponse
-        tm.video_index["testvid001"] = VideoResponse(
-            video_id="testvid001",
-            title="Test Video",
-            file_path=str(mp4),
-            dub_status=[],
-        )
-
-        client = TestClient(app)
-        r = client.get("/api/videos")
-        assert r.status_code == 200
-        body = r.json()
-        assert body.get("videos"), "Expected at least one video in response"
-        for video in body["videos"]:
-            assert "dub_status" in video, f"dub_status missing from video: {video!r}"
-            assert isinstance(video["dub_status"], list)
-
-
 class TestSrtLangsDeduplicatesDubsyncFiles:
     async def test_dubsync_srt_not_listed_as_separate_language(self, tmp_path, monkeypatch):
         """srt_languages deduplicates: vi.srt + vi.dubsync.srt → only 'vi' in list."""

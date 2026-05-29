@@ -427,10 +427,12 @@ class TTSAssembler:
         llm_caller: Callable | None = None,
         srt_path: Path | None = None,  # kept for back-compat; ignored
         playback_speed: float | None = None,
-        video_id: str | None = None,
-        language: str | None = None,
-        provider_name: str | None = None,
-        underlay_db: float | None = None,
+        video_id: str | None = None,  # kept for back-compat; no longer used
+        language: str | None = None,  # kept for back-compat; no longer used
+        provider_name: str | None = None,  # kept for back-compat; no longer used
+        underlay_db: float | None = None,  # kept for back-compat; no longer used
+        version: str = "draft",
+        enable_shortening: bool = True,
     ) -> tuple[Path, list[dict]]:
         """Generate a full-length TTS audio track from subtitle segments.
 
@@ -481,6 +483,10 @@ class TTSAssembler:
                 playback_speed = None
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        logger.info(
+            f"Generating dub for version={version} "
+            f"shortening={'on' if enable_shortening else 'off'}"
+        )
 
         voice = voice_profile["voice"]
         kwargs = {}
@@ -572,29 +578,6 @@ class TTSAssembler:
                     window_end=sg.end,
                 ))
 
-            # === Stage 1.5: Persist natural-speed clips for dub-sync ===
-            # Copy each slot's natural-speed clip into the per-video cache so
-            # a future Sync-Dub run can reuse the unchanged segments without
-            # re-synthesising. Best-effort: cache write failures are logged
-            # and do not block the main dub.
-            if video_id and language:
-                from src.tts.segment_cache import save_segment_clip
-
-                tts_cache_dir = Path("data/tts")
-                for slot in slots:
-                    if slot.clip_path is None:
-                        continue
-                    try:
-                        save_segment_clip(
-                            tts_cache_dir,
-                            video_id,
-                            language,
-                            slot.index,
-                            slot.clip_path,
-                        )
-                    except OSError as e:
-                        logger.warning(f"Failed to cache segment {slot.index}: {e}")
-
             # === Stage 2: Build DubPlan (pure function, no I/O) ===
             from src.tts.planner import (
                 PLAYBACK_SPEED_DEFAULT,
@@ -634,11 +617,21 @@ class TTSAssembler:
             )
 
             # === Stage 3: Batch re-synthesise shortened sentences ===
-            await self._apply_shortening(
-                plan=dub_plan, sentence_groups=sentence_groups, slots=slots,
-                provider=provider, voice=voice, kwargs=kwargs, tmp=tmp,
-                effective_speed=effective_speed,
-            )
+            if enable_shortening:
+                await self._apply_shortening(
+                    plan=dub_plan, sentence_groups=sentence_groups, slots=slots,
+                    provider=provider, voice=voice, kwargs=kwargs, tmp=tmp,
+                    effective_speed=effective_speed,
+                )
+            else:
+                # Shortening disabled — flag the planner's recommendations for
+                # visibility but don't ask the LLM to compress text. Clips that
+                # would have shortened may overrun; the atempo pass at
+                # effective_speed is still the only timing nudge they get.
+                for sp in dub_plan.sentences:
+                    if sp.shorten_pct < 1.0:
+                        sp.needs_review = True
+                        sp.reason = "shorten_disabled"
 
             if on_progress:
                 on_progress(total, total, "Shortening complete")
@@ -719,400 +712,12 @@ class TTSAssembler:
             # Source-video audio mixing happens in the processor stage, not here.
             _concatenate_with_silence(fitted_clips, video_duration, output_path)
 
-            # === Stage 6: Emit per-segment dubsync.srt ===
-            # Derive the canonical (video_id, language) used by all downstream
-            # artefacts. Prefer the caller-supplied values; fall back to the
-            # historical derivation from output_path / voice_profile so
-            # back-compat is preserved when callers don't pass them.
-            if not language:
-                language = voice_profile.get("language") or "vi"
-            if not video_id:
-                stem = output_path.stem
-                video_id = stem.split("_")[0] if "_" in stem else stem
-            try:
-                from src.tts.dubsync_srt import write_dubsync_srt
-                dubsync_path = Path("data/srt") / f"{video_id}_{language}.dubsync.srt"
-                dubsync_path.parent.mkdir(parents=True, exist_ok=True)
-                write_dubsync_srt(segments, sentence_plan, dubsync_path)
-                logger.info(f"Wrote dubsync SRT: {dubsync_path}")
-            except Exception as e:
-                logger.warning(f"Could not write dubsync SRT: {e}")
-
-            # === Stage 7: Persist dub metadata for future Sync-Dub ===
-            # Captures the parameters of this run + the per-segment texts so
-            # Sync-Dub can (a) detect which segments changed by diffing the
-            # new SRT against the recorded segment_texts, and (b) replay the
-            # same provider/voice/playback_speed for the cells it does need
-            # to re-synthesise.
-            try:
-                from src.tts.dub_meta import DubMeta, save_dub_meta
-
-                meta = DubMeta(
-                    video_id=video_id,
-                    language=language,
-                    provider=provider_name or "",
-                    voice_id=voice or "",
-                    playback_speed=effective_speed,
-                    underlay_db=underlay_db if underlay_db is not None else 0.0,
-                    segment_texts=[sg.text for sg in sentence_groups],
-                )
-                save_dub_meta(Path("data/tts"), meta)
-            except Exception as e:
-                logger.warning(
-                    f"Failed to write dub_meta for {video_id}/{language}: {e}"
-                )
-
         overrun_count = sum(1 for s in sentence_plan if s.get("overrun_seconds", 0) > 0)
         logger.info(
             f"Generated TTS track: {output_path} — {len(sentence_plan)} sentences, "
             f"{overrun_count} overrun their source span"
         )
         return output_path, sentence_plan
-
-    async def run_partial(
-        self,
-        *,
-        provider: BaseTTSProvider,
-        video_id: str,
-        language: str,
-        new_texts: list[str],
-        clip_overrides: dict[int, Path],
-        dirty_indices: list[int],
-        voice_profile: dict,
-        provider_name: str,
-        playback_speed: float,
-        underlay_db: float,
-        video_path: Path,
-        output_path: Path,
-        on_progress: Callable[[int, int, str], None] | None = None,
-    ) -> Path:
-        """Re-assemble the dub WAV using cached clips for non-dirty segments
-        and freshly-synthesised clips for `dirty_indices`. Returns the path
-        to the rewritten dub WAV.
-
-        Sentence groups are built one-per-`new_texts` entry. Timings are
-        sourced from the most recent SRT (dubsync if present, legacy
-        otherwise), so partial regen never re-runs the LLM sentence
-        merger and never re-derives groupings — preserving 1:1 alignment
-        with the persisted `dub_meta.segment_texts`.
-
-        Stages mirrored from `generate_full_track`:
-          1.   Synth dirty segments (use cache otherwise).
-          1.5. Re-write cache for newly synthesised clips.
-          2.   Build DubPlan (planner, pure function).
-          3.   LLM batch shortening for sentences the planner flagged.
-          4.   atempo per effective_speed.
-          5.   Concat + silence base mix.
-          6.   Write `dubsync.srt`.
-          7.   Update `dub_meta`.
-        """
-        from src.api.routers.transcribe import _resolve_srt_path
-        from src.processor.subtitle import parse_srt
-        from src.tts.dub_meta import DubMeta, save_dub_meta
-        from src.tts.dubsync_srt import write_dubsync_srt
-        from src.tts.planner import PLAYBACK_SPEED_DEFAULT, Planner
-        from src.tts.segment_cache import save_segment_clip
-        from src.utils.metadata import extract_metadata_from_file
-
-        if isinstance(playback_speed, str):
-            try:
-                playback_speed = float(playback_speed)
-            except ValueError:
-                playback_speed = None
-
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Load timings from the SRT. The editor saves edits into dubsync.srt
-        # when it exists, so this is the source of truth for current
-        # per-segment start/end after the user's most recent edits.
-        srt_path, _ = _resolve_srt_path(video_id, language)
-        if not srt_path.exists():
-            raise FileNotFoundError(
-                f"Sync-Dub: SRT not found for {video_id}/{language}: {srt_path}"
-            )
-        srt_segments = parse_srt(srt_path)
-        if len(srt_segments) != len(new_texts):
-            raise ValueError(
-                f"Sync-Dub: SRT segment count ({len(srt_segments)}) does "
-                f"not match new_texts count ({len(new_texts)})"
-            )
-
-        # Build sentence_groups one-per-segment (no merging during partial
-        # regen — `dub_meta.segment_texts` indexes the existing cache).
-        sentence_groups: list[SentenceGroup] = []
-        for i, (seg, text) in enumerate(zip(srt_segments, new_texts)):
-            sentence_groups.append(SentenceGroup(
-                segment_indices=[i],
-                text=_clean_text(text),
-                start=seg["start"],
-                end=seg["end"],
-            ))
-
-        # Canonical video duration. Falls back to the last segment's end.
-        file_meta = (
-            extract_metadata_from_file(video_path) if video_path.exists() else {}
-        )
-        video_duration = float(file_meta.get("duration", 0.0))
-        if video_duration <= 0 and srt_segments:
-            video_duration = float(srt_segments[-1]["end"])
-        if video_duration <= 0:
-            raise ValueError(
-                f"Sync-Dub: could not determine duration for {video_path}"
-            )
-
-        voice = voice_profile["voice"]
-        kwargs = {}
-        if "speed" in voice_profile:
-            kwargs["speed"] = voice_profile["speed"]
-        if "pitch" in voice_profile:
-            kwargs["pitch"] = voice_profile["pitch"]
-
-        sentence_plan: list[dict] = []
-        dirty_set = set(dirty_indices)
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp = Path(tmp_dir)
-            total = len(sentence_groups)
-
-            async def synth_one(i: int, text: str) -> Path | None:
-                if not text:
-                    return None
-                async with self._semaphore:
-                    audio_bytes = await provider.synthesize(text, voice, **kwargs)
-                clip_path = tmp / f"seg_{i:04d}.mp3"
-                clip_path.write_bytes(audio_bytes)
-                return clip_path
-
-            # === Stage 1: Synthesise dirty segments / reuse cache ===
-            tasks: list = []
-            task_indices: list[int] = []
-            for i, sg in enumerate(sentence_groups):
-                if i in dirty_set:
-                    tasks.append(synth_one(i, sg.text))
-                    task_indices.append(i)
-                else:
-                    tasks.append(None)
-
-            if tasks:
-                results = await asyncio.gather(
-                    *[t for t in tasks if t is not None],
-                    return_exceptions=True,
-                )
-            else:
-                results = []
-            result_map: dict[int, Path | Exception | None] = {}
-            for idx, res in zip(task_indices, results):
-                result_map[idx] = res
-
-            slots: list[SegmentSlot] = []
-            for i, sg in enumerate(sentence_groups):
-                clip_path: Path | None = None
-                clip_duration = 0.0
-                if i in dirty_set:
-                    res = result_map.get(i)
-                    if isinstance(res, Exception):
-                        logger.warning(
-                            f"Sync-Dub: sentence {i} synth failed: {res!r} — "
-                            f"text={sg.text[:60]!r}"
-                        )
-                    elif res is None:
-                        if sg.text:
-                            logger.warning(
-                                f"Sync-Dub: sentence {i} produced no clip: "
-                                f"{sg.text[:60]!r}"
-                            )
-                    else:
-                        clip_path = res
-                        clip_duration = _get_audio_duration(res)
-                else:
-                    cached = clip_overrides.get(i)
-                    if cached is not None and cached.exists():
-                        clip_path = cached
-                        clip_duration = _get_audio_duration(cached)
-                    else:
-                        logger.warning(
-                            f"Sync-Dub: no cached clip for non-dirty index {i}"
-                        )
-
-                slots.append(SegmentSlot(
-                    index=i,
-                    clip_path=clip_path,
-                    clip_duration=clip_duration,
-                    window_start=sg.start,
-                    window_end=sg.end,
-                ))
-
-            if on_progress:
-                on_progress(int(total * 0.4), total, "Synthesis complete")
-
-            # === Stage 1.5: Re-cache newly synthesised clips ===
-            tts_cache_dir = Path("data/tts")
-            for slot in slots:
-                if slot.index not in dirty_set:
-                    continue
-                if slot.clip_path is None:
-                    continue
-                try:
-                    save_segment_clip(
-                        tts_cache_dir, video_id, language,
-                        slot.index, slot.clip_path,
-                    )
-                except OSError as e:
-                    logger.warning(
-                        f"Sync-Dub: failed to cache segment {slot.index}: {e}"
-                    )
-
-            # === Stage 2: Build DubPlan ===
-            effective_speed = (
-                playback_speed if (playback_speed and playback_speed > 0)
-                else PLAYBACK_SPEED_DEFAULT
-            )
-
-            sentence_inputs = [
-                {
-                    "index": sg.segment_indices[0] if sg.segment_indices else i,
-                    "segment_indices": sg.segment_indices,
-                    "text": sg.text,
-                    "start": sg.start,
-                    "end": sg.end,
-                }
-                for i, sg in enumerate(sentence_groups)
-            ]
-            natural_durations = [s.clip_duration for s in slots]
-            dub_plan = Planner.build_plan(
-                sentences=sentence_inputs,
-                natural_synth_durations=natural_durations,
-                playback_speed=effective_speed,
-                video_duration=video_duration,
-            )
-            logger.info(
-                f"Sync-Dub planner: speed={effective_speed}x "
-                f"sentences={len(dub_plan.sentences)} "
-                f"shortened={sum(1 for s in dub_plan.sentences if s.shorten_pct < 1.0)} "
-                f"drift_end={dub_plan.total_drift_end:.2f}s "
-                f"cap_hits={dub_plan.drift_cap_hits}"
-            )
-
-            # === Stage 3: Batch re-synthesise shortened sentences ===
-            await self._apply_shortening(
-                plan=dub_plan, sentence_groups=sentence_groups, slots=slots,
-                provider=provider, voice=voice, kwargs=kwargs, tmp=tmp,
-                effective_speed=effective_speed,
-            )
-
-            if on_progress:
-                on_progress(int(total * 0.7), total, "Shortening complete")
-
-            # === Stage 4: Apply atempo per plan, build clip list ===
-            fitted_clips: list[tuple[float, Path | None]] = []
-            for sp in dub_plan.sentences:
-                slot = slots[sp.index]
-                played_path: Path | None = None
-                played_duration = 0.0
-                if slot.clip_path is not None and slot.clip_duration > 0:
-                    if abs(effective_speed - 1.0) < 0.01:
-                        played_path = slot.clip_path
-                        played_duration = slot.clip_duration
-                    else:
-                        fitted_path = tmp / f"fitted_{sp.index:04d}.mp3"
-                        try:
-                            _speed_up_audio(
-                                slot.clip_path, fitted_path, effective_speed
-                            )
-                            ad = _get_audio_duration(fitted_path)
-                            if ad > 0:
-                                played_path = fitted_path
-                                played_duration = ad
-                            else:
-                                logger.warning(
-                                    f"Sync-Dub: sentence {sp.index} atempo "
-                                    f"empty output, falling back to natural speed"
-                                )
-                                sp.needs_review = True
-                                sp.reason = sp.reason or "atempo_off_target"
-                                played_path = slot.clip_path
-                                played_duration = slot.clip_duration
-                        except Exception as e:
-                            logger.warning(
-                                f"Sync-Dub: sentence {sp.index} atempo failed "
-                                f"({e}), falling back to natural speed"
-                            )
-                            sp.needs_review = True
-                            sp.reason = sp.reason or "atempo_failed"
-                            played_path = slot.clip_path
-                            played_duration = slot.clip_duration
-                    fitted_clips.append((sp.final_start, played_path))
-                else:
-                    sp.needs_review = True
-                    sp.reason = sp.reason or "synth_empty"
-                sentence_plan.append({
-                    "index": sp.index,
-                    "segment_indices": list(sentence_groups[sp.index].segment_indices),
-                    "text": sp.target_text,
-                    "target_text": sp.target_text,
-                    "original_text": sp.original_text,
-                    "start": round(sp.final_start, 3),
-                    "end": round(sp.final_start + sp.final_duration, 3),
-                    "final_start": round(sp.final_start, 3),
-                    "final_duration": round(sp.final_duration, 3),
-                    "window_start": round(sp.original_start, 3),
-                    "window_end": round(sp.original_end, 3),
-                    "synth_duration": round(slot.clip_duration, 3),
-                    "fitted_duration": round(played_duration, 3),
-                    "speed_ratio": round(effective_speed, 3),
-                    "shorten_pct": round(sp.shorten_pct, 3),
-                    "drift_in": round(sp.drift_in, 3),
-                    "drift_out": round(sp.drift_out, 3),
-                    "push_amount": round(sp.push_amount, 3),
-                    "reclaimed_silence": round(sp.reclaimed_silence, 3),
-                    "was_shortened": sp.shorten_pct < 1.0,
-                    "needs_review": sp.needs_review,
-                    "reason": sp.reason,
-                })
-
-            if on_progress:
-                on_progress(int(total * 0.9), total, "Concatenating audio track...")
-
-            # === Stage 5: Concatenate ===
-            _concatenate_with_silence(fitted_clips, video_duration, output_path)
-
-            # === Stage 6: Emit dubsync.srt ===
-            try:
-                dubsync_path = (
-                    Path("data/srt") / f"{video_id}_{language}.dubsync.srt"
-                )
-                dubsync_path.parent.mkdir(parents=True, exist_ok=True)
-                write_dubsync_srt(srt_segments, sentence_plan, dubsync_path)
-                logger.info(f"Sync-Dub: wrote dubsync SRT: {dubsync_path}")
-            except Exception as e:
-                logger.warning(f"Sync-Dub: could not write dubsync SRT: {e}")
-
-            # === Stage 7: Update dub_meta with the new segment_texts ===
-            try:
-                meta = DubMeta(
-                    video_id=video_id,
-                    language=language,
-                    provider=provider_name or "",
-                    voice_id=voice or "",
-                    playback_speed=effective_speed,
-                    underlay_db=underlay_db if underlay_db is not None else 0.0,
-                    segment_texts=[sg.text for sg in sentence_groups],
-                )
-                save_dub_meta(Path("data/tts"), meta)
-            except Exception as e:
-                logger.warning(
-                    f"Sync-Dub: failed to write dub_meta "
-                    f"for {video_id}/{language}: {e}"
-                )
-
-        if on_progress:
-            on_progress(total, total, "Sync-Dub complete")
-        logger.info(
-            f"Sync-Dub: regenerated {output_path} — {len(sentence_plan)} sentences, "
-            f"{len(dirty_indices)} dirty"
-        )
-        return output_path
-
 
 def _get_audio_duration(audio_path: Path) -> float:
     """Get audio duration in seconds via ffprobe."""

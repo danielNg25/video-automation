@@ -16,6 +16,7 @@ import type {
   TTSProviderInfo, VoiceInfo,
 } from '../api/types';
 import { loadApiKeys, loadLLMPrefs, storageGet, storageSet } from '../utils/storage';
+import { useVersions } from '../hooks/useVersions';
 
 type Tab = 'editor' | 'translate' | 'dub' | 'export';
 
@@ -85,12 +86,25 @@ function VideoDetailPage() {
     const saved = parseFloat(storageGet('tts_underlay_db') || '');
     return Number.isFinite(saved) && saved >= -24 && saved <= 0 ? saved : -18;
   });
+  const [enableShortening, setEnableShortening] = useState<boolean>(() => {
+    const stored = storageGet('tts_enable_shortening');
+    return stored === null ? true : stored === 'true';
+  });
   const [useDirectVoice, setUseDirectVoice] = useState(false);
   const [isGeneratingTts, setIsGeneratingTts] = useState(false);
   const [ttsProgress, setTtsProgress] = useState({ pct: 0, message: '' });
   const [ttsGenerated, setTtsGenerated] = useState(false);
   const [ttsError, setTtsError] = useState('');
   const [ttsList, setTtsList] = useState<TTSAudioEntry[]>([]);
+
+  // Editor active language — lifted here so useVersions tracks the language
+  // the user is actually editing, not the TTS dub language.
+  const [activeLang, setActiveLang] = useState('');
+
+  // Version state (shared across Editor + Dub tabs) — scoped to the language
+  // the user is editing so VersionPanel always shows the right snapshots.
+  const { versions, createSnapshot, rename, remove } = useVersions(videoId, activeLang);
+  const [selectedVersion, setSelectedVersion] = useState('draft');
 
   // Export state
   const [isExporting, setIsExporting] = useState(false);
@@ -141,6 +155,10 @@ function VideoDetailPage() {
     // Persist the current selection so future mounts can resolve per-provider keys.
     storageSet('tts_selected_provider', selectedTtsProvider);
   }, []); // run once on mount
+
+  useEffect(() => {
+    storageSet('tts_enable_shortening', String(enableShortening));
+  }, [enableShortening]);
 
   // Auto-fetch the voice list whenever the relevant inputs change. Without
   // this, opening DubTab on a fresh mount shows "Loading voices..." forever
@@ -261,6 +279,8 @@ function VideoDetailPage() {
         ttsLanguage,
         selectedTtsProvider,
         voiceForRequest,
+        selectedVersion,
+        enableShortening,
         ttsApiKey || undefined,
         llmApiKey || undefined,
         llmBackend || undefined,
@@ -400,6 +420,12 @@ function VideoDetailPage() {
             videoId={videoMeta.video_id}
             initialVideo={videoMeta}
             onSyncComplete={refreshVideoMeta}
+            versions={versions}
+            onCreateSnapshot={createSnapshot}
+            onRenameVersion={rename}
+            onDeleteVersion={remove}
+            activeLang={activeLang}
+            onActiveLangChange={setActiveLang}
           />
         )}
 
@@ -426,6 +452,9 @@ function VideoDetailPage() {
         {activeTab === 'dub' && videoMeta && (
           <DubTab
             videoId={videoMeta.video_id}
+            versions={versions}
+            selectedVersion={selectedVersion}
+            onVersionChange={setSelectedVersion}
             ttsProviders={ttsProviders}
             selectedTtsProvider={selectedTtsProvider}
             onChangeTtsProvider={handleTtsProviderChange}
@@ -473,6 +502,8 @@ function VideoDetailPage() {
             onGenerate={handleGenerateTts}
             llmBackend={llmBackend}
             llmApiKey={llmApiKey}
+            enableShortening={enableShortening}
+            onChangeEnableShortening={setEnableShortening}
           />
         )}
 

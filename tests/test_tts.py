@@ -502,124 +502,84 @@ class TestBatchProcessorTTS:
             srt_path.unlink(missing_ok=True)
 
 
+class TestShorteningToggle:
+    @pytest.mark.asyncio
+    async def test_apply_shortening_skipped_when_disabled(self, tmp_path):
+        """generate_full_track must not call `_apply_shortening` when
+        enable_shortening=False. Planner-flagged sentences get
+        reason='shorten_disabled' so the audit trail makes the decision
+        visible."""
+        from unittest.mock import AsyncMock, patch
 
+        from src.tts.assembler import TTSAssembler
 
-class TestDubsyncSrtWriter:
-    """The dubsync writer redistributes shortened text and final timings
-    proportionally across the original source segments."""
+        translator = AsyncMock()
+        translator.shorten_texts_batch = AsyncMock()
+        provider = AsyncMock()
+        provider.synthesize = AsyncMock(return_value=b"audio")
 
-    def test_redistributes_text_at_word_boundaries(self, tmp_path):
-        from src.tts.dubsync_srt import write_dubsync_srt
-        # One merged sentence covering 3 source segments; target text is
-        # shorter than the joined originals.
-        source_segments = [
-            {"start": 0.0, "end": 1.0, "text": "one two three"},
-            {"start": 1.0, "end": 2.0, "text": "four five six seven"},
-            {"start": 2.0, "end": 3.0, "text": "eight nine"},
-        ]
-        sentence_plans = [
-            {
-                "segment_indices": [0, 1, 2],
-                "target_text": "alpha beta gamma delta",
-                "final_start": 0.0, "final_duration": 3.0,
-            }
-        ]
-        out = tmp_path / "out.dubsync.srt"
-        write_dubsync_srt(source_segments, sentence_plans, out)
-        from src.processor.subtitle import parse_srt
-        rewritten = parse_srt(out)
-        assert len(rewritten) == 3
-        joined = " ".join(r["text"] for r in rewritten).replace("  ", " ").strip()
-        assert joined == "alpha beta gamma delta"
+        assembler = TTSAssembler(max_concurrent=2, translator=translator)
 
-    def test_timing_is_proportional_to_original_durations(self, tmp_path):
-        from src.processor.subtitle import parse_srt
-        from src.tts.dubsync_srt import write_dubsync_srt
-        source_segments = [
-            {"start": 0.0, "end": 0.5, "text": "a"},   # 0.5s
-            {"start": 0.5, "end": 2.5, "text": "b"},   # 2.0s
-        ]
-        sentence_plans = [
-            {
-                "segment_indices": [0, 1],
-                "target_text": "alpha beta",
-                "final_start": 10.0, "final_duration": 5.0,
-            }
-        ]
-        out = tmp_path / "out.dubsync.srt"
-        write_dubsync_srt(source_segments, sentence_plans, out)
-        rewritten = parse_srt(out)
-        # First segment: 0.5/2.5 of 5.0 = 1.0s; second: 4.0s
-        assert rewritten[0]["start"] == pytest.approx(10.0, abs=1e-3)
-        assert rewritten[0]["end"] == pytest.approx(11.0, abs=1e-3)
-        assert rewritten[1]["start"] == pytest.approx(11.0, abs=1e-3)
-        assert rewritten[1]["end"] == pytest.approx(15.0, abs=1e-3)
+        # Patch the assembler's _apply_shortening so we can assert it
+        # wasn't awaited. Patch the heavy ffmpeg/audio helpers so the
+        # function actually runs end-to-end on a mocked segment.
+        with patch.object(
+            assembler, "_apply_shortening", AsyncMock()
+        ) as apply_mock, patch(
+            "src.tts.assembler._get_audio_duration", return_value=2.0
+        ), patch(
+            "src.tts.assembler._concatenate_with_silence"
+        ):
+            await assembler.generate_full_track(
+                provider=provider,
+                segments=[{
+                    "start": 0.0, "end": 1.0,
+                    "text": "hi", "index": 0,
+                }],
+                voice_profile={"voice": "v"},
+                video_duration=1.0,
+                output_path=tmp_path / "out.wav",
+                playback_speed=1.5,
+                enable_shortening=False,
+            )
 
-    def test_writer_handles_actual_assembler_dict_shape(self, tmp_path):
-        """Regression: the assembler's sentence_plan dict shape must include
-        `segment_indices`, `target_text`, `final_start`, and `final_duration`.
-        If any are missing, the writer's main loop skips the sentence and the
-        defensive `preserve source unchanged` branch emits original segments.
-        This was a real bug shipped in the dubbing redesign and silently
-        masked by the defensive fallback.
+        apply_mock.assert_not_awaited()
+        translator.shorten_texts_batch.assert_not_called()
 
-        The fix is in `src/tts/assembler.py`'s sentence_plan.append block.
-        This test pins the contract by constructing a sentence_plans list
-        using the EXACT keys the assembler emits and asserting the writer's
-        main loop runs (not the fallback)."""
-        from src.processor.subtitle import parse_srt
-        from src.tts.dubsync_srt import write_dubsync_srt
+    @pytest.mark.asyncio
+    async def test_apply_shortening_called_when_enabled(self, tmp_path):
+        """The default path still calls `_apply_shortening` — the toggle is
+        opt-out, not opt-in."""
+        from unittest.mock import AsyncMock, patch
 
-        # Source segments — 3 entries with distinct timings
-        source_segments = [
-            {"start": 0.0, "end": 1.0, "text": "alpha original"},
-            {"start": 1.0, "end": 2.0, "text": "beta original"},
-            {"start": 2.0, "end": 3.5, "text": "gamma original"},
-        ]
-        # A single merged sentence covering all 3, with shortened text AND a
-        # pushed-back final_start to make the rewrite visible.
-        sentence_plans = [
-            {
-                "index": 0,
-                "segment_indices": [0, 1, 2],
-                "text": "shortened spoken text",
-                "target_text": "shortened spoken text",
-                "original_text": "alpha original beta original gamma original",
-                "start": 5.0,
-                "end": 7.5,
-                "final_start": 5.0,
-                "final_duration": 2.5,
-            }
-        ]
-        out = tmp_path / "test_id_vi.dubsync.srt"
-        write_dubsync_srt(source_segments, sentence_plans, out)
-        rewritten = parse_srt(out)
+        from src.tts.assembler import TTSAssembler
 
-        # The writer's main loop produced 3 entries (one per source segment).
-        assert len(rewritten) == 3, (
-            f"Expected 3 rewritten entries (one per source segment); got "
-            f"{len(rewritten)}. If 0 or unchanged-source, the writer's "
-            f"main loop didn't run — segment_indices key likely missing."
-        )
+        translator = AsyncMock()
+        provider = AsyncMock()
+        provider.synthesize = AsyncMock(return_value=b"audio")
 
-        # CRITICAL: each rewritten entry's TEXT is a slice of the SHORTENED
-        # `target_text`, not the original segment text. If the writer fell
-        # through to the defensive branch, the text would equal the originals
-        # ("alpha original" etc.).
-        joined = " ".join(r["text"] for r in rewritten).replace("  ", " ").strip()
-        assert joined == "shortened spoken text", (
-            f"Rewritten text is not the redistributed target_text; got "
-            f"{joined!r}. The writer likely fell through to the defensive "
-            f"'preserve source unchanged' branch."
-        )
+        assembler = TTSAssembler(max_concurrent=2, translator=translator)
 
-        # CRITICAL: timings must be anchored at final_start=5.0, not the
-        # source's start=0.0. If the writer fell through, the first entry's
-        # start would be 0.0.
-        assert rewritten[0]["start"] == pytest.approx(5.0, abs=1e-3), (
-            f"First rewritten entry's start is {rewritten[0]['start']!r}; "
-            f"expected ~5.0 (from final_start). The writer likely fell "
-            f"through to the defensive branch."
-        )
+        with patch.object(
+            assembler, "_apply_shortening", AsyncMock()
+        ) as apply_mock, patch(
+            "src.tts.assembler._get_audio_duration", return_value=2.0
+        ), patch(
+            "src.tts.assembler._concatenate_with_silence"
+        ):
+            await assembler.generate_full_track(
+                provider=provider,
+                segments=[{
+                    "start": 0.0, "end": 1.0,
+                    "text": "hi", "index": 0,
+                }],
+                voice_profile={"voice": "v"},
+                video_duration=1.0,
+                output_path=tmp_path / "out.wav",
+                playback_speed=1.5,
+                enable_shortening=True,
+            )
+
+        apply_mock.assert_awaited_once()
 
 

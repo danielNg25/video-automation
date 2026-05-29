@@ -76,7 +76,6 @@ async def test_cancel_with_video_id_runs_delete_video(tmp_path, monkeypatch):
         thumbnail="",
         has_srt=True,
         status="downloaded",
-        dub_status=[],
     )
 
     task = tm.create_task("full_pipeline")

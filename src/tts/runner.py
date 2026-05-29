@@ -10,10 +10,13 @@ produce byte-identical output for identical inputs.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from pathlib import Path
 
 from src.utils.logger import setup_logger
+
+_FILENAME_SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 
 logger = setup_logger(__name__)
 
@@ -93,6 +96,27 @@ def tts_output_path(
     return tts_dir / f"{video_id}_{language}_{provider_name}_{safe_voice}.wav"
 
 
+def dub_output_filename(
+    video_id: str,
+    language: str,
+    version: str,
+    provider: str,
+    voice: str,
+) -> Path:
+    """Canonical path for a dub WAV.
+
+    Layout: data/tts/{video_id}_{language}_{version}_{provider}_{voice}.wav.
+
+    `voice` may contain characters that aren't safe in a filename (Google
+    voice ids historically include '/'); they are replaced with '-'.
+    """
+    safe_voice = _FILENAME_SAFE.sub("-", voice)
+    safe_provider = _FILENAME_SAFE.sub("-", provider)
+    return Path(
+        f"data/tts/{video_id}_{language}_{version}_{safe_provider}_{safe_voice}.wav"
+    )
+
+
 async def run_tts_track(
     *,
     video_id: str,
@@ -106,6 +130,8 @@ async def run_tts_track(
     llm_api_key: str | None = None,
     llm_backend: str | None = None,
     playback_speed: float | None = None,
+    version: str = "draft",
+    enable_shortening: bool = True,
     on_progress: Callable[[int, int, str], None] | None = None,
 ) -> dict:
     # Coerce request-supplied playback_speed in case it arrived as a string
@@ -153,7 +179,10 @@ async def run_tts_track(
 
     # ── SRT segments ─────────────────────────────────────────────────
     srt_dir = Path("data/srt")
-    srt_path = srt_dir / f"{video_id}_{language}.srt"
+    if version == "draft":
+        srt_path = srt_dir / f"{video_id}_{language}.srt"
+    else:
+        srt_path = srt_dir / f"{video_id}_{language}.{version}.srt"
     if not srt_path.exists():
         raise FileNotFoundError(
             f"SRT not found: {srt_path}. Translate to '{language}' first."
@@ -196,13 +225,11 @@ async def run_tts_track(
     # ── Output path (canonical, shared by both callers) ────────────
     tts_dir = Path("data/tts")
     tts_dir.mkdir(parents=True, exist_ok=True)
-    output_path = tts_output_path(
-        tts_dir, video_id, language, provider_name, voice
-    )
+    output_path = dub_output_filename(video_id, language, version, provider_name, voice)
 
     # ── Assemble ────────────────────────────────────────────────────
-    # Pull the underlay_db default from config so dub_meta records the
-    # value the processor will actually use when mixing.
+    # Pull the underlay_db default from config so the assembler uses
+    # the same value the processor will use when mixing.
     underlay_db_cfg = config.get("tts", {}).get("underlay_db")
     try:
         underlay_db_val = float(underlay_db_cfg) if underlay_db_cfg is not None else None
@@ -225,6 +252,7 @@ async def run_tts_track(
         language=language,
         provider_name=provider_name,
         underlay_db=underlay_db_val,
+        enable_shortening=enable_shortening,
     )
 
     # ── Output duration via ffprobe (informational) ────────────────
