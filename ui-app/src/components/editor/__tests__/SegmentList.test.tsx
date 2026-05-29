@@ -55,3 +55,66 @@ describe('SegmentList — click does not seek', () => {
     expect(props.onSeek).toHaveBeenCalledWith(0);
   });
 });
+
+describe('SegmentList — time inputs are controlled with validation feedback', () => {
+  it('typing updates the input value live (no defaultValue snap-back)', () => {
+    renderList();
+    const input = screen.getAllByDisplayValue('00:00:00,000')[0] as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '00:00:01,500' } });
+    expect(input.value).toBe('00:00:01,500');
+  });
+
+  it('typing an invalid format adds an error border class', () => {
+    renderList();
+    const input = screen.getAllByDisplayValue('00:00:00,000')[0] as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'not-a-time' } });
+    expect(input.className).toMatch(/border-red-400/);
+  });
+
+  it('blur with a valid format calls onUpdate once', () => {
+    const { props } = renderList();
+    const input = screen.getAllByDisplayValue('00:00:00,000')[0] as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '00:00:01,500' } });
+    fireEvent.blur(input);
+    expect(props.onUpdate).toHaveBeenCalledTimes(1);
+    expect(props.onUpdate).toHaveBeenCalledWith(
+      0,
+      expect.objectContaining({ startTime: '00:00:01,500' }),
+    );
+  });
+
+  it('blur with an invalid format reverts the value and does not call onUpdate', () => {
+    const { props } = renderList();
+    const input = screen.getAllByDisplayValue('00:00:00,000')[0] as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'garbage' } });
+    fireEvent.blur(input);
+    expect(props.onUpdate).not.toHaveBeenCalled();
+    expect(input.value).toBe('00:00:00,000');
+  });
+
+  it('blur with start >= end is rejected and reverts the value', () => {
+    const { props } = renderList();
+    const input = screen.getAllByDisplayValue('00:00:00,000')[0] as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '00:00:05,000' } });
+    fireEvent.blur(input);
+    expect(props.onUpdate).not.toHaveBeenCalled();
+    expect(input.value).toBe('00:00:00,000');
+  });
+
+  it('Enter key commits a valid value (same as blur)', () => {
+    const { props } = renderList();
+    const input = screen.getAllByDisplayValue('00:00:00,000')[0] as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '00:00:01,500' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(props.onUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('Escape key reverts the in-progress edit', () => {
+    const { props } = renderList();
+    const input = screen.getAllByDisplayValue('00:00:00,000')[0] as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'whatever' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(input.value).toBe('00:00:00,000');
+    expect(props.onUpdate).not.toHaveBeenCalled();
+  });
+});

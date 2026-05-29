@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import type { SubtitleSegment } from '../../api/types';
 import { srtTimestampToSeconds, secondsToSrtTimestamp, isValidSrtTimestamp } from '../../utils/srtTime';
 
@@ -11,6 +11,68 @@ interface SegmentListProps {
   onSplit: (index: number, splitTime: number) => void;
   onMerge: (index: number) => void;
   onAdd: (afterIndex: number) => void;
+}
+
+interface TimestampInputProps {
+  /** Committed timestamp value (HH:MM:SS,mmm). */
+  value: string;
+  /** Returns true if the parent accepts the new value, false if it rejects (e.g. start>=end). */
+  onCommit: (next: string) => boolean;
+}
+
+function TimestampInput({ value, onCommit }: TimestampInputProps) {
+  const [local, setLocal] = useState(value);
+  const [invalid, setInvalid] = useState(false);
+
+  // Re-sync when an external change to `value` lands (e.g. a sibling commit
+  // shifted this segment's bounds).
+  useEffect(() => {
+    setLocal(value);
+    setInvalid(false);
+  }, [value]);
+
+  const commit = useCallback(() => {
+    if (!isValidSrtTimestamp(local)) {
+      setLocal(value);
+      setInvalid(false);
+      return;
+    }
+    const accepted = onCommit(local);
+    if (!accepted) {
+      setLocal(value);
+      setInvalid(false);
+    }
+  }, [local, value, onCommit]);
+
+  const baseClasses =
+    'font-mono text-[10px] bg-transparent border rounded px-1 py-0.5 w-[100px] text-on-surface focus:outline-none';
+  const stateClasses = invalid
+    ? 'border-red-400/60 focus:border-red-400'
+    : 'border-outline-variant/15 focus:border-primary';
+
+  return (
+    <input
+      className={`${baseClasses} ${stateClasses}`}
+      value={local}
+      onChange={(e) => {
+        const next = e.target.value;
+        setLocal(next);
+        setInvalid(next.length > 0 && !isValidSrtTimestamp(next));
+      }}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          commit();
+          (e.target as HTMLInputElement).blur();
+        } else if (e.key === 'Escape') {
+          setLocal(value);
+          setInvalid(false);
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+      title={invalid ? 'Format: HH:MM:SS,mmm' : undefined}
+    />
+  );
 }
 
 export function SegmentList({
@@ -26,14 +88,12 @@ export function SegmentList({
   const listRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLDivElement>(null);
 
-  // Find active segment index
   const activeIndex = segments.findIndex((seg) => {
     const start = srtTimestampToSeconds(seg.startTime);
     const end = srtTimestampToSeconds(seg.endTime);
     return currentTime >= start && currentTime < end;
   });
 
-  // Auto-scroll to active segment
   useEffect(() => {
     if (activeRef.current && listRef.current) {
       const container = listRef.current;
@@ -42,25 +102,30 @@ export function SegmentList({
       const elBottom = elTop + el.offsetHeight;
       const viewTop = container.scrollTop;
       const viewBottom = viewTop + container.clientHeight;
-
       if (elTop < viewTop || elBottom > viewBottom) {
         el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       }
     }
   }, [activeIndex]);
 
-  const handleTimestampBlur = useCallback(
-    (index: number, field: 'startTime' | 'endTime', value: string) => {
-      if (!isValidSrtTimestamp(value)) return;
-      const seg = segments[index];
-      const updated = { ...seg, [field]: value };
+  const commitStart = useCallback(
+    (i: number) => (next: string): boolean => {
+      const start = srtTimestampToSeconds(next);
+      const end = srtTimestampToSeconds(segments[i].endTime);
+      if (start >= end) return false;
+      onUpdate(i, { ...segments[i], startTime: next });
+      return true;
+    },
+    [segments, onUpdate],
+  );
 
-      // Validate: start < end
-      const start = srtTimestampToSeconds(updated.startTime);
-      const end = srtTimestampToSeconds(updated.endTime);
-      if (start >= end) return;
-
-      onUpdate(index, updated);
+  const commitEnd = useCallback(
+    (i: number) => (next: string): boolean => {
+      const start = srtTimestampToSeconds(segments[i].startTime);
+      const end = srtTimestampToSeconds(next);
+      if (start >= end) return false;
+      onUpdate(i, { ...segments[i], endTime: next });
+      return true;
     },
     [segments, onUpdate],
   );
@@ -87,7 +152,6 @@ export function SegmentList({
                 : 'border-outline-variant/10 bg-surface-container-lowest hover:border-outline-variant/20'
             }`}
           >
-            {/* Header: index + timestamps */}
             <div className="flex items-center gap-2 mb-1.5">
               <span
                 className="font-mono text-[9px] text-on-surface-variant w-5 text-right cursor-pointer hover:text-primary"
@@ -96,19 +160,10 @@ export function SegmentList({
               >
                 {i + 1}
               </span>
-              <input
-                className="font-mono text-[10px] bg-transparent border border-outline-variant/15 rounded px-1 py-0.5 w-[100px] text-on-surface focus:border-primary focus:outline-none"
-                defaultValue={seg.startTime}
-                onBlur={(e) => handleTimestampBlur(i, 'startTime', e.target.value)}
-              />
+              <TimestampInput value={seg.startTime} onCommit={commitStart(i)} />
               <span className="text-[9px] text-on-surface-variant">→</span>
-              <input
-                className="font-mono text-[10px] bg-transparent border border-outline-variant/15 rounded px-1 py-0.5 w-[100px] text-on-surface focus:border-primary focus:outline-none"
-                defaultValue={seg.endTime}
-                onBlur={(e) => handleTimestampBlur(i, 'endTime', e.target.value)}
-              />
+              <TimestampInput value={seg.endTime} onCommit={commitEnd(i)} />
 
-              {/* Action buttons (visible on hover) */}
               <div className="flex-1" />
               <div className="opacity-0 group-hover:opacity-100 flex gap-0.5 transition-opacity">
                 <button
@@ -144,7 +199,6 @@ export function SegmentList({
               </div>
             </div>
 
-            {/* Text editor */}
             <textarea
               className="w-full bg-transparent text-xs text-on-surface resize-none border-none outline-none leading-relaxed min-h-[1.5em]"
               value={seg.text}
