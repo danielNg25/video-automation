@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import type { SubtitleSegment } from '../../api/types';
-import { srtTimestampToSeconds, secondsToSrtTimestamp, isValidSrtTimestamp } from '../../utils/srtTime';
+import { srtTimestampToSeconds, isValidSrtTimestamp } from '../../utils/srtTime';
 
 interface SegmentListProps {
   segments: SubtitleSegment[];
@@ -21,28 +21,34 @@ interface TimestampInputProps {
 }
 
 function TimestampInput({ value, onCommit }: TimestampInputProps) {
+  const [committedValue, setCommittedValue] = useState(value);
   const [local, setLocal] = useState(value);
   const [invalid, setInvalid] = useState(false);
 
   // Re-sync when an external change to `value` lands (e.g. a sibling commit
-  // shifted this segment's bounds).
-  useEffect(() => {
+  // shifted this segment's bounds). Uses the React "adjust state during
+  // render" pattern instead of useEffect.
+  if (committedValue !== value) {
+    setCommittedValue(value);
     setLocal(value);
     setInvalid(false);
-  }, [value]);
+  }
 
   const commit = useCallback(() => {
+    if (local === committedValue) return; // no pending change to commit
     if (!isValidSrtTimestamp(local)) {
-      setLocal(value);
+      setLocal(committedValue);
       setInvalid(false);
       return;
     }
     const accepted = onCommit(local);
-    if (!accepted) {
-      setLocal(value);
+    if (accepted) {
+      setCommittedValue(local);
+    } else {
+      setLocal(committedValue);
       setInvalid(false);
     }
-  }, [local, value, onCommit]);
+  }, [local, committedValue, onCommit]);
 
   const baseClasses =
     'font-mono text-[10px] bg-transparent border rounded px-1 py-0.5 w-[100px] text-on-surface focus:outline-none';
@@ -62,10 +68,10 @@ function TimestampInput({ value, onCommit }: TimestampInputProps) {
       onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === 'Enter') {
+          e.preventDefault();
           commit();
-          (e.target as HTMLInputElement).blur();
         } else if (e.key === 'Escape') {
-          setLocal(value);
+          setLocal(committedValue);
           setInvalid(false);
           (e.target as HTMLInputElement).blur();
         }

@@ -117,4 +117,14 @@ describe('SegmentList — time inputs are controlled with validation feedback', 
     expect(input.value).toBe('00:00:00,000');
     expect(props.onUpdate).not.toHaveBeenCalled();
   });
+
+  it('Enter does not double-commit when the input is focused', () => {
+    const { props } = renderList();
+    const input = screen.getAllByDisplayValue('00:00:00,000')[0] as HTMLInputElement;
+    input.focus();
+    fireEvent.change(input, { target: { value: '00:00:01,500' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.blur(input);
+    expect(props.onUpdate).toHaveBeenCalledTimes(1);
+  });
 });
