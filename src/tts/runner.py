@@ -10,10 +10,13 @@ produce byte-identical output for identical inputs.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from pathlib import Path
 
 from src.utils.logger import setup_logger
+
+_FILENAME_SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 
 logger = setup_logger(__name__)
 
@@ -93,6 +96,27 @@ def tts_output_path(
     return tts_dir / f"{video_id}_{language}_{provider_name}_{safe_voice}.wav"
 
 
+def dub_output_filename(
+    video_id: str,
+    language: str,
+    version: str,
+    provider: str,
+    voice: str,
+) -> Path:
+    """Canonical path for a dub WAV.
+
+    Layout: data/tts/{video_id}_{language}_{version}_{provider}_{voice}.wav.
+
+    `voice` may contain characters that aren't safe in a filename (Google
+    voice ids historically include '/'); they are replaced with '-'.
+    """
+    safe_voice = _FILENAME_SAFE.sub("-", voice)
+    safe_provider = _FILENAME_SAFE.sub("-", provider)
+    return Path(
+        f"data/tts/{video_id}_{language}_{version}_{safe_provider}_{safe_voice}.wav"
+    )
+
+
 async def run_tts_track(
     *,
     video_id: str,
@@ -106,6 +130,7 @@ async def run_tts_track(
     llm_api_key: str | None = None,
     llm_backend: str | None = None,
     playback_speed: float | None = None,
+    version: str = "draft",
     on_progress: Callable[[int, int, str], None] | None = None,
 ) -> dict:
     # Coerce request-supplied playback_speed in case it arrived as a string
@@ -196,9 +221,7 @@ async def run_tts_track(
     # ── Output path (canonical, shared by both callers) ────────────
     tts_dir = Path("data/tts")
     tts_dir.mkdir(parents=True, exist_ok=True)
-    output_path = tts_output_path(
-        tts_dir, video_id, language, provider_name, voice
-    )
+    output_path = dub_output_filename(video_id, language, version, provider_name, voice)
 
     # ── Assemble ────────────────────────────────────────────────────
     # Pull the underlay_db default from config so dub_meta records the

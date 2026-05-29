@@ -248,6 +248,7 @@ class TTSRequest(BaseModel):
     # exactly this speed (uniform pacing). When None, the assembler default
     # (1.5×) is used.
     playback_speed: float | None = None
+    version: str = "draft"
 
 
 class SyncDubRequest(BaseModel):
