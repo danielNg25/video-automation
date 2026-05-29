@@ -178,7 +178,10 @@ async def run_tts_track(
 
     # ── SRT segments ─────────────────────────────────────────────────
     srt_dir = Path("data/srt")
-    srt_path = srt_dir / f"{video_id}_{language}.srt"
+    if version == "draft":
+        srt_path = srt_dir / f"{video_id}_{language}.srt"
+    else:
+        srt_path = srt_dir / f"{video_id}_{language}.{version}.srt"
     if not srt_path.exists():
         raise FileNotFoundError(
             f"SRT not found: {srt_path}. Translate to '{language}' first."
