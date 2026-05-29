@@ -148,3 +148,28 @@ describe('SegmentList — toolbar visibility', () => {
     expect(inactiveToolbar.className).toMatch(/group-hover:opacity-100/);
   });
 });
+
+describe('SegmentList — sticky "+ Add subtitle" button', () => {
+  it('with a non-empty list, the bottom button calls onAdd(segments.length - 1)', () => {
+    const { props } = renderList(); // 3 segments
+    const btn = screen.getByRole('button', { name: /add subtitle/i });
+    fireEvent.click(btn);
+    expect(props.onAdd).toHaveBeenCalledWith(2);
+  });
+
+  it('with an empty list, the bottom button calls onAdd(-1)', () => {
+    const { props } = renderList({ segments: [] });
+    const btn = screen.getByRole('button', { name: /add subtitle/i });
+    fireEvent.click(btn);
+    expect(props.onAdd).toHaveBeenCalledWith(-1);
+  });
+
+  it('the per-row "Add segment after" hover button still calls onAdd(i)', () => {
+    const { props } = renderList({ currentTime: 1.0 }); // segment 0 is active
+    // The active-row toolbar is now always visible (Task 3), so we can
+    // click the per-row + button without simulating hover.
+    const perRow = screen.getAllByTitle(/add segment after/i)[0];
+    fireEvent.click(perRow);
+    expect(props.onAdd).toHaveBeenCalledWith(0);
+  });
+});

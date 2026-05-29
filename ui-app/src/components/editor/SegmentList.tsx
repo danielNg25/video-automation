@@ -137,14 +137,15 @@ export function SegmentList({
   );
 
   return (
-    <div ref={listRef} className="flex-1 overflow-y-auto space-y-1 pr-1">
-      {segments.length === 0 && (
-        <div className="text-center text-on-surface-variant text-xs py-8">
-          No subtitle segments
-        </div>
-      )}
+    <div ref={listRef} className="flex-1 overflow-y-auto pr-1">
+      <div className="space-y-1">
+        {segments.length === 0 && (
+          <div className="text-center text-on-surface-variant text-xs py-8">
+            No subtitle segments
+          </div>
+        )}
 
-      {segments.map((seg, i) => {
+        {segments.map((seg, i) => {
         const isActive = i === activeIndex;
         const startSec = srtTimestampToSeconds(seg.startTime);
 
@@ -218,6 +219,17 @@ export function SegmentList({
           </div>
         );
       })}
+      </div>
+
+      <div className="pt-2 pb-1">
+        <button
+          type="button"
+          onClick={() => onAdd(segments.length - 1)}
+          className="w-full py-2 text-xs rounded-lg border border-dashed border-primary/40 text-primary/80 hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
+        >
+          + Add subtitle
+        </button>
+      </div>
     </div>
   );
 }
