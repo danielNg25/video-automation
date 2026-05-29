@@ -196,3 +196,101 @@ class TestDeleteVersion:
 
         # No versions.json at all → False.
         assert delete_version("ghost", "vi", "v1") is False
+
+
+from fastapi.testclient import TestClient
+
+
+@pytest.fixture
+def client(tmp_path, monkeypatch):
+    """FastAPI test client with data dirs redirected to tmp."""
+    srt_dir = tmp_path / "srt"
+    srt_dir.mkdir()
+    tts_dir = tmp_path / "tts"
+    tts_dir.mkdir()
+    monkeypatch.setattr("src.api.versions.SRT_DIR", srt_dir)
+    monkeypatch.setattr("src.api.versions.TTS_DIR", tts_dir)
+    # Seed a working draft so snapshot can succeed.
+    (srt_dir / "vidA_vi.srt").write_text(
+        "1\n00:00:00,000 --> 00:00:01,000\nhello\n"
+    )
+    # Pre-seed an empty versions.json so ensure_migrated treats this as a
+    # fresh (already-migrated) video, not a legacy one to auto-snapshot.
+    (srt_dir / "vidA_vi.versions.json").write_text("[]")
+
+    from src.api import create_app  # noqa
+    return TestClient(create_app()), srt_dir, tts_dir
+
+
+class TestVersionsRouter:
+    def test_list_returns_empty_for_fresh_video(self, client):
+        c, _, _ = client
+        # Working draft exists but no versions yet.
+        r = c.get("/api/videos/vidA/versions?language=vi")
+        assert r.status_code == 200
+        assert r.json() == []
+
+    def test_post_creates_v1(self, client):
+        c, srt_dir, _ = client
+        r = c.post(
+            "/api/videos/vidA/versions?language=vi",
+            json={"name": "first"},
+        )
+        assert r.status_code == 201
+        body = r.json()
+        assert body["id"] == "v1"
+        assert body["name"] == "first"
+        # SRT was actually written.
+        assert (srt_dir / "vidA_vi.v1.srt").exists()
+
+    def test_post_with_no_name_is_anonymous(self, client):
+        c, _, _ = client
+        r = c.post(
+            "/api/videos/vidA/versions?language=vi",
+            json={"name": None},
+        )
+        assert r.status_code == 201
+        assert r.json()["name"] is None
+
+    def test_patch_renames_an_existing_version(self, client):
+        c, _, _ = client
+        c.post("/api/videos/vidA/versions?language=vi", json={"name": "old"})
+        r = c.patch(
+            "/api/videos/vidA/versions/v1?language=vi",
+            json={"name": "new"},
+        )
+        assert r.status_code == 200
+        assert r.json()["name"] == "new"
+        # GET reflects the rename.
+        listing = c.get("/api/videos/vidA/versions?language=vi").json()
+        assert listing[0]["name"] == "new"
+
+    def test_patch_unknown_version_returns_404(self, client):
+        c, _, _ = client
+        r = c.patch(
+            "/api/videos/vidA/versions/v99?language=vi",
+            json={"name": "ghost"},
+        )
+        assert r.status_code == 404
+
+    def test_delete_removes_snapshot_srt_and_entry(self, client):
+        c, srt_dir, _ = client
+        c.post("/api/videos/vidA/versions?language=vi", json={"name": None})
+        r = c.delete("/api/videos/vidA/versions/v1?language=vi")
+        assert r.status_code == 204
+        assert not (srt_dir / "vidA_vi.v1.srt").exists()
+        listing = c.get("/api/videos/vidA/versions?language=vi").json()
+        assert listing == []
+
+    def test_delete_cascades_to_dub_wavs(self, client):
+        c, _, tts_dir = client
+        c.post("/api/videos/vidA/versions?language=vi", json={"name": None})
+        # Seed a dub WAV for v1.
+        (tts_dir / "vidA_vi_v1_google_wavenet-A.wav").write_bytes(b"RIFF")
+        c.delete("/api/videos/vidA/versions/v1?language=vi")
+        assert not (tts_dir / "vidA_vi_v1_google_wavenet-A.wav").exists()
+
+    def test_delete_unknown_version_returns_404(self, client):
+        c, _, _ = client
+        r = c.delete("/api/videos/vidA/versions/v99?language=vi")
+        assert r.status_code == 404
