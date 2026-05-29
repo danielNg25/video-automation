@@ -49,9 +49,9 @@ interface Props {
   // future generate-preview wiring and parity with the legacy fragment).
   llmBackend: string;
   llmApiKey: string;
-  // Shortening toggle — wired in Task 3
-  enableShortening?: boolean;
-  onChangeEnableShortening?: (next: boolean) => void;
+  // Shortening toggle
+  enableShortening: boolean;
+  onChangeEnableShortening: (next: boolean) => void;
 }
 
 export function DubTab(props: Props) {
@@ -64,6 +64,7 @@ export function DubTab(props: Props) {
     ttsApiKey,
     ttsLanguage, onChangeTtsLanguage, availableTtsLanguages,
     playbackSpeed, onChangePlaybackSpeed,
+    enableShortening, onChangeEnableShortening,
     underlayDb, onChangeUnderlayDb,
     isGeneratingTts, ttsProgress, ttsGenerated, ttsError,
     ttsList, onReloadTtsList, onGenerate,
@@ -219,6 +220,28 @@ export function DubTab(props: Props) {
           className="w-16 px-2 py-1 text-xs font-mono text-on-surface bg-surface-container-low border border-outline-variant/30 rounded focus:outline-none focus:border-primary"
         />
         <span className="text-[10px] text-on-surface-variant font-mono">×</span>
+      </div>
+
+      {/* Shorten-to-fit toggle */}
+      <div className="px-3 py-3 rounded-lg border border-outline-variant/15">
+        <label className="flex items-start gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={enableShortening}
+            onChange={(e) => onChangeEnableShortening(e.target.checked)}
+            className="mt-0.5 accent-primary"
+          />
+          <div className="flex-1">
+            <div className="text-xs font-medium text-on-surface">
+              Shorten dub to fit timeline
+            </div>
+            <div className="text-[10px] text-on-surface-variant mt-0.5 leading-snug">
+              Uses the LLM to compress text when a sentence would overrun its
+              time slot. Uncheck to keep the original translation — clips may
+              overrun.
+            </div>
+          </div>
+        </label>
       </div>
 
       {/* Original-language underlay */}
