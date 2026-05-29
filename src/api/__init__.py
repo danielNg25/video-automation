@@ -20,6 +20,8 @@ from src.api.routers import (
     transcribe,
     translate,
     tts,
+)
+from src.api.routers import (
     versions as versions_router,
 )
 
