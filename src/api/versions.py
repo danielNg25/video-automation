@@ -103,6 +103,60 @@ def snapshot_working_draft(
     return entry
 
 
+def import_as_version(
+    video_id: str,
+    language: str,
+    srt_content: bytes,
+    name: str | None = None,
+) -> VersionEntry:
+    """Validate uploaded SRT bytes and write them as the next snapshot.
+
+    Validates by parsing via ``processor.subtitle.parse_srt`` against a temp
+    file. Raises ValueError on parse failure or zero-segment content
+    (caller should map to HTTP 400).
+
+    Unlike ``snapshot_working_draft``, this does NOT touch the working draft —
+    imports are always new immutable snapshots. The working draft stays
+    whatever the user last saved in the editor.
+
+    The bytes are written verbatim (no re-serialisation), preserving the
+    user's original formatting.
+    """
+    import tempfile
+    from src.processor.subtitle import parse_srt
+
+    # Validate by parsing. Use a NamedTemporaryFile so parse_srt's
+    # Path-based API works without changes. Reject empty content first
+    # (parse_srt would return [] but the error message is clearer up front).
+    if not srt_content.strip():
+        raise ValueError("Invalid or empty SRT")
+
+    with tempfile.NamedTemporaryFile(suffix=".srt", delete=False) as tmp:
+        tmp.write(srt_content)
+        tmp_path = Path(tmp.name)
+    try:
+        try:
+            segments = parse_srt(tmp_path)
+        except Exception as e:
+            raise ValueError(f"Invalid SRT: {e}") from e
+        if not segments:
+            raise ValueError("Invalid or empty SRT")
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    entries = load_versions(video_id, language)
+    new_id = next_version_id(entries)
+    snap_path = SRT_DIR / f"{video_id}_{language}.{new_id}.srt"
+    snap_path.parent.mkdir(parents=True, exist_ok=True)
+    snap_path.write_bytes(srt_content)
+    entry = VersionEntry(
+        id=new_id, name=name, created_at=datetime.now(timezone.utc)
+    )
+    entries.append(entry)
+    save_versions(video_id, language, entries)
+    return entry
+
+
 def ensure_migrated(video_id: str, language: str) -> None:
     """Migrate legacy dub-sync layout to the versions layout on first read.
 

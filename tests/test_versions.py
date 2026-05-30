@@ -294,3 +294,69 @@ class TestVersionsRouter:
         c, _, _ = client
         r = c.delete("/api/videos/vidA/versions/v99?language=vi")
         assert r.status_code == 404
+
+
+_VALID_SRT_BYTES = (
+    b"1\n00:00:00,000 --> 00:00:01,000\nhello\n\n"
+    b"2\n00:00:02,000 --> 00:00:03,000\nworld\n\n"
+)
+
+
+class TestImportAsVersion:
+    def test_import_creates_next_version(self, srt_dir):
+        from src.api.versions import import_as_version, load_versions, save_versions
+
+        save_versions("vid1", "vi", [])
+
+        entry = import_as_version("vid1", "vi", _VALID_SRT_BYTES, name=None)
+        assert entry.id == "v1"
+        assert entry.name is None
+
+        snap = srt_dir / "vid1_vi.v1.srt"
+        assert snap.exists()
+        assert snap.read_bytes() == _VALID_SRT_BYTES
+
+        listing = load_versions("vid1", "vi")
+        assert len(listing) == 1
+        assert listing[0].id == "v1"
+
+    def test_import_with_existing_versions_increments(self, srt_dir):
+        from datetime import datetime, timezone
+        from src.api.versions import (
+            VersionEntry,
+            import_as_version,
+            save_versions,
+        )
+
+        save_versions("vid1", "vi", [
+            VersionEntry(id="v1", name=None,
+                created_at=datetime(2026, 5, 30, 10, 0, 0, tzinfo=timezone.utc)),
+            VersionEntry(id="v2", name="polished",
+                created_at=datetime(2026, 5, 30, 11, 0, 0, tzinfo=timezone.utc)),
+        ])
+
+        entry = import_as_version("vid1", "vi", _VALID_SRT_BYTES, name=None)
+        assert entry.id == "v3"
+
+    def test_import_with_name_sets_name(self, srt_dir):
+        from src.api.versions import import_as_version, save_versions
+
+        save_versions("vid1", "vi", [])
+        entry = import_as_version("vid1", "vi", _VALID_SRT_BYTES, name="from-aegisub")
+        assert entry.name == "from-aegisub"
+
+    def test_import_invalid_srt_raises_value_error(self, srt_dir):
+        import pytest
+        from src.api.versions import import_as_version, save_versions
+
+        save_versions("vid1", "vi", [])
+        with pytest.raises(ValueError):
+            import_as_version("vid1", "vi", b"this is not an srt file", name=None)
+
+    def test_import_empty_srt_raises_value_error(self, srt_dir):
+        import pytest
+        from src.api.versions import import_as_version, save_versions
+
+        save_versions("vid1", "vi", [])
+        with pytest.raises(ValueError):
+            import_as_version("vid1", "vi", b"", name=None)
