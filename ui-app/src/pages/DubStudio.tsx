@@ -211,7 +211,7 @@ export function DubStudioPage() {
       const es = subscribeSSE(resp.task_id, (eventType, data) => {
         if (eventType === 'progress') {
           setProgress({
-            pct: typeof data.progress === 'number' ? data.progress : 0,
+            pct: Math.round((typeof data.progress === 'number' ? data.progress : 0) * 100),
             message: typeof data.message === 'string' ? data.message : '',
           });
         } else if (eventType === 'complete') {
