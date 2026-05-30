@@ -116,7 +116,8 @@ class TestManagerRunStandaloneDub:
     async def test_run_writes_wav_and_metadata(self, standalone_dir, monkeypatch):
         """The orchestrator parses SRT, calls the assembler, and writes
         both the WAV (from assembler) and the JSON sidecar."""
-        from unittest.mock import AsyncMock, patch
+        from unittest.mock import patch
+
         from src.api.task_manager import TaskManager
 
         tm = TaskManager()
@@ -210,6 +211,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr("src.api.standalone_dub.STANDALONE_DIR", standalone_dir)
 
     from fastapi.testclient import TestClient
+
     from src.api import create_app
 
     app = create_app()
