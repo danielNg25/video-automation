@@ -335,3 +335,8 @@ async def run_tts_track(
         "plan_log_path": str(plan_log_path),
         "plan_tsv_path": str(plan_tsv_path),
     }
+
+
+# Public aliases — callers outside this module should import these names so
+# they don't cross module boundaries importing leading-underscore private names.
+build_llm_translator = _build_llm_translator

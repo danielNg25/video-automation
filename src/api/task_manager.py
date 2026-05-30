@@ -754,7 +754,7 @@ class TaskManager:
         from src.api import standalone_dub as standalone_mod
         from src.processor.subtitle import parse_srt
         from src.tts.assembler import TTSAssembler
-        from src.tts.runner import _build_llm_translator, get_tts_provider
+        from src.tts.runner import build_llm_translator, get_tts_provider
 
         task = self.tasks[task_id]
         task.status = "running"
@@ -798,10 +798,10 @@ class TaskManager:
             # no LLM key is configured; that's fine — Stage 0 and 3 fall
             # back to heuristic / no-op respectively).
             tts_provider = get_tts_provider(effective_config, provider=provider)
-            translator = _build_llm_translator(
+            translator = build_llm_translator(
                 effective_config,
                 llm_api_key=llm_api_key,
-                llm_backend_override=llm_backend,
+                llm_backend=llm_backend,
             )
 
             # 6. Progress callback wires into SSE.
@@ -840,7 +840,9 @@ class TaskManager:
             )
 
             # 10. Write metadata sidecar.
-            file_size = output_path.stat().st_size if output_path.exists() else 0
+            if not output_path.exists():
+                raise RuntimeError(f"Assembler returned but {output_path} was not written")
+            file_size = output_path.stat().st_size
             entry = standalone_mod.StandaloneDubEntry(
                 uuid=dub_uuid,
                 original_filename=original_filename,
