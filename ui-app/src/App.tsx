@@ -8,6 +8,9 @@ const SettingsPage = lazy(() => import('./pages/Settings'));
 const TranslationProfilesPage = lazy(() => import('./pages/TranslationProfiles'));
 const VideoListPage = lazy(() => import('./pages/VideoList'));
 const VideoDetailPage = lazy(() => import('./pages/VideoDetail'));
+const DubStudioPageLazy = lazy(() =>
+  import('./pages/DubStudio').then((m) => ({ default: m.DubStudioPage }))
+);
 
 function LoadingFallback() {
   return (
@@ -28,6 +31,7 @@ function App() {
               <Route path="/download" element={<Navigate to="/" replace />} />
               <Route path="/videos" element={<VideoListPage />} />
               <Route path="/videos/:videoId" element={<VideoDetailPage />} />
+              <Route path="/dub-studio" element={<DubStudioPageLazy />} />
               <Route path="/profiles" element={<TranslationProfilesPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
