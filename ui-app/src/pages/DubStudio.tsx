@@ -249,125 +249,130 @@ export function DubStudioPage() {
   const selectedProvider = providers.find((p) => p.id === provider);
   const requiresKey = selectedProvider?.requires_key ?? false;
 
+  const selectClass =
+    'w-full bg-surface-container-highest border border-outline-variant/30 text-xs text-on-surface py-2 px-3 rounded focus:outline-none focus:border-primary';
+  const inputClass =
+    'w-full bg-surface-container-highest border border-outline-variant/30 text-xs text-on-surface py-2 px-3 rounded focus:outline-none focus:border-primary';
+  const labelClass = 'block text-[10px] text-zinc-500 uppercase tracking-tighter font-bold mb-1.5';
+
   return (
-    <div className="flex-1 overflow-y-auto p-6 space-y-6">
-      {/* heading */}
-      <div>
-        <h1 className="text-2xl font-semibold">Dub Studio</h1>
-        <p className="text-sm text-secondary mt-1">
-          Convert any SRT subtitle file into a dubbed audio track.
-        </p>
-      </div>
-
-      {/* form card */}
-      <div className="card p-6 space-y-5">
-        {/* SRT file picker */}
+    <div className="flex-1 overflow-y-auto">
+      <div className="max-w-3xl mx-auto p-6 space-y-5">
+        {/* heading */}
         <div>
-          <label className="block text-sm font-medium mb-1">SRT file</label>
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              className="btn btn-secondary text-sm"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              {srtFile ? 'Change file' : 'Choose SRT file…'}
-            </button>
-            {srtFile && (
-              <span className="text-sm text-secondary truncate max-w-xs">
-                {srtFile.name}
-              </span>
-            )}
-          </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".srt"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0] ?? null;
-              setSrtFile(f);
-            }}
-          />
+          <h1 className="text-xl font-semibold text-on-surface">Dub Studio</h1>
+          <p className="text-xs text-on-surface-variant mt-1">
+            Convert any SRT subtitle file into a dubbed audio track. No video required.
+          </p>
         </div>
 
-        {/* Provider */}
-        <div className="grid grid-cols-2 gap-4">
+        {/* form card */}
+        <div className="bg-surface-container-low rounded-xl border border-outline-variant/10 p-5 space-y-4">
+          {/* SRT file picker */}
           <div>
-            <label className="block text-sm font-medium mb-1">TTS provider</label>
-            <select
-              className="input w-full"
-              value={provider}
-              onChange={(e) => handleSetProvider(e.target.value)}
-            >
-              {providers.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                  {p.free ? ' (free)' : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Language */}
-          <div>
-            <label className="block text-sm font-medium mb-1">Language</label>
-            <select
-              className="input w-full"
-              value={language}
-              onChange={(e) => handleSetLanguage(e.target.value)}
-            >
-              <option value="vi">Vietnamese</option>
-              <option value="en">English</option>
-              <option value="zh">Chinese</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Voice */}
-        <div>
-          <label className="block text-sm font-medium mb-1">Voice</label>
-          {loadingVoices ? (
-            <p className="text-sm text-secondary">Loading voices…</p>
-          ) : (
-            <select
-              className="input w-full"
-              value={voiceId}
-              onChange={(e) => handleSetVoiceId(e.target.value)}
-            >
-              {voices.map((v) => (
-                <option key={v.name} value={v.name}>
-                  {v.friendly_name} ({v.gender})
-                </option>
-              ))}
-              {voices.length === 0 && (
-                <option value="">— no voices available —</option>
+            <label className={labelClass}>SRT file</label>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="px-3 py-2 rounded-md text-xs font-medium bg-surface-container-highest border border-outline-variant/30 text-on-surface hover:bg-surface-container-high transition-colors flex items-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-sm">upload_file</span>
+                {srtFile ? 'Change file' : 'Choose SRT file…'}
+              </button>
+              {srtFile && (
+                <span className="inline-flex items-center gap-1.5 px-2 py-1 bg-primary/10 text-primary text-[11px] rounded font-mono truncate max-w-xs">
+                  <span className="material-symbols-outlined text-xs">description</span>
+                  {srtFile.name}
+                </span>
               )}
-            </select>
-          )}
-        </div>
-
-        {/* API key (shown only when required) */}
-        {requiresKey && (
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              API key for {selectedProvider?.name}
-            </label>
+            </div>
             <input
-              type="password"
-              className="input w-full font-mono text-sm"
-              placeholder="sk-…"
-              value={ttsApiKey}
-              onChange={(e) => handleSetTtsApiKey(e.target.value)}
+              ref={fileInputRef}
+              type="file"
+              accept=".srt"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0] ?? null;
+                setSrtFile(f);
+              }}
             />
           </div>
-        )}
 
-        {/* Playback speed + shortening */}
-        <div className="grid grid-cols-2 gap-4 items-end">
+          {/* Provider + Language */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelClass}>TTS provider</label>
+              <select
+                className={selectClass}
+                value={provider}
+                onChange={(e) => handleSetProvider(e.target.value)}
+              >
+                {providers.length === 0 && <option value={provider}>{provider}</option>}
+                {providers.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                    {p.free ? ' (free)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={labelClass}>Language</label>
+              <select
+                className={selectClass}
+                value={language}
+                onChange={(e) => handleSetLanguage(e.target.value)}
+              >
+                <option value="vi">Vietnamese</option>
+                <option value="en">English</option>
+                <option value="zh">Chinese</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Voice */}
           <div>
-            <label className="block text-sm font-medium mb-1">
-              Playback speed: {playbackSpeed.toFixed(2)}×
-            </label>
+            <label className={labelClass}>Voice</label>
+            {loadingVoices ? (
+              <div className="text-xs text-on-surface-variant italic px-3 py-2 bg-surface-container-highest border border-outline-variant/30 rounded">
+                Loading voices…
+              </div>
+            ) : (
+              <select
+                className={selectClass}
+                value={voiceId}
+                onChange={(e) => handleSetVoiceId(e.target.value)}
+                disabled={voices.length === 0}
+              >
+                {voices.length === 0 && <option value="">— no voices available —</option>}
+                {voices.map((v) => (
+                  <option key={v.name} value={v.name}>
+                    {v.friendly_name} ({v.gender})
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* API key (shown only when required) */}
+          {requiresKey && (
+            <div>
+              <label className={labelClass}>API key for {selectedProvider?.name}</label>
+              <input
+                type="password"
+                className={`${inputClass} font-mono`}
+                placeholder="sk-…"
+                value={ttsApiKey}
+                onChange={(e) => handleSetTtsApiKey(e.target.value)}
+              />
+            </div>
+          )}
+
+          {/* Playback speed */}
+          <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-container-highest border border-outline-variant/20">
+            <span className="material-symbols-outlined text-sm text-on-surface-variant">speed</span>
+            <label className="text-xs text-on-surface-variant flex-1">Playback speed</label>
             <input
               type="range"
               min={0.5}
@@ -375,125 +380,165 @@ export function DubStudioPage() {
               step={0.05}
               value={playbackSpeed}
               onChange={(e) => handleSetPlaybackSpeed(parseFloat(e.target.value))}
-              className="w-full"
+              className="flex-[2] accent-primary"
             />
+            <span className="w-12 text-right text-xs font-mono text-on-surface">
+              {playbackSpeed.toFixed(2)}×
+            </span>
           </div>
-          <div className="flex items-center gap-2 pb-1">
+
+          {/* Shorten toggle */}
+          <label className="flex items-start gap-2.5 cursor-pointer px-3 py-2 rounded-lg bg-surface-container-highest border border-outline-variant/20">
             <input
-              id="dub-studio-shorten"
               type="checkbox"
               checked={enableShortening}
               onChange={(e) => handleSetEnableShortening(e.target.checked)}
+              className="mt-0.5 accent-primary"
             />
-            <label htmlFor="dub-studio-shorten" className="text-sm">
-              Shorten dub to fit
-            </label>
-          </div>
-        </div>
-
-        {/* Progress bar */}
-        {generating && (
-          <div className="space-y-1">
-            <div className="flex justify-between text-xs text-secondary">
-              <span>{progress.message}</span>
-              <span>{progress.pct}%</span>
+            <div className="flex-1">
+              <div className="text-xs font-medium text-on-surface">Shorten dub to fit timeline</div>
+              <div className="text-[10px] text-on-surface-variant mt-0.5 leading-snug">
+                Uses the LLM to compress text when a sentence would overrun. Uncheck to keep the
+                original text — clips may overrun.
+              </div>
             </div>
-            <div className="h-2 bg-surface-2 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-primary transition-all"
-                style={{ width: `${progress.pct}%` }}
-              />
-            </div>
-          </div>
-        )}
+          </label>
 
-        {/* Error */}
-        {genError && (
-          <p className="text-sm text-error">{genError}</p>
-        )}
-
-        {/* Submit */}
-        <div className="flex justify-end">
+          {/* Generate button */}
           <button
             type="button"
-            className="btn btn-primary"
-            disabled={!srtFile || generating}
+            disabled={!srtFile || !voiceId || generating}
             onClick={() => void handleGenerate()}
             aria-label="Generate dub"
+            className={`w-full py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
+              generating
+                ? 'bg-surface-container-highest text-on-surface-variant cursor-wait'
+                : !srtFile || !voiceId
+                  ? 'bg-surface-container-highest text-on-surface-variant cursor-not-allowed opacity-50'
+                  : 'bg-primary text-on-primary-fixed hover:brightness-110 active:scale-95'
+            }`}
           >
-            {generating ? 'Generating…' : 'Generate dub'}
+            {generating ? (
+              <>
+                <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
+                {progress.message || 'Generating…'}
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined text-sm">record_voice_over</span>
+                Generate dub
+              </>
+            )}
           </button>
+
+          {/* Progress bar */}
+          {generating && (
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-mono text-zinc-500 uppercase">{progress.message}</span>
+                <span className="text-xs font-bold font-mono text-primary">{progress.pct}%</span>
+              </div>
+              <div className="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
+                <div
+                  className="bg-primary h-full transition-all duration-500 shadow-[0_0_8px_rgba(208,188,255,0.4)]"
+                  style={{ width: `${progress.pct}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Error */}
+          {genError && (
+            <div className="text-xs text-red-400 px-3 py-2 rounded bg-red-500/10 border border-red-500/20">
+              {genError}
+            </div>
+          )}
         </div>
-      </div>
 
-      {/* recent dubs */}
-      <div className="card p-6 space-y-4">
-        <h2 className="text-lg font-semibold">Recent dubs</h2>
+        {/* recent dubs */}
+        <div className="bg-surface-container-low rounded-xl border border-outline-variant/10 p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold">
+              Recent dubs ({recentDubs.length})
+            </label>
+          </div>
 
-        {loadingRecent ? (
-          <p className="text-sm text-secondary">Loading…</p>
-        ) : recentDubs.length === 0 ? (
-          <p className="text-sm text-secondary">No dubs yet. Generate one above!</p>
-        ) : (
-          <ul className="space-y-3">
-            {recentDubs.map((dub) => (
-              <li
-                key={dub.uuid}
-                className="flex items-center gap-3 p-3 rounded-lg bg-surface-1"
-              >
-                {/* filename + meta */}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">
-                    {dub.original_filename}
-                  </p>
-                  <p className="text-xs text-secondary mt-0.5">
-                    {dub.provider} · {dub.voice} · {dub.language.toUpperCase()} ·{' '}
-                    {fmtDuration(dub.duration_seconds)} · {fmtSize(dub.file_size_bytes)} ·{' '}
-                    {fmtDate(dub.created_at)}
-                  </p>
-                </div>
-
-                {/* inline audio player */}
-                {playingUuid === dub.uuid ? (
-                  <audio
-                    autoPlay
-                    controls
-                    className="h-8 w-48"
-                    src={getStandaloneDubUrl(dub.uuid)}
-                    onEnded={() => setPlayingUuid(null)}
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    className="btn btn-secondary text-xs"
-                    onClick={() => setPlayingUuid(dub.uuid)}
+          {loadingRecent ? (
+            <p className="text-xs text-on-surface-variant italic">Loading…</p>
+          ) : recentDubs.length === 0 ? (
+            <div className="text-center text-xs text-on-surface-variant py-6 bg-surface-container-lowest rounded-lg">
+              No dubs yet. Generate one above!
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {recentDubs.map((dub) => {
+                const isPlaying = playingUuid === dub.uuid;
+                const audioUrl = getStandaloneDubUrl(dub.uuid);
+                return (
+                  <div
+                    key={dub.uuid}
+                    className="flex items-center gap-2 px-3 py-2 bg-surface-container-lowest rounded-lg group"
                   >
-                    Play
-                  </button>
-                )}
-
-                {/* download */}
-                <a
-                  href={getStandaloneDubUrl(dub.uuid)}
-                  download={`${dub.original_filename.replace(/\.srt$/i, '')}_dub.wav`}
-                  className="btn btn-secondary text-xs"
-                >
-                  Download
-                </a>
-
-                {/* delete */}
-                <button
-                  type="button"
-                  aria-label="Delete"
-                  className="btn btn-secondary text-xs text-error"
-                  onClick={() => void handleDelete(dub.uuid)}
-                >
-                  Delete
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+                    <button
+                      type="button"
+                      onClick={() => setPlayingUuid(isPlaying ? null : dub.uuid)}
+                      className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
+                        isPlaying
+                          ? 'bg-primary text-on-primary-fixed'
+                          : 'bg-surface-container-high text-on-surface-variant hover:bg-primary/20'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-sm">
+                        {isPlaying ? 'stop' : 'play_arrow'}
+                      </span>
+                    </button>
+                    <div className="flex-1 min-w-0 flex items-center gap-1.5">
+                      <span
+                        className="shrink-0 bg-primary/15 text-primary text-[9px] font-semibold px-1.5 py-0.5 rounded truncate max-w-[160px]"
+                        title={dub.original_filename}
+                      >
+                        {dub.original_filename}
+                      </span>
+                      <span className="text-[11px] font-semibold text-on-surface truncate">
+                        {dub.voice}
+                      </span>
+                      <span className="text-[9px] text-zinc-500 shrink-0">
+                        {dub.provider} · {dub.language.toUpperCase()} · {fmtDuration(dub.duration_seconds)} · {fmtSize(dub.file_size_bytes)}
+                      </span>
+                    </div>
+                    <span className="text-[9px] font-mono text-zinc-600 shrink-0">{fmtDate(dub.created_at)}</span>
+                    <a
+                      href={audioUrl}
+                      download={`${dub.original_filename.replace(/\.srt$/i, '')}_dub.wav`}
+                      className="p-1 rounded hover:bg-primary/20 text-zinc-600 hover:text-primary transition-all"
+                      title="Download dub"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <span className="material-symbols-outlined text-sm">download</span>
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => void handleDelete(dub.uuid)}
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 text-zinc-600 hover:text-red-400 transition-all"
+                      title="Delete dub"
+                      aria-label="Delete"
+                    >
+                      <span className="material-symbols-outlined text-sm">delete</span>
+                    </button>
+                    {isPlaying && (
+                      <audio
+                        autoPlay
+                        src={audioUrl}
+                        onEnded={() => setPlayingUuid(null)}
+                        style={{ display: 'none' }}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
