@@ -58,3 +58,23 @@ export async function deleteVersion(
     { method: 'DELETE' },
   );
 }
+
+export async function importVersion(
+  videoId: string,
+  language: string,
+  file: File,
+  name?: string | null,
+): Promise<VersionEntry> {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (name) formData.append('name', name);
+  const r = await fetch(
+    `/api/videos/${videoId}/versions/import?language=${language}`,
+    { method: 'POST', body: formData },
+  );
+  if (!r.ok) {
+    const body = await r.text().catch(() => '');
+    throw new Error(`${r.status} ${body}`);
+  }
+  return r.json();
+}

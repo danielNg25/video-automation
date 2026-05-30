@@ -102,7 +102,7 @@ function VideoDetailPage() {
 
   // Version state (shared across Editor + Dub tabs) — scoped to the language
   // the user is editing so VersionPanel always shows the right snapshots.
-  const { versions, createSnapshot, rename, remove } = useVersions(videoId, activeLang);
+  const { versions, createSnapshot, rename, remove, importFile } = useVersions(videoId, activeLang);
   const [selectedVersion, setSelectedVersion] = useState('draft');
 
   // Load API key from localStorage when backend changes
@@ -370,6 +370,7 @@ function VideoDetailPage() {
             onCreateSnapshot={createSnapshot}
             onRenameVersion={rename}
             onDeleteVersion={remove}
+            onImportVersion={importFile}
             activeLang={activeLang}
             onActiveLangChange={setActiveLang}
           />

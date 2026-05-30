@@ -4,6 +4,7 @@ import {
   createVersion,
   renameVersion,
   deleteVersion,
+  importVersion,
 } from '../api/versions';
 import type { VersionEntry } from '../api/types';
 
@@ -53,5 +54,14 @@ export function useVersions(videoId: string | undefined, language: string) {
     [videoId, language, refresh],
   );
 
-  return { versions, loading, createSnapshot, rename, remove, refresh };
+  const importFile = useCallback(
+    async (file: File, name: string | null) => {
+      if (!videoId) return;
+      await importVersion(videoId, language, file, name);
+      await refresh();
+    },
+    [videoId, language, refresh],
+  );
+
+  return { versions, loading, createSnapshot, rename, remove, refresh, importFile };
 }
