@@ -381,6 +381,15 @@ export function DubTab(props: Props) {
                     <span className="text-[9px] text-zinc-500 shrink-0">{entry.provider} · {entry.language} · {sizeMb}MB</span>
                   </div>
                   <span className="text-[9px] font-mono text-zinc-600">{ago}</span>
+                  <a
+                    href={audioUrl}
+                    download={entry.filename}
+                    className="p-1 rounded hover:bg-primary/20 text-zinc-600 hover:text-primary transition-all"
+                    title={`Download ${entry.filename}`}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <span className="material-symbols-outlined text-sm">download</span>
+                  </a>
                   <button
                     onClick={async (e) => {
                       e.stopPropagation();

@@ -9,6 +9,7 @@ import {
   getSrt,
   putSrt,
   getRawVideoUrl,
+  getSrtDownloadUrl,
   postPreviewClip,
   subscribeSSE,
   getProcessedVideoUrl,
@@ -359,6 +360,28 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
             )}
             {saveStatus === 'error' && (
               <span className="font-mono text-[9px] text-red-400">Save failed</span>
+            )}
+
+            <a
+              href={getRawVideoUrl(videoId)}
+              download={`${videoId}.mp4`}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-container-highest text-on-surface-variant hover:bg-surface-container-high transition-colors"
+              title="Download original Douyin video"
+            >
+              <span className="material-symbols-outlined text-sm">download</span>
+              Video
+            </a>
+
+            {activeLang && (
+              <a
+                href={getSrtDownloadUrl(videoId, activeLang)}
+                download={`${videoId}_${activeLang}.srt`}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-container-highest text-on-surface-variant hover:bg-surface-container-high transition-colors"
+                title={`Download ${activeLang.toUpperCase()} subtitles (working draft)`}
+              >
+                <span className="material-symbols-outlined text-sm">download</span>
+                SRT
+              </a>
             )}
 
             <button
