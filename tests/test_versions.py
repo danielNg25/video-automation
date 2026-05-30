@@ -360,3 +360,47 @@ class TestImportAsVersion:
         save_versions("vid1", "vi", [])
         with pytest.raises(ValueError):
             import_as_version("vid1", "vi", b"", name=None)
+
+
+class TestImportRouter:
+    def test_post_import_returns_201_with_entry(self, client):
+        from io import BytesIO
+
+        valid_srt = (
+            b"1\n00:00:00,000 --> 00:00:01,000\nhello\n\n"
+        )
+        c, _, _ = client
+        r = c.post(
+            "/api/videos/vidA/versions/import?language=vi",
+            files={"file": ("uploaded.srt", BytesIO(valid_srt), "text/plain")},
+        )
+        assert r.status_code == 201
+        body = r.json()
+        assert body["id"] == "v1"
+        assert body["name"] is None
+        assert "created_at" in body
+
+    def test_post_import_with_name_sets_name(self, client):
+        from io import BytesIO
+
+        valid_srt = (
+            b"1\n00:00:00,000 --> 00:00:01,000\nhello\n\n"
+        )
+        c, _, _ = client
+        r = c.post(
+            "/api/videos/vidA/versions/import?language=vi",
+            files={"file": ("uploaded.srt", BytesIO(valid_srt), "text/plain")},
+            data={"name": "polished"},
+        )
+        assert r.status_code == 201
+        assert r.json()["name"] == "polished"
+
+    def test_post_import_rejects_invalid_srt(self, client):
+        from io import BytesIO
+
+        c, _, _ = client
+        r = c.post(
+            "/api/videos/vidA/versions/import?language=vi",
+            files={"file": ("garbage.srt", BytesIO(b"not an srt at all"), "text/plain")},
+        )
+        assert r.status_code == 400

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from src.api import versions as versions_mod
@@ -82,3 +82,28 @@ async def delete_version(
             detail=f"Version {version_id} not found",
         )
     return None
+
+
+@router.post(
+    "/api/videos/{video_id}/versions/import",
+    response_model=versions_mod.VersionEntry,
+    status_code=201,
+)
+async def import_version(
+    video_id: str,
+    language: str,
+    file: UploadFile = File(...),
+    name: str | None = Form(None),
+):
+    """Upload an edited SRT and snapshot it as the next version.
+
+    Skips the working draft. The uploaded bytes become
+    {video_id}_{language}.v{N+1}.srt. Rejects parse-failed or empty SRTs
+    with 400.
+    """
+    versions_mod.ensure_migrated(video_id, language)
+    content = await file.read()
+    try:
+        return versions_mod.import_as_version(video_id, language, content, name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

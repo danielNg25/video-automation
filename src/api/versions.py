@@ -123,6 +123,7 @@ def import_as_version(
     user's original formatting.
     """
     import tempfile
+
     from src.processor.subtitle import parse_srt
 
     # Validate by parsing. Use a NamedTemporaryFile so parse_srt's
