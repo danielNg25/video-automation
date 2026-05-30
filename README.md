@@ -570,6 +570,27 @@ douyin-automation/
 
 ---
 
+### App Refocus — Drop Export Pipeline (2026-05-30)
+
+> Sub-project 1 of 3 in the post-merge refocus. See [`docs/superpowers/specs/2026-05-30-app-refocus-drop-export-design.md`](docs/superpowers/specs/2026-05-30-app-refocus-drop-export-design.md) and [`docs/superpowers/plans/2026-05-30-app-refocus-drop-export.md`](docs/superpowers/plans/2026-05-30-app-refocus-drop-export.md).
+
+- [x] **Task 1** — Slim `src/processor/`: `ffmpeg.py` keeps `get_video_info` / `extract_frames` / `generate_proxy`; `subtitle.py` keeps `parse_srt` / `write_srt`. Delete `style.py`, `style_render.py`, `style_matcher.py`, `region_detector.py`, `CLAUDE.md`.
+- [x] **Task 2** — Delete `src/api/routers/process.py` and `src/api/routers/replacement.py`; strip style + preview-frame/clip + preview-mix handlers from `editor.py`.
+- [x] **Task 3** — Drop the Process stage from `src/pipeline.py` (TTS now covers 0.60–1.00) and the `--platforms` CLI flag from `src/cli.py`.
+- [x] **Task 4** — Delete `ExportTab`, `StylePanel`, `SubtitleRenderer`, `diffSpec` and their tests. Strip them from `EditorTab.tsx` and `VideoDetail.tsx`. Clean style/process clients from `api/client.ts`.
+- [x] **Task 5** — Delete `config/platforms.yaml`, `config/subtitle_styles.yaml`; delete the dead `run_process` method + `_default_tts_mix_for_platform` helper + `GET /api/config/platforms` endpoint.
+- [x] **Task 6** — Delete 7 test files for deleted code; remove `TestFFmpegAudioMix` + `TestBatchProcessorTTS` from `test_tts.py`. Full BE suite runs without `--ignore` (221 passed, 8 skipped).
+- [x] **Task 7** — CHANGELOG + README updates.
+
+**Not in this PR:** sub-project 2 (SRT import → new version snapshot) and sub-project 3 (standalone SRT → Dub tool). Separate specs + PRs.
+
+**Post-merge cleanup (manual, one-time):** these directories/files are no longer read by the app; safe to delete to reclaim disk:
+- `data/output/` (per-platform MP4s)
+- `data/preview/` (preview frames + clips)
+- `data/*_style.json` (per-video style deltas)
+
+---
+
 ### One-Time Setup Checklist
 
 - [ ] Docker installed, Douyin API container running
