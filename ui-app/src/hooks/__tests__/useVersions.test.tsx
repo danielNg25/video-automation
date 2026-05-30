@@ -7,6 +7,7 @@ vi.mock('../../api/versions', () => ({
   createVersion: vi.fn(),
   renameVersion: vi.fn(),
   deleteVersion: vi.fn(),
+  importVersion: vi.fn(),
 }));
 
 describe('useVersions', () => {
@@ -81,5 +82,27 @@ describe('useVersions', () => {
 
     expect(api.deleteVersion).toHaveBeenCalledWith('vid1', 'vi', 'v1');
     await waitFor(() => expect(result.current.versions).toHaveLength(0));
+  });
+
+  it('importFile calls the API and refreshes', async () => {
+    const api = await import('../../api/versions');
+    (api.getVersions as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
+    (api.importVersion as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'v1', name: null, created_at: '2026-05-30T10:00:00Z',
+    });
+    (api.getVersions as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { id: 'v1', name: null, created_at: '2026-05-30T10:00:00Z' },
+    ]);
+
+    const { result } = renderHook(() => useVersions('vid1', 'vi'));
+    await waitFor(() => expect(result.current.versions).toEqual([]));
+
+    const file = new File(['srt content'], 'test.srt', { type: 'text/plain' });
+    await act(async () => {
+      await result.current.importFile(file, null);
+    });
+
+    expect(api.importVersion).toHaveBeenCalledWith('vid1', 'vi', file, null);
+    await waitFor(() => expect(result.current.versions).toHaveLength(1));
   });
 });
