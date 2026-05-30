@@ -244,16 +244,6 @@ async def update_config_alias(body: dict):
     return await update_config(body)
 
 
-@router.get("/api/config/platforms")
-async def get_platform_configs():
-    """Return platform configs from platforms.yaml."""
-    platforms_path = Path("config/platforms.yaml")
-    if not platforms_path.exists():
-        return {}
-    with open(platforms_path) as f:
-        return yaml.safe_load(f) or {}
-
-
 # --- Secret redaction ---
 
 SECRET_KEYS = re.compile(

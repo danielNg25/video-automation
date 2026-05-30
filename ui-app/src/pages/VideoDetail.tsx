@@ -4,9 +4,8 @@ import { TopBar } from '../components/TopBar';
 import { EditorTab } from './videoDetail/EditorTab';
 import { TranslateTab } from './videoDetail/TranslateTab';
 import { DubTab } from './videoDetail/DubTab';
-import { ExportTab } from './videoDetail/ExportTab';
 import {
-  getVideo, postTranslate, postTTS, postExport, deleteExport,
+  getVideo, postTranslate, postTTS,
   subscribeSSE, getProfiles, getTTSProviders, getTTSVoices,
   getTTSList,
 } from '../api/client';
@@ -18,7 +17,7 @@ import type {
 import { loadApiKeys, loadLLMPrefs, storageGet, storageSet } from '../utils/storage';
 import { useVersions } from '../hooks/useVersions';
 
-type Tab = 'editor' | 'translate' | 'dub' | 'export';
+type Tab = 'editor' | 'translate' | 'dub';
 
 /**
  * One-time migration: the old shared `tts_voice_id` localStorage key holds a
@@ -105,13 +104,6 @@ function VideoDetailPage() {
   // the user is editing so VersionPanel always shows the right snapshots.
   const { versions, createSnapshot, rename, remove } = useVersions(videoId, activeLang);
   const [selectedVersion, setSelectedVersion] = useState('draft');
-
-  // Export state
-  const [isExporting, setIsExporting] = useState(false);
-  const [exportProgress, setExportProgress] = useState<{ pct: number; message: string }>({ pct: 0, message: '' });
-  const [exportDone, setExportDone] = useState(false);
-  const [exportError, setExportError] = useState('');
-  const [exportTimestamp, setExportTimestamp] = useState(0);
 
   // Load API key from localStorage when backend changes
   useEffect(() => {
@@ -337,59 +329,13 @@ function VideoDetailPage() {
     }
   };
 
-  const handleExport = async (params: {
-    subtitleLanguage: string | null;
-    ttsFile: string | null;
-    videoVolume: number;
-    ttsVolume: number;
-  }) => {
-    if (!videoMeta) return;
-    setIsExporting(true);
-    setExportError('');
-    setExportDone(false);
-    setExportProgress({ pct: 0, message: 'Starting...' });
-    try {
-      await deleteExport(videoMeta.video_id).catch(() => {});
-      const { task_id } = await postExport(
-        videoMeta.video_id,
-        params.subtitleLanguage,
-        params.ttsFile,
-        params.videoVolume,
-        params.ttsVolume,
-      );
-      const es = subscribeSSE(task_id, (eventType, data) => {
-        if (eventType === 'progress') {
-          setExportProgress({
-            pct: Math.round((data.progress as number) * 100),
-            message: data.message as string,
-          });
-        } else if (eventType === 'complete') {
-          setIsExporting(false);
-          setExportDone(true);
-          setExportTimestamp(Date.now());
-          setExportProgress({ pct: 100, message: 'Export complete' });
-          getVideo(videoMeta.video_id).then(setVideoMeta).catch(() => {});
-          es.close();
-        } else if (eventType === 'error') {
-          setIsExporting(false);
-          setExportError(data.message as string);
-          es.close();
-        }
-      });
-    } catch (e) {
-      setIsExporting(false);
-      setExportError(e instanceof Error ? e.message : 'Export failed');
-    }
-  };
-
-
   return (
     <div className="flex flex-col h-full bg-surface">
       <TopBar breadcrumb={videoMeta?.title || 'Video Detail'} />
 
       <div className="px-6 pt-4">
         <div className="flex gap-1 bg-surface-container-lowest p-1 rounded-md w-fit">
-          {(['editor', 'translate', 'dub', 'export'] as const).map((t) => (
+          {(['editor', 'translate', 'dub'] as const).map((t) => (
             <button
               key={t}
               onClick={() => setActiveTab(t)}
@@ -507,20 +453,6 @@ function VideoDetailPage() {
           />
         )}
 
-        {activeTab === 'export' && videoMeta && (
-          <ExportTab
-            video={videoMeta}
-            ttsList={ttsList}
-            onExport={handleExport}
-            isExporting={isExporting}
-            exportProgress={exportProgress}
-            exportDone={exportDone}
-            exportError={exportError}
-            exportTimestamp={exportTimestamp}
-            onExportTimestampSync={setExportTimestamp}
-            onExportDoneSync={setExportDone}
-          />
-        )}
       </section>
     </div>
   );

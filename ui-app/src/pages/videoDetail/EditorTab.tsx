@@ -1,33 +1,19 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { VideoPlayer } from '../../components/editor/VideoPlayer';
-import { SubtitleRenderer } from '../../components/editor/SubtitleRenderer';
 import { SegmentList } from '../../components/editor/SegmentList';
 import { Timeline } from '../../components/editor/Timeline';
-import { StylePanel } from '../../components/editor/StylePanel';
 import { useVideoPlayer } from '../../hooks/useVideoPlayer';
 import { srtTimestampToSeconds, secondsToSrtTimestamp } from '../../utils/srtTime';
-import { diffSpec } from '../../utils/diffSpec';
 import {
   getVideo,
   getSrt,
   putSrt,
   getRawVideoUrl,
-  postPreviewClip,
-  subscribeSSE,
-  getProcessedVideoUrl,
+  getSrtDownloadUrl,
   getProxyVideoUrl,
-  getVideoStyle,
-  putVideoStyle,
-  putSubtitleStyleDefault,
-  deleteVideoStyle,
-  getSubtitleStyleDefault,
-  getSubtitleRegion,
 } from '../../api/client';
-import type { VideoMetadata, SubtitleSegment, SubtitleRegion, VersionEntry } from '../../api/types';
-import type { SubtitleStyleSpec } from '../../api/types';
+import type { VideoMetadata, SubtitleSegment, VersionEntry } from '../../api/types';
 import { VersionPanel } from '../../components/editor/VersionPanel';
-
-type RightTab = 'segments' | 'style';
 
 interface Props {
   videoId: string;
@@ -55,51 +41,15 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
   );
 
   // UI state
-  const [rightTab, setRightTab] = useState<RightTab>('segments');
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [useProxy, setUseProxy] = useState(true);
   const [videoLoading, setVideoLoading] = useState(true);
 
-  // Subtitle style — new nested spec model
-  const [globalDefault, setGlobalDefault] = useState<SubtitleStyleSpec | null>(null);
-  const [savedSpec, setSavedSpec] = useState<SubtitleStyleSpec | null>(null);
-  const [draftSpec, setDraftSpec] = useState<SubtitleStyleSpec | null>(null);
-
-  const [styleSaving, setStyleSaving] = useState(false);
-  const [styleSaveStatus, setStyleSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
-
-  // Subtitle region (for OCR re-align)
-  const [subtitleRegion, setSubtitleRegion] = useState<SubtitleRegion | null>(null);
-
-  // Video rect for SubtitleRenderer overlay positioning
-  const [videoRect, setVideoRect] = useState<{
-    offsetX: number;
-    offsetY: number;
-    width: number;
-    height: number;
-  } | undefined>(undefined);
-
   const isDirty = useMemo(
-    () =>
-      JSON.stringify(segments) !== JSON.stringify(originalSegments) ||
-      (savedSpec !== null && JSON.stringify(draftSpec) !== JSON.stringify(savedSpec)),
-    [segments, originalSegments, draftSpec, savedSpec],
+    () => JSON.stringify(segments) !== JSON.stringify(originalSegments),
+    [segments, originalSegments],
   );
-
-  // On mount: load global default + per-video merged style in parallel
-  useEffect(() => {
-    if (!videoId) return;
-    Promise.all([getSubtitleStyleDefault(), getVideoStyle(videoId)])
-      .then(([globalSpec, videoRes]) => {
-        setGlobalDefault(globalSpec);
-        setSavedSpec(videoRes.style);
-        setDraftSpec(structuredClone(videoRes.style));
-      })
-      .catch(() => {});
-  }, [videoId]);
 
   // Refresh video metadata. `initialVideo` seeds the state synchronously so the
   // editor renders immediately; this effect picks up any server-side changes.
@@ -144,31 +94,6 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
         setOriginalSegments([]);
       });
   }, [videoId, activeLang]);
-
-  // Track video element rect for subtitle overlay positioning
-  useEffect(() => {
-    const videoEl = videoRef.current;
-    if (!videoEl) return;
-    const container = videoEl.parentElement;
-    if (!container) return;
-
-    const update = () => {
-      const containerRect = container.getBoundingClientRect();
-      const vidRect = videoEl.getBoundingClientRect();
-      setVideoRect({
-        offsetX: vidRect.left - containerRect.left,
-        offsetY: vidRect.top - containerRect.top,
-        width: vidRect.width,
-        height: vidRect.height,
-      });
-    };
-
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(videoEl);
-    ro.observe(container);
-    return () => ro.disconnect();
-  }, []);
 
   // --- Segment handlers ---
 
@@ -282,20 +207,15 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
     [],
   );
 
-  // --- Save (subtitles + style delta) ---
+  // --- Save (SRT only) ---
   const handleSave = useCallback(async () => {
-    if (!videoId || saving || !draftSpec || !globalDefault) return;
+    if (!videoId || saving) return;
     setSaving(true);
     setSaveStatus('idle');
     try {
-      const delta = diffSpec(draftSpec, globalDefault);
-      const [res] = await Promise.all([
-        putSrt(videoId, { language: activeLang, segments }),
-        putVideoStyle(videoId, delta),
-      ]);
+      const res = await putSrt(videoId, { language: activeLang, segments });
       setSegments(res.segments);
       setOriginalSegments(res.segments);
-      setSavedSpec(structuredClone(draftSpec));
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 3000);
     } catch {
@@ -303,41 +223,7 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
     } finally {
       setSaving(false);
     }
-  }, [videoId, activeLang, segments, saving, draftSpec, globalDefault]);
-
-  const handleSaveAsDefault = useCallback(async () => {
-    if (styleSaving || !draftSpec) return;
-    setStyleSaving(true);
-    setStyleSaveStatus('idle');
-    try {
-      const next = await putSubtitleStyleDefault(draftSpec);
-      setGlobalDefault(next);
-      setStyleSaveStatus('saved');
-      setTimeout(() => setStyleSaveStatus('idle'), 3000);
-    } catch {
-      setStyleSaveStatus('error');
-    } finally {
-      setStyleSaving(false);
-    }
-  }, [styleSaving, draftSpec]);
-
-  const handleResetToGlobal = useCallback(async () => {
-    if (!videoId || !globalDefault) return;
-    if (!confirm('Reset all per-video style overrides? This clears every customization for this video.')) return;
-    const res = await deleteVideoStyle(videoId);
-    setSavedSpec(res.style);
-    setDraftSpec(structuredClone(res.style));
-  }, [videoId, globalDefault]);
-
-  const handleRealignToOcr = useCallback(async () => {
-    if (!videoId || !draftSpec || !globalDefault) return;
-    if (!confirm('Re-align subtitle position to the OCR-detected region? Your current vertical/horizontal/alignment values will be lost.')) return;
-    const delta = diffSpec(draftSpec, globalDefault);
-    delete (delta as Record<string, unknown>).position;
-    const res = await putVideoStyle(videoId, delta);
-    setSavedSpec(res.style);
-    setDraftSpec(structuredClone(res.style));
-  }, [videoId, draftSpec, globalDefault]);
+  }, [videoId, activeLang, segments, saving]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -382,57 +268,11 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
   }, [playerControls, playerState.currentTime, handleSave]);
 
   // --- Preview burn-in ---
-  const handlePreviewBurnIn = useCallback(async () => {
-    if (!videoId || previewLoading) return;
-    setPreviewLoading(true);
-    setPreviewUrl(null);
-    try {
-      // First save current edits
-      if (isDirty) {
-        await putSrt(videoId, { language: activeLang, segments });
-        setOriginalSegments(segments);
-      }
-
-      const { task_id } = await postPreviewClip(videoId, {
-        language: activeLang,
-        start: Math.max(0, playerState.currentTime - 2),
-        duration: 10,
-        subtitle_style: draftSpec ?? undefined,
-      });
-
-      const es = subscribeSSE(task_id, (eventType) => {
-        if (eventType === 'complete') {
-          setPreviewUrl(getProcessedVideoUrl(videoId, 'preview'));
-          setPreviewLoading(false);
-          es.close();
-        } else if (eventType === 'error') {
-          setPreviewLoading(false);
-          es.close();
-        }
-      });
-    } catch {
-      setPreviewLoading(false);
-    }
-  }, [videoId, activeLang, segments, isDirty, draftSpec, playerState.currentTime, previewLoading]);
-
-  // Load subtitle region on mount (best-effort) so hasOcrRegion is accurate.
-  useEffect(() => {
-    if (!videoId) return;
-    getSubtitleRegion(videoId)
-      .then((r) => setSubtitleRegion(r))
-      .catch(() => {});
-  }, [videoId]);
-
   if (!videoId) return <div className="p-6 text-on-surface">No video ID</div>;
 
   const videoSrc = video
     ? (useProxy ? getProxyVideoUrl(videoId) : getRawVideoUrl(videoId))
     : '';
-
-  // Source dimensions for StylePanel — VideoMetadata has no width/height fields;
-  // fall back to portrait defaults (1080×1920) which match the Douyin format.
-  const sourceW = 1080;
-  const sourceH = 1920;
 
   return (
     <div className="flex flex-col h-full">
@@ -485,16 +325,27 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
               <span className="font-mono text-[9px] text-red-400">Save failed</span>
             )}
 
-            <button
-              onClick={handlePreviewBurnIn}
-              disabled={previewLoading}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-highest hover:bg-surface-container-high text-xs text-on-surface transition-colors disabled:opacity-50"
+            <a
+              href={getRawVideoUrl(videoId)}
+              download={`${videoId}.mp4`}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-container-highest text-on-surface-variant hover:bg-surface-container-high transition-colors"
+              title="Download original Douyin video"
             >
-              <span className="material-symbols-outlined text-sm">
-                {previewLoading ? 'progress_activity' : 'preview'}
-              </span>
-              {previewLoading ? 'Rendering...' : 'Preview Burn-in'}
-            </button>
+              <span className="material-symbols-outlined text-sm">download</span>
+              Video
+            </a>
+
+            {activeLang && (
+              <a
+                href={getSrtDownloadUrl(videoId, activeLang)}
+                download={`${videoId}_${activeLang}.srt`}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-container-highest text-on-surface-variant hover:bg-surface-container-high transition-colors"
+                title={`Download ${activeLang.toUpperCase()} subtitles (working draft)`}
+              >
+                <span className="material-symbols-outlined text-sm">download</span>
+                SRT
+              </a>
+            )}
 
             <button
               onClick={handleSave}
@@ -541,19 +392,7 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
               controls={playerControls}
               loading={videoLoading}
               onLoadingChange={setVideoLoading}
-            >
-              {draftSpec && (
-                <SubtitleRenderer
-                  segments={segments}
-                  currentTime={playerState.currentTime}
-                  spec={draftSpec}
-                  onDragPosition={(mh, mv) =>
-                    setDraftSpec((s) => s ? { ...s, position: { ...s.position, margin_h: mh, margin_v: mv } } : s)
-                  }
-                  videoRect={videoRect}
-                />
-              )}
-            </VideoPlayer>
+            />
 
             <Timeline
               segments={segments}
@@ -564,90 +403,29 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
             />
           </div>
 
-          {/* Right: Tabs (segments / style) (40%) */}
+          {/* Right: Segments (40%) */}
           <div className="w-[40%] flex flex-col border-l border-outline-variant/10 overflow-hidden">
-            {/* Tab bar */}
-            <div className="flex border-b border-outline-variant/10 px-4">
-              {(['segments', 'style'] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setRightTab(tab)}
-                  className={`px-4 py-2.5 text-xs font-medium capitalize transition-colors border-b-2 ${
-                    rightTab === tab
-                      ? 'border-primary text-primary'
-                      : 'border-transparent text-on-surface-variant hover:text-on-surface'
-                  }`}
-                >
-                  {tab}
-                </button>
-              ))}
-
+            {/* Header */}
+            <div className="flex border-b border-outline-variant/10 px-4 py-2.5 items-center">
+              <span className="text-xs font-medium text-on-surface">Segments</span>
               <div className="flex-1" />
-              <span className="font-mono text-[9px] text-on-surface-variant self-center">
+              <span className="font-mono text-[9px] text-on-surface-variant">
                 {segments.length} segments
               </span>
             </div>
 
-            {/* Tab content */}
+            {/* Segment list */}
             <div className="flex-1 overflow-hidden p-4 flex flex-col">
-              {rightTab === 'segments' ? (
-                <SegmentList
-                  segments={segments}
-                  currentTime={playerState.currentTime}
-                  onSeek={playerControls.seek}
-                  onUpdate={handleUpdateSegment}
-                  onDelete={handleDeleteSegment}
-                  onSplit={handleSplitSegment}
-                  onMerge={handleMergeSegment}
-                  onAdd={handleAddSegment}
-                />
-              ) : (
-                <div className="flex-1 overflow-y-auto flex flex-col">
-                  <div className="flex-1">
-                    {draftSpec && (
-                      <StylePanel
-                        spec={draftSpec}
-                        onChange={setDraftSpec}
-                        sourceW={sourceW}
-                        sourceH={sourceH}
-                        hasOcrRegion={!!subtitleRegion}
-                        onRealignToOcr={handleRealignToOcr}
-                      />
-                    )}
-                  </div>
-                  <div className="pt-3 mt-3 border-t border-outline-variant/10 flex items-center gap-2 flex-wrap">
-                    <button
-                      onClick={handleSaveAsDefault}
-                      disabled={styleSaving}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-highest text-on-surface text-xs hover:bg-surface-container-high transition-all disabled:opacity-50"
-                      title="Save current style as the default for all new videos"
-                    >
-                      <span className="material-symbols-outlined text-sm">
-                        {styleSaving ? 'progress_activity' : 'bookmark'}
-                      </span>
-                      {styleSaving ? 'Saving...' : 'Save as Default'}
-                    </button>
-                    <button
-                      onClick={handleResetToGlobal}
-                      disabled={!globalDefault}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-highest text-on-surface text-xs hover:bg-surface-container-high transition-all disabled:opacity-50"
-                      title="Reset all per-video style overrides to the global default"
-                    >
-                      <span className="material-symbols-outlined text-sm">restart_alt</span>
-                      Reset to Default
-                    </button>
-                    {styleSaveStatus === 'saved' && (
-                      <span className="font-mono text-[9px] text-emerald-400">Saved</span>
-                    )}
-                    {styleSaveStatus === 'error' && (
-                      <span className="font-mono text-[9px] text-red-400">Failed</span>
-                    )}
-                    <span className="font-mono text-[8px] text-on-surface-variant ml-auto">
-                      Save button saves style for this video
-                    </span>
-                  </div>
-                </div>
-              )}
+              <SegmentList
+                segments={segments}
+                currentTime={playerState.currentTime}
+                onSeek={playerControls.seek}
+                onUpdate={handleUpdateSegment}
+                onDelete={handleDeleteSegment}
+                onSplit={handleSplitSegment}
+                onMerge={handleMergeSegment}
+                onAdd={handleAddSegment}
+              />
             </div>
 
             <div className="px-4 pb-4">
@@ -664,27 +442,6 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
           </div>
         </div>
 
-        {/* Preview modal */}
-        {previewUrl && (
-          <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-8">
-            <div className="bg-surface-container rounded-xl border border-outline-variant/10 max-w-2xl w-full overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-outline-variant/10">
-                <span className="text-sm font-medium text-on-surface">Burn-in Preview</span>
-                <button onClick={() => setPreviewUrl(null)} className="text-on-surface-variant hover:text-on-surface">
-                  <span className="material-symbols-outlined">close</span>
-                </button>
-              </div>
-              <div className="p-4">
-                <video
-                  controls
-                  autoPlay
-                  className="w-full rounded-lg bg-black"
-                  src={previewUrl}
-                />
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
