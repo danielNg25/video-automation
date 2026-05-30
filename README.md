@@ -591,6 +591,20 @@ douyin-automation/
 
 ---
 
+### SRT Import in Video Flow (2026-05-30)
+
+> Sub-project 2 of 3 in the refocused app. See [`docs/superpowers/specs/2026-05-30-srt-import-design.md`](docs/superpowers/specs/2026-05-30-srt-import-design.md) and [`docs/superpowers/plans/2026-05-30-srt-import.md`](docs/superpowers/plans/2026-05-30-srt-import.md).
+
+- [x] **Task 1** — BE `import_as_version` helper in `src/api/versions.py`: validates bytes via `parse_srt`, writes verbatim to `{id}_{lang}.v{N+1}.srt`, appends entry. 5 unit tests.
+- [x] **Task 2** — BE `POST /api/videos/{id}/versions/import` multipart endpoint. Calls `ensure_migrated` + the helper. 400 on parse failure. 3 endpoint tests. Adds `python-multipart` to `pyproject.toml`.
+- [x] **Task 3** — FE `importVersion` client + `useVersions.importFile` method. 1 vitest.
+- [x] **Task 4** — FE "Import SRT" button in EditorTab toolbar (hidden file input + button between the SRT download anchor and Save).
+- [x] **Task 5** — CHANGELOG + README updates.
+
+**Not in this PR:** sub-project 3 (standalone SRT → Dub tool). Separate spec + PR.
+
+---
+
 ### One-Time Setup Checklist
 
 - [ ] Docker installed, Douyin API container running
