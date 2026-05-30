@@ -88,10 +88,6 @@ export function DubStudioPage() {
   const [loadingRecent, setLoadingRecent] = useState(true);
   const [playingUuid, setPlayingUuid] = useState<string | null>(null);
 
-  // ── API keys / LLM prefs from settings ────────────────────────────────────
-  const apiKeys = loadApiKeys();
-  const llmPrefs = loadLLMPrefs();
-
   // ── load providers once ────────────────────────────────────────────────────
   useEffect(() => {
     getTTSProviders()
@@ -99,9 +95,17 @@ export function DubStudioPage() {
       .catch(() => {/* silently ignore */});
   }, []);
 
+  // ── SSE cleanup on unmount ─────────────────────────────────────────────────
+  useEffect(() => {
+    return () => {
+      esRef.current?.close();
+    };
+  }, []);
+
   // ── load voices when provider or language changes ──────────────────────────
   useEffect(() => {
     setLoadingVoices(true);
+    const apiKeys = loadApiKeys();
     const key =
       ttsApiKey ||
       apiKeys[provider as keyof typeof apiKeys] ||
@@ -121,8 +125,7 @@ export function DubStudioPage() {
       })
       .catch(() => setVoices([]))
       .finally(() => setLoadingVoices(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [provider, language]);
+  }, [provider, language, ttsApiKey]);
 
   // ── load recent dubs ───────────────────────────────────────────────────────
   const refreshRecent = useCallback(async () => {
@@ -185,6 +188,8 @@ export function DubStudioPage() {
     esRef.current?.close();
 
     try {
+      const apiKeys = loadApiKeys();
+      const llmPrefs = loadLLMPrefs();
       const effectiveApiKey =
         ttsApiKey ||
         apiKeys[provider as keyof typeof apiKeys] ||
@@ -232,8 +237,8 @@ export function DubStudioPage() {
     try {
       await deleteStandaloneDub(uuid);
       await refreshRecent();
-    } catch {
-      // ignore
+    } catch (e) {
+      console.warn('[DubStudio] delete failed', e);
     }
   };
 
