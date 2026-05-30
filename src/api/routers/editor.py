@@ -19,8 +19,6 @@ from src.api.models import (
     TaskResponse,
 )
 from src.api.routers.transcribe import _resolve_srt_path
-from src.processor.region_detector import load_subtitle_region
-from src.processor.style import SubtitleStyleSpec, load_style, save_style_delta
 from src.processor.subtitle import (
     _timestamp_to_seconds,
     write_srt,
@@ -182,6 +180,9 @@ async def serve_proxy_video(video_id: str):
 async def get_video_style(video_id: str):
     """Merged spec (global + per-video delta) plus a flag for whether the
     user has any per-video customizations."""
+    from src.processor.region_detector import load_subtitle_region
+    from src.processor.style import load_style
+
     tm = get_task_manager()
     if video_id not in tm.video_index:
         raise HTTPException(status_code=404, detail=f"Video {video_id} not found")
@@ -211,6 +212,8 @@ async def get_video_style(video_id: str):
 async def put_video_style(video_id: str, delta: dict):
     """Replace the per-video delta. Body is a partial SubtitleStyleSpec
     (FE-computed diff vs the global default)."""
+    from src.processor.style import save_style_delta
+
     tm = get_task_manager()
     if video_id not in tm.video_index:
         raise HTTPException(status_code=404, detail=f"Video {video_id} not found")
@@ -285,7 +288,7 @@ async def preview_frame(video_id: str, request: PreviewFrameRequest):
         )
 
     from src.processor.ffmpeg import FFmpegProcessor
-    from src.processor.style import load_style
+    from src.processor.style import SubtitleStyleSpec, load_style
     from src.processor.style_render import render_for_ffmpeg
 
     video_path = Path(video.file_path)

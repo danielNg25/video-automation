@@ -12,8 +12,14 @@ from starlette.responses import FileResponse
 
 from src.api.deps import get_config, get_data_dir, get_task_manager
 from src.api.models import ExportRequest, ProcessRequest, ProcessResult, TaskResponse
-from src.processor.style import SubtitleStyleSpec, load_style, save_global_default
 from src.utils.logger import setup_logger
+
+try:
+    from src.processor.style import SubtitleStyleSpec, load_style, save_global_default
+except ModuleNotFoundError:  # deleted in post-export refocus
+    SubtitleStyleSpec = None  # type: ignore[assignment,misc]
+    load_style = None  # type: ignore[assignment]
+    save_global_default = None  # type: ignore[assignment]
 
 logger = setup_logger(__name__)
 
@@ -168,9 +174,9 @@ async def _run_export_ffmpeg(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Load canonical spec; it carries blur + position + everything else.
+    from src.processor.region_detector import load_subtitle_region
     from src.processor.style import load_style
     from src.processor.style_render import render_for_ffmpeg
-    from src.processor.region_detector import load_subtitle_region
 
     ocr_region = None
     region_obj = None
