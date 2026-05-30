@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { VideoPlayer } from '../../components/editor/VideoPlayer';
 import { SegmentList } from '../../components/editor/SegmentList';
+import { SubtitleOverlay } from '../../components/editor/SubtitleOverlay';
+import type { SubtitleStyle } from '../../components/editor/SubtitleOverlay';
 import { Timeline } from '../../components/editor/Timeline';
 import { useVideoPlayer } from '../../hooks/useVideoPlayer';
 import { srtTimestampToSeconds, secondsToSrtTimestamp } from '../../utils/srtTime';
@@ -21,6 +23,21 @@ import type {
   VersionEntry,
 } from '../../api/types';
 import { VersionPanel } from '../../components/editor/VersionPanel';
+
+// Plain-text subtitle overlay style. The SubtitleOverlay component supports
+// the deleted styling UI's full ASS-spec style, but the refocused app only
+// needs a readable preview default.
+const DEFAULT_OVERLAY_STYLE: SubtitleStyle = {
+  fontName: 'Inter, system-ui, sans-serif',
+  fontSize: 96,
+  outlineWidth: 4,
+  marginV: 80,
+  marginH: 0,
+  bold: true,
+  shadow: true,
+  backgroundColor: '#000000',
+  backgroundOpacity: 55,
+};
 
 interface Props {
   videoId: string;
@@ -296,7 +313,11 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
     setSaving(true);
     setSaveStatus('idle');
     try {
-      const res = await putSrt(videoId, { language: activeLang, segments });
+      const res = await putSrt(videoId, {
+        language: activeLang,
+        segments,
+        version: previewVersion,
+      });
       setSegments(res.segments);
       setOriginalSegments(res.segments);
       setSaveStatus('saved');
@@ -306,7 +327,7 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
     } finally {
       setSaving(false);
     }
-  }, [videoId, activeLang, segments, saving]);
+  }, [videoId, activeLang, segments, saving, previewVersion]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -486,9 +507,9 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
             />
             <button
               onClick={() => fileInputRef.current?.click()}
-              disabled={importing || !activeLang || isPreview}
+              disabled={importing || !activeLang}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-container-highest text-on-surface-variant hover:bg-surface-container-high disabled:opacity-50 transition-colors"
-              title={isPreview ? 'Switch to the working draft to import' : (activeLang ? `Upload an edited ${activeLang.toUpperCase()} SRT as the next version` : 'Pick a language first')}
+              title={activeLang ? `Upload an edited ${activeLang.toUpperCase()} SRT as the next version` : 'Pick a language first'}
             >
               <span className="material-symbols-outlined text-sm">
                 {importing ? 'progress_activity' : 'upload'}
@@ -498,32 +519,32 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
 
             <button
               onClick={handleSave}
-              disabled={!isDirty || saving || isPreview}
+              disabled={!isDirty || saving}
               className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                isDirty && !isPreview
+                isDirty
                   ? 'bg-primary text-on-primary hover:shadow-lg'
                   : 'bg-surface-container-highest text-on-surface-variant cursor-not-allowed'
               }`}
-              title={isPreview ? 'Switch to the working draft to edit' : undefined}
+              title={isPreview ? `Save edits back to ${previewVersion}` : 'Save the working draft'}
             >
               <span className="material-symbols-outlined text-sm">
                 {saving ? 'progress_activity' : 'save'}
               </span>
-              {saving ? 'Saving...' : 'Save'}
+              {saving ? 'Saving...' : isPreview ? `Save to ${previewVersion}` : 'Save'}
             </button>
 
             <button
               onClick={async () => {
                 if (saving) return;
                 if (isDirty) {
-                  // Ensure the working draft is up to date before snapshotting.
+                  // Ensure the current target is up to date before snapshotting.
                   await handleSave();
                 }
                 await onCreateSnapshot(null);
               }}
               disabled={saving || segments.length === 0 || isPreview}
               className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium bg-secondary/20 text-secondary hover:bg-secondary/30 transition-colors disabled:opacity-50"
-              title={isPreview ? 'Switch to the working draft to snapshot' : 'Save current draft as the next auto-numbered version'}
+              title={isPreview ? 'Switch to the working draft to snapshot a new version' : 'Save current draft as the next auto-numbered version'}
             >
               <span className="material-symbols-outlined text-sm">bookmark_add</span>
               Save as version
@@ -534,8 +555,8 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
         {/* Preview banner */}
         {isPreview && (
           <div className="flex items-center gap-2 px-6 py-1.5 bg-amber-500/10 border-b border-amber-400/20 text-[11px] text-amber-300">
-            <span className="material-symbols-outlined text-sm">visibility</span>
-            Previewing <span className="font-mono font-semibold">{previewVersion}</span> (read-only).
+            <span className="material-symbols-outlined text-sm">edit_note</span>
+            Editing <span className="font-mono font-semibold">{previewVersion}</span> — Save will overwrite this version in place.
             <button
               type="button"
               onClick={() => setPreviewVersion('draft')}
@@ -557,7 +578,13 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
               controls={playerControls}
               loading={videoLoading}
               onLoadingChange={setVideoLoading}
-            />
+            >
+              <SubtitleOverlay
+                segments={segments}
+                currentTime={playerState.currentTime}
+                style={DEFAULT_OVERLAY_STYLE}
+              />
+            </VideoPlayer>
 
             {/* Hidden synced dub audio. The <video> element is muted whenever a
                 dub is selected; this element plays/pauses/seeks in lockstep. */}

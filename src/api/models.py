@@ -147,6 +147,7 @@ class ExportRequest(BaseModel):
 class SaveSrtRequest(BaseModel):
     language: str
     segments: list[SubtitleSegment]
+    version: str = "draft"
 
 
 class PreviewFrameRequest(BaseModel):

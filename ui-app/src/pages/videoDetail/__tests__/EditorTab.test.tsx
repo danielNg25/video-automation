@@ -116,24 +116,28 @@ describe('EditorTab — subtitle version + dub pickers', () => {
     await waitFor(() => expect(api.getSrt).toHaveBeenCalledWith('vid1', 'vi', 'v1'));
   });
 
-  it('shows a preview banner and disables Save / Save-as-version / Import while previewing', async () => {
+  it('shows an "Editing v2" banner, relabels Save, and Save-as-version stays disabled', async () => {
     render(<EditorTab {...baseProps} />);
 
     const versionSelect = await screen.findByLabelText(/subtitle version/i);
     fireEvent.change(versionSelect, { target: { value: 'v2' } });
 
-    expect(await screen.findByText(/previewing/i)).toBeInTheDocument();
-    // Save / Save-as-version both render an icon span and a label; the
-    // accessible name includes the icon text, so anchor on the end.
-    const saveBtn = screen.getAllByRole('button').find((b) => /save\s*$/i.test(b.textContent || ''));
-    expect((saveBtn as HTMLButtonElement | undefined)?.disabled).toBe(true);
+    // Banner text is split across nodes ("Editing" + <span>v2</span> + " — ..."),
+    // so look for the verb alone and the version slug separately.
+    expect(await screen.findByText(/^editing/i)).toBeInTheDocument();
+    // Save relabels to "Save to v2"; Save-as-version stays locked because
+    // it only operates on the working draft. Import SRT stays enabled
+    // (imports always create a fresh snapshot, independent of preview state).
+    const saveToVersionBtn = screen.getAllByRole('button').find((b) =>
+      /save to v2/i.test(b.textContent || ''),
+    );
+    expect(saveToVersionBtn).toBeTruthy();
     expect((screen.getByRole('button', { name: /save as version/i }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: /import srt/i }) as HTMLButtonElement).disabled).toBe(true);
 
-    // The "switch to working draft" affordance returns to edit mode.
+    // The "switch to working draft" affordance returns to draft mode.
     fireEvent.click(screen.getByRole('button', { name: /switch to working draft/i }));
     await waitFor(() => {
-      expect(screen.queryByText(/previewing/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/^editing/i)).not.toBeInTheDocument();
     });
   });
 
