@@ -1,4 +1,4 @@
-"""Pipeline orchestrator: chains download → transcribe → translate → TTS → process.
+"""Pipeline orchestrator: chains download → transcribe → translate → TTS.
 
 Supports crash recovery via PipelineState and duplicate detection via processed_videos registry.
 """
@@ -29,8 +29,7 @@ STAGE_RANGES: dict[str, tuple[float, float]] = {
     "download":   (0.00, 0.20),
     "transcribe": (0.20, 0.45),
     "translate":  (0.45, 0.60),
-    "tts":        (0.60, 0.70),
-    "process":    (0.70, 1.00),
+    "tts":        (0.60, 1.00),
 }
 
 
@@ -63,7 +62,6 @@ class Pipeline:
     async def process_single(
         self,
         url: str,
-        platforms: list[str] | None = None,
         options: dict | None = None,
         progress_callback: Callable[[str, float, str], None] | None = None,
     ) -> dict:
@@ -71,7 +69,6 @@ class Pipeline:
 
         Args:
             url: Douyin video URL.
-            platforms: List of target platforms (default: from config).
             options: Additional options (force, subtitle_lang, translate_profile,
                      tts_voice, tts_provider, tts_language, privacy, title, tags).
             progress_callback: Optional callback(stage, progress, message).
@@ -81,7 +78,6 @@ class Pipeline:
         """
         options = options or {}
         force = options.get("force", False)
-        platforms = platforms or []
 
         self._setup_signal_handlers()
 
@@ -104,7 +100,6 @@ class Pipeline:
             emit("skip", 0.0, msg)
             return {"video_id": video_id, "status": "skipped", "message": msg}
         state.url = url
-        state.platforms = platforms
 
         try:
             # --- Stage: Download ---
@@ -243,7 +238,7 @@ class Pipeline:
                 canonical_duration = file_meta.get("duration", 0.0)
 
                 def tts_progress(current, total, message):
-                    pct = 0.60 + (current / max(total, 1)) * 0.10
+                    pct = 0.60 + (current / max(total, 1)) * 0.40
                     emit("tts", pct, message)
 
                 tts_result = await run_tts_track(
@@ -265,46 +260,18 @@ class Pipeline:
                     "audio_path": tts_result["audio_path"],
                     "language": tts_lang,
                 })
-                emit("tts", 0.70, "TTS generation complete")
+                emit("tts", 1.00, "TTS generation complete")
             elif tts_voice:
-                emit("tts", 0.70, "TTS already complete")
+                emit("tts", 1.00, "TTS already complete")
 
             if self._interrupted:
                 return self._make_result(state, "interrupted")
-
-            # --- Stage: Process — skipped, export via Video Studio ---
-            if not state.is_stage_complete("process"):
-                # Persist blur preference and subtitle style overrides so Video
-                # Studio export respects them.
-                blur_enabled = options.get("blur_enabled", True)
-                subtitle_style = options.get("subtitle_style")
-                style_path = Path("data/srt") / f"{video_id}_style.json"
-                import json as _json
-                if style_path.exists():
-                    existing = _json.loads(style_path.read_text())
-                    existing["blur_enabled"] = blur_enabled
-                    if subtitle_style:
-                        existing["subtitle_style"] = subtitle_style
-                    style_path.write_text(_json.dumps(existing, indent=2))
-                else:
-                    style_path.parent.mkdir(parents=True, exist_ok=True)
-                    payload: dict = {"blur_enabled": blur_enabled}
-                    if subtitle_style:
-                        payload["subtitle_style"] = subtitle_style
-                    style_path.write_text(_json.dumps(payload, indent=2))
-
-                emit("process", 1.0, "Pipeline complete — use Video Studio to export")
-                state.mark_stage_complete("process", {
-                    "note": "export via Video Studio",
-                    "blur_enabled": blur_enabled,
-                })
 
             # --- Done ---
             state.mark_done()
             register_processed(video_id, {
                 "url": url,
                 "status": "done",
-                "platforms": platforms,
             })
 
             return self._make_result(state, "done")
@@ -322,7 +289,6 @@ class Pipeline:
     async def process_batch(
         self,
         urls: list[str],
-        platforms: list[str] | None = None,
         options: dict | None = None,
         progress_callback: Callable[[str, float, str], None] | None = None,
     ) -> list[dict]:
@@ -330,7 +296,6 @@ class Pipeline:
 
         Args:
             urls: List of Douyin video URLs.
-            platforms: Target platforms for all videos.
             options: Shared options (concurrency, force, etc.).
             progress_callback: Optional callback for batch-level progress.
 
@@ -348,7 +313,7 @@ class Pipeline:
             async with semaphore:
                 if progress_callback:
                     progress_callback("batch", idx / total, f"Processing {idx + 1}/{total}: {url}")
-                return await self.process_single(url, platforms, options)
+                return await self.process_single(url, options)
 
         tasks = [process_one(i, url) for i, url in enumerate(urls)]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -385,6 +350,5 @@ class Pipeline:
             "status": status,
             "completed_stages": list(state.completed_stages),
             "stage_results": dict(state.stage_results),
-            "platforms": list(state.platforms),
             "error": error or state.error,
         }

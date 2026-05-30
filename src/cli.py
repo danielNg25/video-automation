@@ -44,7 +44,6 @@ def main():
 
 @main.command()
 @click.argument("url")
-@click.option("--platforms", "-p", default="youtube,tiktok", help="Comma-separated platforms")
 @click.option("--subtitle-lang", default="zh", help="Source subtitle language")
 @click.option("--translate", "translate_profile", default=None, help="Translation profile name")
 @click.option("--tts-voice", default=None, help="Provider voice ID for the dub (omit to skip TTS)")
@@ -54,14 +53,13 @@ def main():
 @click.option("--tags", default=None, help="Comma-separated tags")
 @click.option("--privacy", default="private", type=click.Choice(["private", "public", "unlisted"]))
 @click.option("--force", is_flag=True, help="Ignore duplicate detection")
-def process(url, platforms, subtitle_lang, translate_profile, tts_voice, tts_provider, tts_language, title, tags, privacy, force):
+def process(url, subtitle_lang, translate_profile, tts_voice, tts_provider, tts_language, title, tags, privacy, force):
     """Process a single Douyin video URL through the full pipeline."""
     from src.pipeline import Pipeline
 
     config = _load_config()
     pipeline = Pipeline(config)
 
-    platform_list = [p.strip() for p in platforms.split(",") if p.strip()]
     options = {
         "force": force,
         "subtitle_lang": subtitle_lang,
@@ -79,31 +77,25 @@ def process(url, platforms, subtitle_lang, translate_profile, tts_voice, tts_pro
         "transcribe": "[yellow]✎[/yellow]",
         "translate": "[magenta]🌐[/magenta]",
         "tts": "[green]♪[/green]",
-        "process": "[blue]⚙[/blue]",
-        "upload": "[green]↑[/green]",
         "skip": "[dim]⏭[/dim]",
     }
-    stage_idx = {"download": 1, "transcribe": 2, "translate": 2, "tts": 3, "process": 3, "upload": 4}
+    stage_idx = {"download": 1, "transcribe": 2, "translate": 2, "tts": 3}
 
     def on_progress(stage: str, progress: float, message: str):
         icon = stage_icons.get(stage, "")
         step = stage_idx.get(stage, "")
         if step:
-            console.print(f"  {icon} [{step}/4] {message}")
+            console.print(f"  {icon} [{step}/3] {message}")
         else:
             console.print(f"  {icon} {message}")
 
-    console.print(f"\n[bold]Processing:[/bold] {url}")
-    console.print(f"[dim]Platforms: {', '.join(platform_list)}[/dim]\n")
+    console.print(f"\n[bold]Processing:[/bold] {url}\n")
 
-    result = _run_async(pipeline.process_single(url, platform_list, options, on_progress))
+    result = _run_async(pipeline.process_single(url, options, on_progress))
 
     status = result.get("status", "unknown")
     if status == "done":
-        console.print(f"\n[bold green]Pipeline complete[/bold green] ✓")
-        outputs = result.get("stage_results", {}).get("process", {}).get("outputs", {})
-        for plat, path in outputs.items():
-            console.print(f"  [dim]{plat}:[/dim] {path}")
+        console.print("\n[bold green]Pipeline complete[/bold green] ✓")
     elif status == "skipped":
         console.print(f"\n[yellow]{result.get('message', 'Skipped')}[/yellow]")
     elif status == "failed":
@@ -161,13 +153,12 @@ def transcribe(video_path, lang, translate_profile):
 
 @main.command()
 @click.argument("url_file")
-@click.option("--platforms", "-p", default="youtube,tiktok", help="Comma-separated platforms")
 @click.option("--concurrency", default=3, help="Max concurrent downloads")
 @click.option("--subtitle-lang", default="zh", help="Source subtitle language")
 @click.option("--translate", "translate_profile", default=None, help="Translation profile")
 @click.option("--privacy", default="private", type=click.Choice(["private", "public", "unlisted"]))
 @click.option("--force", is_flag=True, help="Ignore duplicate detection")
-def batch(url_file, platforms, concurrency, subtitle_lang, translate_profile, privacy, force):
+def batch(url_file, concurrency, subtitle_lang, translate_profile, privacy, force):
     """Process multiple URLs from a file."""
     from src.pipeline import Pipeline
 
@@ -184,7 +175,6 @@ def batch(url_file, platforms, concurrency, subtitle_lang, translate_profile, pr
 
     config = _load_config()
     pipeline = Pipeline(config)
-    platform_list = [p.strip() for p in platforms.split(",") if p.strip()]
 
     options = {
         "force": force,
@@ -195,12 +185,12 @@ def batch(url_file, platforms, concurrency, subtitle_lang, translate_profile, pr
     }
 
     console.print(f"\n[bold]Batch processing:[/bold] {len(urls)} URLs")
-    console.print(f"[dim]Platforms: {', '.join(platform_list)} | Concurrency: {concurrency}[/dim]\n")
+    console.print(f"[dim]Concurrency: {concurrency}[/dim]\n")
 
     def on_progress(stage: str, progress: float, message: str):
         console.print(f"  [dim]{message}[/dim]")
 
-    results = _run_async(pipeline.process_batch(urls, platform_list, options, on_progress))
+    results = _run_async(pipeline.process_batch(urls, options, on_progress))
 
     # Summary
     succeeded = sum(1 for r in results if r.get("status") == "done")
@@ -234,7 +224,6 @@ def status(video_id):
         console.print(f"\n[bold]Video:[/bold] {state.video_id}")
         console.print(f"  URL: {state.url}")
         console.print(f"  Status: {_status_color(state.status)}")
-        console.print(f"  Platforms: {', '.join(state.platforms)}")
         console.print(f"  Completed stages: {', '.join(state.completed_stages)}")
         if state.error:
             console.print(f"  [red]Error:[/red] {state.error}")
@@ -252,17 +241,15 @@ def status(video_id):
     table = Table(title="Pipeline Status")
     table.add_column("Video ID", style="cyan")
     table.add_column("Status")
-    table.add_column("Platforms")
     table.add_column("Stages")
     table.add_column("Updated")
 
     for s in states[:20]:
         vid = s.get("video_id", "?")
         status_str = _status_color(s.get("status", "unknown"))
-        platforms_str = ", ".join(s.get("platforms", []))
         stages = ", ".join(s.get("completed_stages", []))
         updated = s.get("updated_at", "")[:19]  # Trim to seconds
-        table.add_row(vid, status_str, platforms_str, stages, updated)
+        table.add_row(vid, status_str, stages, updated)
 
     console.print(table)
 

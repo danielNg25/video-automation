@@ -32,7 +32,7 @@ class TestStageProgressDerivation:
 
     def test_tts_midpoint_maps_to_half(self):
         from src.api.routers.pipeline import _stage_progress
-        result = _stage_progress("tts", 0.65)
+        result = _stage_progress("tts", 0.80)
         assert abs(result - 0.5) < 1e-6
 
     def test_overall_at_stage_lo_maps_to_zero(self):

@@ -307,7 +307,6 @@ class TestPipelineOrchestrator:
         result = asyncio.get_event_loop().run_until_complete(
             pipeline.process_single(
                 "https://v.douyin.com/vid123",
-                ["youtube"],
                 {"video_id": "vid123"},
             )
         )
@@ -335,7 +334,6 @@ class TestPipelineOrchestrator:
             result = asyncio.get_event_loop().run_until_complete(
                 pipeline.process_single(
                     "https://v.douyin.com/vid456",
-                    ["youtube"],
                     {"video_id": "vid456", "force": True},
                 )
             )
@@ -369,7 +367,6 @@ class TestCLI:
         runner = CliRunner()
         result = runner.invoke(main, ["process", "--help"])
         assert result.exit_code == 0
-        assert "--platforms" in result.output
         assert "--force" in result.output
         assert "--subtitle-lang" in result.output
 
