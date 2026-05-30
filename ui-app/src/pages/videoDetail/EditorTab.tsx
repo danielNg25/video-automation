@@ -23,11 +23,12 @@ interface Props {
   onCreateSnapshot: (name: string | null) => Promise<void>;
   onRenameVersion: (versionId: string, name: string | null) => Promise<void>;
   onDeleteVersion: (versionId: string) => Promise<void>;
+  onImportVersion: (file: File, name: string | null) => Promise<void>;
   activeLang: string;
   onActiveLangChange: (lang: string) => void;
 }
 
-export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, onRenameVersion, onDeleteVersion, activeLang, onActiveLangChange }: Props) {
+export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, onRenameVersion, onDeleteVersion, onImportVersion, activeLang, onActiveLangChange }: Props) {
   // Video player
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playerState, playerControls] = useVideoPlayer(videoRef);
@@ -43,6 +44,22 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
   // UI state
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+
+  const handleImport = useCallback(async (file: File) => {
+    setImporting(true);
+    setSaveStatus('idle');
+    try {
+      await onImportVersion(file, null);
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 3000);
+    } catch {
+      setSaveStatus('error');
+    } finally {
+      setImporting(false);
+    }
+  }, [onImportVersion]);
   const [useProxy, setUseProxy] = useState(true);
   const [videoLoading, setVideoLoading] = useState(true);
 
@@ -346,6 +363,31 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
                 SRT
               </a>
             )}
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".srt"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  handleImport(file);
+                }
+                e.target.value = '';
+              }}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={importing || !activeLang}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-container-highest text-on-surface-variant hover:bg-surface-container-high disabled:opacity-50 transition-colors"
+              title={activeLang ? `Upload an edited ${activeLang.toUpperCase()} SRT as the next version` : 'Pick a language first'}
+            >
+              <span className="material-symbols-outlined text-sm">
+                {importing ? 'progress_activity' : 'upload'}
+              </span>
+              {importing ? 'Importing...' : 'Import SRT'}
+            </button>
 
             <button
               onClick={handleSave}
