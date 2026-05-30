@@ -14,6 +14,7 @@ import re
 from collections.abc import Callable
 from pathlib import Path
 
+from src.tts import get_tts_provider  # re-exported so tests can patch src.tts.runner.get_tts_provider
 from src.utils.logger import setup_logger
 
 _FILENAME_SAFE = re.compile(r"[^A-Za-z0-9._-]+")

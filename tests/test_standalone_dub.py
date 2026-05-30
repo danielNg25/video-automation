@@ -109,3 +109,94 @@ class TestStandaloneDubHelpers:
 
         p = wav_path("abc123")
         assert p == standalone_dir / "abc123.wav"
+
+
+class TestManagerRunStandaloneDub:
+    @pytest.mark.asyncio
+    async def test_run_writes_wav_and_metadata(self, standalone_dir, monkeypatch):
+        """The orchestrator parses SRT, calls the assembler, and writes
+        both the WAV (from assembler) and the JSON sidecar."""
+        from unittest.mock import AsyncMock, patch
+        from src.api.task_manager import TaskManager
+
+        tm = TaskManager()
+        task = tm.create_task("standalone_dub")
+        task_id = task.task_id
+
+        valid_srt = (
+            b"1\n00:00:00,000 --> 00:00:02,000\nhello\n\n"
+            b"2\n00:00:03,000 --> 00:00:05,000\nworld\n\n"
+        )
+
+        async def fake_generate(*args, **kwargs):
+            # The assembler writes the WAV at output_path
+            kwargs["output_path"].write_bytes(b"RIFFfake-audio")
+            return (kwargs["output_path"], [])
+
+        with patch(
+            "src.tts.assembler.TTSAssembler.generate_full_track",
+            side_effect=fake_generate,
+        ), patch(
+            "src.tts.runner.get_tts_provider", return_value=object(),
+        ), patch(
+            "src.tts.runner._build_llm_translator", return_value=None,
+        ):
+            await tm.run_standalone_dub(
+                task_id=task_id,
+                srt_content=valid_srt,
+                original_filename="episode-5.srt",
+                provider="google",
+                voice="vi-VN-Wavenet-A",
+                language="vi",
+                playback_speed=1.5,
+                enable_shortening=True,
+                config={},
+            )
+
+        assert task.status == "completed"
+
+        # WAV + JSON both present in the standalone dir
+        wavs = list(standalone_dir.glob("*.wav"))
+        metas = list(standalone_dir.glob("*.json"))
+        assert len(wavs) == 1
+        assert len(metas) == 1
+
+        meta = json.loads(metas[0].read_text())
+        assert meta["original_filename"] == "episode-5.srt"
+        assert meta["provider"] == "google"
+        assert meta["voice"] == "vi-VN-Wavenet-A"
+        assert meta["language"] == "vi"
+        assert meta["playback_speed"] == 1.5
+        assert meta["enable_shortening"] is True
+        # video_duration = max(end) + 1.0 = 5.0 + 1.0 = 6.0
+        assert meta["duration_seconds"] == 6.0
+        assert meta["file_size_bytes"] > 0  # the fake WAV bytes
+        assert "uuid" in meta
+        assert "created_at" in meta
+
+    @pytest.mark.asyncio
+    async def test_run_with_invalid_srt_marks_task_failed(self, standalone_dir):
+        """Garbage bytes → task ends with status='failed'."""
+        from src.api.task_manager import TaskManager
+
+        tm = TaskManager()
+        task = tm.create_task("standalone_dub")
+        task_id = task.task_id
+
+        await tm.run_standalone_dub(
+            task_id=task_id,
+            srt_content=b"not an srt at all",
+            original_filename="garbage.srt",
+            provider="google",
+            voice="v",
+            language="vi",
+            playback_speed=1.5,
+            enable_shortening=True,
+            config={},
+        )
+
+        assert task.status == "failed"
+        assert task.error  # some non-empty error message
+        # No partial output left behind
+        assert list(standalone_dir.glob("*.wav")) == []
+        assert list(standalone_dir.glob("*.json")) == []
