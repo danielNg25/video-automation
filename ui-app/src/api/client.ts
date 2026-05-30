@@ -4,8 +4,6 @@ import type {
   VideoListResponse,
   SrtResponse,
   DashboardStats,
-  ProcessRequest,
-  PlatformSpec,
   SaveSrtRequest,
   PreviewClipRequest,
   TranslationProfile,
@@ -14,8 +12,6 @@ import type {
   TTSProviderInfo,
   SubtitleRegion,
   BlurSettings,
-  SubtitleStyleSpec,
-  SubtitleStyleDelta,
 } from './types';
 
 const BASE = '/api';
@@ -96,55 +92,6 @@ export function getStats(): Promise<DashboardStats> {
   return request('/stats');
 }
 
-export function postProcess(req: ProcessRequest): Promise<TaskResponse> {
-  return request('/process', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(req),
-  });
-}
-
-export function getSubtitleStyleDefault(): Promise<SubtitleStyleSpec> {
-  return request('/subtitle-styles');
-}
-
-export function putSubtitleStyleDefault(spec: SubtitleStyleSpec): Promise<SubtitleStyleSpec> {
-  return request('/subtitle-styles', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(spec),
-  });
-}
-
-export interface VideoStyleResponse {
-  video_id: string;
-  style: SubtitleStyleSpec;
-  is_custom: boolean;
-}
-
-export function getVideoStyle(videoId: string): Promise<VideoStyleResponse> {
-  return request(`/videos/${videoId}/style`);
-}
-
-export function putVideoStyle(
-  videoId: string,
-  delta: SubtitleStyleDelta,
-): Promise<VideoStyleResponse> {
-  return request(`/videos/${videoId}/style`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(delta),
-  });
-}
-
-export function deleteVideoStyle(videoId: string): Promise<VideoStyleResponse> {
-  return request(`/videos/${videoId}/style`, { method: 'DELETE' });
-}
-
-export function getPlatforms(): Promise<Record<string, PlatformSpec>> {
-  return request('/platforms');
-}
-
 export function getProcessedVideoUrl(videoId: string, platform: string): string {
   return `${BASE}/videos/${videoId}/output/${platform}`;
 }
@@ -155,10 +102,6 @@ export function putSrt(videoId: string, req: SaveSrtRequest): Promise<SrtRespons
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
   });
-}
-
-export function getPreviewFrameUrl(videoId: string, language: string, timestamp: number): string {
-  return `${BASE}/videos/${videoId}/preview-frame?language=${language}&timestamp=${timestamp}`;
 }
 
 export function postPreviewClip(videoId: string, req: PreviewClipRequest): Promise<TaskResponse> {
@@ -175,10 +118,6 @@ export function getRawVideoUrl(videoId: string): string {
 
 export function getProxyVideoUrl(videoId: string): string {
   return `${BASE}/videos/${videoId}/proxy`;
-}
-
-export function getPreviewMixUrl(videoId: string, language: string): string {
-  return `${BASE}/videos/${videoId}/preview-mix?language=${encodeURIComponent(language)}`;
 }
 
 // --- Translation + Profiles ---
@@ -422,71 +361,10 @@ export function testCookie(): Promise<CookieTestResult> {
   return request('/settings/cookie/test', { method: 'POST' });
 }
 
-export function postExport(
-  videoId: string,
-  subtitleLanguage: string | null,
-  ttsFile: string | null,
-  videoVolume: number,
-  ttsVolume: number,
-): Promise<TaskResponse> {
-  return request(`/videos/${videoId}/export`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      subtitle_language: subtitleLanguage,
-      tts_file: ttsFile,
-      video_volume: videoVolume,
-      tts_volume: ttsVolume,
-    }),
-  });
-}
-
-export function postExportPreview(
-  videoId: string,
-  subtitleLanguage: string | null,
-  ttsFile: string | null,
-  videoVolume: number,
-  ttsVolume: number,
-): Promise<Blob> {
-  return fetch(`${BASE}/videos/${videoId}/export/preview`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      subtitle_language: subtitleLanguage,
-      tts_file: ttsFile,
-      video_volume: videoVolume,
-      tts_volume: ttsVolume,
-    }),
-  }).then(r => {
-    if (!r.ok) throw new Error('Preview failed');
-    return r.blob();
-  });
-}
-
-export function getExportedVideoUrl(videoId: string): string {
-  return `${BASE}/videos/${videoId}/export`;
-}
-
-export function getExportStatus(videoId: string): Promise<{ exists: boolean; size?: number; modified?: number }> {
-  return request(`/videos/${videoId}/export/status`);
-}
-
-export async function deleteExport(videoId: string): Promise<void> {
-  await request(`/videos/${videoId}/export`, { method: 'DELETE' });
-}
-
 // --- Subtitle Replacement (Phase 6) ---
 
 export function getSubtitleRegion(videoId: string): Promise<SubtitleRegion> {
   return request(`/videos/${videoId}/subtitle-region`);
-}
-
-export function setSubtitleRegion(videoId: string, region: SubtitleRegion): Promise<SubtitleRegion> {
-  return request(`/videos/${videoId}/subtitle-region`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(region),
-  });
 }
 
 export async function postPreviewBlur(
