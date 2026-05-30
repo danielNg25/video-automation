@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel
 from starlette.responses import FileResponse
 
 from src.api import standalone_dub as standalone_mod
@@ -13,19 +12,6 @@ from src.api.deps import get_config, get_task_manager
 from src.api.models import TaskResponse
 
 router = APIRouter()
-
-
-class StandaloneDubEntryResponse(BaseModel):
-    uuid: str
-    original_filename: str
-    provider: str
-    voice: str
-    language: str
-    playback_speed: float
-    enable_shortening: bool
-    duration_seconds: float
-    created_at: str  # iso-format
-    file_size_bytes: int
 
 
 @router.post(
@@ -72,25 +58,11 @@ async def start_standalone_dub(
 
 @router.get(
     "/api/standalone-dub",
-    response_model=list[StandaloneDubEntryResponse],
+    response_model=list[standalone_mod.StandaloneDubEntry],
 )
 async def list_standalone_dubs():
     """Recent dubs, newest first."""
-    return [
-        StandaloneDubEntryResponse(
-            uuid=e.uuid,
-            original_filename=e.original_filename,
-            provider=e.provider,
-            voice=e.voice,
-            language=e.language,
-            playback_speed=e.playback_speed,
-            enable_shortening=e.enable_shortening,
-            duration_seconds=e.duration_seconds,
-            created_at=e.created_at.isoformat(),
-            file_size_bytes=e.file_size_bytes,
-        )
-        for e in standalone_mod.list_dubs()
-    ]
+    return standalone_mod.list_dubs()
 
 
 @router.delete("/api/standalone-dub/{dub_uuid}", status_code=204)
@@ -112,5 +84,4 @@ async def download_standalone_dub(dub_uuid: str):
         path=str(wav),
         media_type="audio/wav",
         filename=f"{dub_uuid}.wav",
-        headers={"Content-Disposition": f'attachment; filename="{dub_uuid}.wav"'},
     )

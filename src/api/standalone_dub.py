@@ -13,15 +13,15 @@ FastAPI-free for clean unit testing.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+
+from pydantic import BaseModel
 
 STANDALONE_DIR = Path("data/standalone_dubs")
 
 
-@dataclass
-class StandaloneDubEntry:
+class StandaloneDubEntry(BaseModel):
     """One generated dub's metadata sidecar."""
 
     uuid: str
@@ -65,19 +65,8 @@ def list_dubs() -> list[StandaloneDubEntry]:
         except (json.JSONDecodeError, OSError):
             continue
         try:
-            entries.append(StandaloneDubEntry(
-                uuid=data["uuid"],
-                original_filename=data["original_filename"],
-                provider=data["provider"],
-                voice=data["voice"],
-                language=data["language"],
-                playback_speed=float(data["playback_speed"]),
-                enable_shortening=bool(data["enable_shortening"]),
-                duration_seconds=float(data["duration_seconds"]),
-                created_at=datetime.fromisoformat(data["created_at"]),
-                file_size_bytes=int(data["file_size_bytes"]),
-            ))
-        except (KeyError, ValueError, TypeError):
+            entries.append(StandaloneDubEntry.model_validate(data))
+        except Exception:
             # Malformed metadata — skip silently.
             continue
 
@@ -103,16 +92,4 @@ def delete_dub(dub_uuid: str) -> bool:
 def save_meta(entry: StandaloneDubEntry) -> None:
     """Write the sidecar JSON for an entry."""
     STANDALONE_DIR.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "uuid": entry.uuid,
-        "original_filename": entry.original_filename,
-        "provider": entry.provider,
-        "voice": entry.voice,
-        "language": entry.language,
-        "playback_speed": entry.playback_speed,
-        "enable_shortening": entry.enable_shortening,
-        "duration_seconds": entry.duration_seconds,
-        "created_at": entry.created_at.isoformat(),
-        "file_size_bytes": entry.file_size_bytes,
-    }
-    _meta_path(entry.uuid).write_text(json.dumps(payload, indent=2))
+    _meta_path(entry.uuid).write_text(entry.model_dump_json(indent=2))
