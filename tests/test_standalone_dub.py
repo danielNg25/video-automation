@@ -200,3 +200,65 @@ class TestManagerRunStandaloneDub:
         # No partial output left behind
         assert list(standalone_dir.glob("*.wav")) == []
         assert list(standalone_dir.glob("*.json")) == []
+
+
+@pytest.fixture
+def client(tmp_path, monkeypatch):
+    """FastAPI TestClient with data dirs redirected to tmp."""
+    standalone_dir = tmp_path / "standalone_dubs"
+    standalone_dir.mkdir()
+    monkeypatch.setattr("src.api.standalone_dub.STANDALONE_DIR", standalone_dir)
+
+    from fastapi.testclient import TestClient
+    from src.api import create_app
+
+    app = create_app()
+    return TestClient(app), standalone_dir
+
+
+class TestStandaloneDubRouter:
+    def test_get_lists_empty_initially(self, client):
+        c, _ = client
+        r = c.get("/api/standalone-dub")
+        assert r.status_code == 200
+        assert r.json() == []
+
+    def test_get_lists_seeded_dubs(self, client):
+        c, standalone_dir = client
+        _seed_entry(standalone_dir, "first", created_at="2026-05-30T10:00:00+00:00")
+        _seed_entry(standalone_dir, "second", created_at="2026-05-30T11:00:00+00:00")
+
+        r = c.get("/api/standalone-dub")
+        assert r.status_code == 200
+        body = r.json()
+        assert len(body) == 2
+        # Newest first.
+        assert body[0]["uuid"] == "second"
+
+    def test_delete_removes_files(self, client):
+        c, standalone_dir = client
+        _seed_entry(standalone_dir, "tobedeleted")
+
+        r = c.delete("/api/standalone-dub/tobedeleted")
+        assert r.status_code == 204
+        assert not (standalone_dir / "tobedeleted.wav").exists()
+        assert not (standalone_dir / "tobedeleted.json").exists()
+
+    def test_delete_unknown_returns_404(self, client):
+        c, _ = client
+        r = c.delete("/api/standalone-dub/does-not-exist")
+        assert r.status_code == 404
+
+    def test_get_wav_serves_file(self, client):
+        c, standalone_dir = client
+        _seed_entry(standalone_dir, "wav-test")
+
+        r = c.get("/api/standalone-dub/wav-test.wav")
+        assert r.status_code == 200
+        assert r.headers["content-type"].startswith("audio/")
+        assert r.content == b"RIFFfake-audio"
+
+    def test_get_wav_unknown_returns_404(self, client):
+        c, _ = client
+        r = c.get("/api/standalone-dub/unknown.wav")
+        assert r.status_code == 404

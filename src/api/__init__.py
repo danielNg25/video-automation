@@ -20,6 +20,9 @@ from src.api.routers import (
     tts,
 )
 from src.api.routers import (
+    standalone_dub as standalone_dub_router,
+)
+from src.api.routers import (
     versions as versions_router,
 )
 
@@ -48,6 +51,7 @@ def create_app() -> FastAPI:
     app.include_router(settings.router)
     app.include_router(pipeline.router)
     app.include_router(tts.router)
+    app.include_router(standalone_dub_router.router)
     app.include_router(events.router)
     app.include_router(tasks.router)
     app.include_router(versions_router.router)
