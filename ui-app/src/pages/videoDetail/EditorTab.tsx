@@ -11,8 +11,15 @@ import {
   getRawVideoUrl,
   getSrtDownloadUrl,
   getProxyVideoUrl,
+  getTTSList,
+  getTTSAudioUrl,
 } from '../../api/client';
-import type { VideoMetadata, SubtitleSegment, VersionEntry } from '../../api/types';
+import type { TTSAudioEntry } from '../../api/client';
+import type {
+  VideoMetadata,
+  SubtitleSegment,
+  VersionEntry,
+} from '../../api/types';
 import { VersionPanel } from '../../components/editor/VersionPanel';
 
 interface Props {
@@ -63,6 +70,17 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
   const [useProxy, setUseProxy] = useState(true);
   const [videoLoading, setVideoLoading] = useState(true);
 
+  // Preview pickers: which subtitle version is loaded into the editor, and
+  // which dub WAV plays alongside the video. 'draft' means the working draft
+  // (editable); any other value loads that snapshot read-only. '' for the
+  // dub means use the source video's own audio.
+  const [previewVersion, setPreviewVersion] = useState<string>('draft');
+  const [previewDub, setPreviewDub] = useState<string>('');
+  const [dubList, setDubList] = useState<TTSAudioEntry[]>([]);
+  const dubAudioRef = useRef<HTMLAudioElement>(null);
+
+  const isPreview = previewVersion !== 'draft';
+
   const isDirty = useMemo(
     () => JSON.stringify(segments) !== JSON.stringify(originalSegments),
     [segments, originalSegments],
@@ -98,10 +116,17 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
     }
   }, [video, activeLang, onActiveLangChange]);
 
+  // Reset preview pickers when the language changes — version/dub bindings
+  // are language-specific (a v1 in 'en' is unrelated to a v1 in 'vi').
+  useEffect(() => {
+    setPreviewVersion('draft');
+    setPreviewDub('');
+  }, [activeLang]);
+
   useEffect(() => {
     if (!videoId || !activeLang) return;
 
-    getSrt(videoId, activeLang)
+    getSrt(videoId, activeLang, previewVersion)
       .then((res) => {
         setSegments(res.segments);
         setOriginalSegments(res.segments);
@@ -110,7 +135,48 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
         setSegments([]);
         setOriginalSegments([]);
       });
-  }, [videoId, activeLang]);
+  }, [videoId, activeLang, previewVersion]);
+
+  // Load the dub list for this video and filter to the current language.
+  useEffect(() => {
+    if (!videoId) return;
+    getTTSList(videoId)
+      .then(setDubList)
+      .catch(() => setDubList([]));
+  }, [videoId]);
+
+  const dubsForLang = useMemo(
+    () => dubList.filter((d) => d.language === activeLang),
+    [dubList, activeLang],
+  );
+
+  // Sync the dub <audio> element with the <video>. When a dub is picked, the
+  // video is muted and the audio element scrubs/plays/pauses in lockstep.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.muted = !!previewDub;
+  }, [previewDub]);
+
+  useEffect(() => {
+    const a = dubAudioRef.current;
+    if (!a) return;
+    if (playerState.isPlaying) {
+      void a.play().catch(() => {});
+    } else {
+      a.pause();
+    }
+  }, [playerState.isPlaying, previewDub]);
+
+  useEffect(() => {
+    const a = dubAudioRef.current;
+    if (!a) return;
+    // Drift correction: if the audio is more than 0.3s out of sync with the
+    // video (user seeked, or playback drifted), pull it back into line.
+    if (Math.abs(a.currentTime - playerState.currentTime) > 0.3) {
+      a.currentTime = playerState.currentTime;
+    }
+  }, [playerState.currentTime, previewDub]);
 
   // --- Segment handlers ---
 
@@ -317,6 +383,47 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
               ))}
             </select>
 
+            {/* Subtitle version selector — drives what's loaded into the editor */}
+            <select
+              value={previewVersion}
+              onChange={(e) => setPreviewVersion(e.target.value)}
+              className={`border text-[11px] rounded px-1.5 py-0.5 ${
+                isPreview
+                  ? 'bg-amber-500/10 border-amber-400/40 text-amber-300'
+                  : 'bg-surface-container-lowest border-outline-variant/20 text-on-surface'
+              }`}
+              title={isPreview ? 'Previewing a saved version (read-only)' : 'Editing the working draft'}
+              aria-label="Subtitle version"
+            >
+              <option value="draft">Working draft</option>
+              {versions.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.id}{v.name ? ` — ${v.name}` : ''}
+                </option>
+              ))}
+            </select>
+
+            {/* Dub selector — drives the audio track played with the video */}
+            <select
+              value={previewDub}
+              onChange={(e) => setPreviewDub(e.target.value)}
+              className={`border text-[11px] rounded px-1.5 py-0.5 ${
+                previewDub
+                  ? 'bg-primary/10 border-primary/40 text-primary'
+                  : 'bg-surface-container-lowest border-outline-variant/20 text-on-surface'
+              }`}
+              disabled={dubsForLang.length === 0}
+              title={dubsForLang.length === 0 ? 'No dubs available for this language' : 'Play a generated dub instead of source audio'}
+              aria-label="Dub audio"
+            >
+              <option value="">Source audio</option>
+              {dubsForLang.map((d) => (
+                <option key={d.filename} value={d.filename}>
+                  {d.version} · {d.voice}
+                </option>
+              ))}
+            </select>
+
             {/* Video quality selector */}
             <select
               value={useProxy ? '360p' : 'full'}
@@ -379,9 +486,9 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
             />
             <button
               onClick={() => fileInputRef.current?.click()}
-              disabled={importing || !activeLang}
+              disabled={importing || !activeLang || isPreview}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-container-highest text-on-surface-variant hover:bg-surface-container-high disabled:opacity-50 transition-colors"
-              title={activeLang ? `Upload an edited ${activeLang.toUpperCase()} SRT as the next version` : 'Pick a language first'}
+              title={isPreview ? 'Switch to the working draft to import' : (activeLang ? `Upload an edited ${activeLang.toUpperCase()} SRT as the next version` : 'Pick a language first')}
             >
               <span className="material-symbols-outlined text-sm">
                 {importing ? 'progress_activity' : 'upload'}
@@ -391,12 +498,13 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
 
             <button
               onClick={handleSave}
-              disabled={!isDirty || saving}
+              disabled={!isDirty || saving || isPreview}
               className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                isDirty
+                isDirty && !isPreview
                   ? 'bg-primary text-on-primary hover:shadow-lg'
                   : 'bg-surface-container-highest text-on-surface-variant cursor-not-allowed'
               }`}
+              title={isPreview ? 'Switch to the working draft to edit' : undefined}
             >
               <span className="material-symbols-outlined text-sm">
                 {saving ? 'progress_activity' : 'save'}
@@ -413,15 +521,30 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
                 }
                 await onCreateSnapshot(null);
               }}
-              disabled={saving || segments.length === 0}
+              disabled={saving || segments.length === 0 || isPreview}
               className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium bg-secondary/20 text-secondary hover:bg-secondary/30 transition-colors disabled:opacity-50"
-              title="Save current draft as the next auto-numbered version"
+              title={isPreview ? 'Switch to the working draft to snapshot' : 'Save current draft as the next auto-numbered version'}
             >
               <span className="material-symbols-outlined text-sm">bookmark_add</span>
               Save as version
             </button>
           </div>
         </div>
+
+        {/* Preview banner */}
+        {isPreview && (
+          <div className="flex items-center gap-2 px-6 py-1.5 bg-amber-500/10 border-b border-amber-400/20 text-[11px] text-amber-300">
+            <span className="material-symbols-outlined text-sm">visibility</span>
+            Previewing <span className="font-mono font-semibold">{previewVersion}</span> (read-only).
+            <button
+              type="button"
+              onClick={() => setPreviewVersion('draft')}
+              className="ml-auto underline hover:text-amber-200"
+            >
+              Switch to working draft
+            </button>
+          </div>
+        )}
 
         {/* Main content: 2-column layout */}
         <div className="flex-1 overflow-hidden flex">
@@ -434,6 +557,15 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
               controls={playerControls}
               loading={videoLoading}
               onLoadingChange={setVideoLoading}
+            />
+
+            {/* Hidden synced dub audio. The <video> element is muted whenever a
+                dub is selected; this element plays/pauses/seeks in lockstep. */}
+            <audio
+              ref={dubAudioRef}
+              src={previewDub && activeLang ? getTTSAudioUrl(videoId, activeLang, previewDub) : undefined}
+              preload="auto"
+              className="hidden"
             />
 
             <Timeline
