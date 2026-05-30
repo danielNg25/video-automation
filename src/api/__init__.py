@@ -13,8 +13,6 @@ from src.api.routers import (
     editor,
     events,
     pipeline,
-    process,
-    replacement,
     settings,
     tasks,
     transcribe,
@@ -46,12 +44,10 @@ def create_app() -> FastAPI:
     app.include_router(download.router)
     app.include_router(transcribe.router)
     app.include_router(translate.router)
-    app.include_router(process.router)
     app.include_router(editor.router)
     app.include_router(settings.router)
     app.include_router(pipeline.router)
     app.include_router(tts.router)
-    app.include_router(replacement.router)
     app.include_router(events.router)
     app.include_router(tasks.router)
     app.include_router(versions_router.router)
