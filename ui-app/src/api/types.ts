@@ -59,12 +59,6 @@ export interface SaveSrtRequest {
   segments: SubtitleSegment[];
 }
 
-export interface PreviewClipRequest {
-  language: string;
-  start: number;
-  duration: number;
-}
-
 export interface TranslationProfileSummary {
   name: string;
   description: string;

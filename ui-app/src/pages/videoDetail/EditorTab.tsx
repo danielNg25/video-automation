@@ -10,9 +10,6 @@ import {
   putSrt,
   getRawVideoUrl,
   getSrtDownloadUrl,
-  postPreviewClip,
-  subscribeSSE,
-  getProcessedVideoUrl,
   getProxyVideoUrl,
 } from '../../api/client';
 import type { VideoMetadata, SubtitleSegment, VersionEntry } from '../../api/types';
@@ -46,8 +43,6 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
   // UI state
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [useProxy, setUseProxy] = useState(true);
   const [videoLoading, setVideoLoading] = useState(true);
 
@@ -273,38 +268,6 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
   }, [playerControls, playerState.currentTime, handleSave]);
 
   // --- Preview burn-in ---
-  const handlePreviewBurnIn = useCallback(async () => {
-    if (!videoId || previewLoading) return;
-    setPreviewLoading(true);
-    setPreviewUrl(null);
-    try {
-      // First save current edits
-      if (isDirty) {
-        await putSrt(videoId, { language: activeLang, segments });
-        setOriginalSegments(segments);
-      }
-
-      const { task_id } = await postPreviewClip(videoId, {
-        language: activeLang,
-        start: Math.max(0, playerState.currentTime - 2),
-        duration: 10,
-      });
-
-      const es = subscribeSSE(task_id, (eventType) => {
-        if (eventType === 'complete') {
-          setPreviewUrl(getProcessedVideoUrl(videoId, 'preview'));
-          setPreviewLoading(false);
-          es.close();
-        } else if (eventType === 'error') {
-          setPreviewLoading(false);
-          es.close();
-        }
-      });
-    } catch {
-      setPreviewLoading(false);
-    }
-  }, [videoId, activeLang, segments, isDirty, playerState.currentTime, previewLoading]);
-
   if (!videoId) return <div className="p-6 text-on-surface">No video ID</div>;
 
   const videoSrc = video
@@ -383,17 +346,6 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
                 SRT
               </a>
             )}
-
-            <button
-              onClick={handlePreviewBurnIn}
-              disabled={previewLoading}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-highest hover:bg-surface-container-high text-xs text-on-surface transition-colors disabled:opacity-50"
-            >
-              <span className="material-symbols-outlined text-sm">
-                {previewLoading ? 'progress_activity' : 'preview'}
-              </span>
-              {previewLoading ? 'Rendering...' : 'Preview Burn-in'}
-            </button>
 
             <button
               onClick={handleSave}
@@ -490,27 +442,6 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
           </div>
         </div>
 
-        {/* Preview modal */}
-        {previewUrl && (
-          <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-8">
-            <div className="bg-surface-container rounded-xl border border-outline-variant/10 max-w-2xl w-full overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-outline-variant/10">
-                <span className="text-sm font-medium text-on-surface">Burn-in Preview</span>
-                <button onClick={() => setPreviewUrl(null)} className="text-on-surface-variant hover:text-on-surface">
-                  <span className="material-symbols-outlined">close</span>
-                </button>
-              </div>
-              <div className="p-4">
-                <video
-                  controls
-                  autoPlay
-                  className="w-full rounded-lg bg-black"
-                  src={previewUrl}
-                />
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

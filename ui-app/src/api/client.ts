@@ -5,7 +5,6 @@ import type {
   SrtResponse,
   DashboardStats,
   SaveSrtRequest,
-  PreviewClipRequest,
   TranslationProfile,
   TranslationProfileSummary,
   VoiceInfo,
@@ -92,21 +91,9 @@ export function getStats(): Promise<DashboardStats> {
   return request('/stats');
 }
 
-export function getProcessedVideoUrl(videoId: string, platform: string): string {
-  return `${BASE}/videos/${videoId}/output/${platform}`;
-}
-
 export function putSrt(videoId: string, req: SaveSrtRequest): Promise<SrtResponse> {
   return request(`/videos/${videoId}/srt`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(req),
-  });
-}
-
-export function postPreviewClip(videoId: string, req: PreviewClipRequest): Promise<TaskResponse> {
-  return request(`/videos/${videoId}/preview-clip`, {
-    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
   });
