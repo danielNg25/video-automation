@@ -39,6 +39,36 @@ const DEFAULT_OVERLAY_STYLE: SubtitleStyle = {
   backgroundOpacity: 55,
 };
 
+// ── Toolbar styling helpers ─────────────────────────────────────────────────
+// Every toolbar control shares the same h-8 height + rounded shape so the row
+// reads as one strip. Variants (amber, primary) only change the bg/border
+// tint, not the dimensions, so swapping doesn't shift adjacent controls.
+
+type ToolbarVariant = 'neutral' | 'amber' | 'primary';
+
+const VARIANT_CLASSES: Record<ToolbarVariant, string> = {
+  neutral: 'bg-surface-container-lowest border-outline-variant/20 text-on-surface',
+  amber: 'bg-amber-500/10 border-amber-400/40 text-amber-300',
+  primary: 'bg-primary/10 border-primary/40 text-primary',
+};
+
+function toolbarSelectClass(variant: ToolbarVariant = 'neutral'): string {
+  return `h-8 px-2 pr-7 text-xs border rounded-md focus:outline-none focus:border-primary transition-colors ${VARIANT_CLASSES[variant]}`;
+}
+
+function toolbarBtnClass(variant: ToolbarVariant = 'neutral'): string {
+  const tint = variant === 'primary'
+    ? 'bg-primary text-on-primary border-transparent hover:brightness-110'
+    : variant === 'amber'
+      ? VARIANT_CLASSES.amber + ' hover:bg-amber-500/15'
+      : 'bg-surface-container-highest border-outline-variant/20 text-on-surface-variant hover:bg-surface-container-high';
+  return `h-8 px-3 inline-flex items-center gap-1.5 text-xs font-medium border rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${tint}`;
+}
+
+function toolbarIconBtnClass(): string {
+  return 'h-8 w-8 inline-flex items-center justify-center rounded-md border bg-surface-container-highest border-outline-variant/20 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors';
+}
+
 interface Props {
   videoId: string;
   initialVideo?: VideoMetadata;
@@ -381,21 +411,25 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-hidden flex flex-col">
-        {/* Header with editor toolbar */}
-        <div className="flex items-center justify-between px-6 py-3 border-b border-outline-variant/10">
-          <div className="flex items-center gap-3">
-            <h1 className="text-sm font-semibold text-on-surface">
-              Subtitle Editor
+        {/* Header with editor toolbar — all controls share the same h-8 shape so
+            the row reads as a single uniform strip instead of mixed-height
+            chips. Selects on the left (what you're looking at), action
+            buttons on the right (what you do with it). */}
+        <div className="flex items-center justify-between gap-3 px-6 py-2.5 border-b border-outline-variant/10 flex-wrap">
+          <div className="flex items-center gap-2 min-w-0">
+            <h1 className="text-sm font-semibold text-on-surface shrink-0">
+              Editor
             </h1>
-            <span className="font-mono text-[9px] text-on-surface-variant bg-surface-container-highest px-1.5 py-0.5 rounded">
+            <span className="font-mono text-[10px] text-on-surface-variant bg-surface-container-highest px-2 h-8 inline-flex items-center rounded-md truncate max-w-[160px]" title={video?.title || videoId}>
               {video?.title || videoId}
             </span>
 
-            {/* Language selector */}
+            {/* Language */}
             <select
               value={activeLang}
               onChange={(e) => onActiveLangChange(e.target.value)}
-              className="bg-surface-container-lowest border border-outline-variant/20 text-[11px] rounded px-1.5 py-0.5 text-on-surface"
+              className={toolbarSelectClass()}
+              aria-label="Subtitle language"
             >
               {availableLangs.map((l) => (
                 <option key={l} value={l}>
@@ -404,16 +438,12 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
               ))}
             </select>
 
-            {/* Subtitle version selector — drives what's loaded into the editor */}
+            {/* Subtitle version */}
             <select
               value={previewVersion}
               onChange={(e) => setPreviewVersion(e.target.value)}
-              className={`border text-[11px] rounded px-1.5 py-0.5 ${
-                isPreview
-                  ? 'bg-amber-500/10 border-amber-400/40 text-amber-300'
-                  : 'bg-surface-container-lowest border-outline-variant/20 text-on-surface'
-              }`}
-              title={isPreview ? 'Previewing a saved version (read-only)' : 'Editing the working draft'}
+              className={toolbarSelectClass(isPreview ? 'amber' : 'neutral')}
+              title={isPreview ? `Editing ${previewVersion} — Save overwrites it` : 'Editing the working draft'}
               aria-label="Subtitle version"
             >
               <option value="draft">Working draft</option>
@@ -424,15 +454,11 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
               ))}
             </select>
 
-            {/* Dub selector — drives the audio track played with the video */}
+            {/* Dub audio */}
             <select
               value={previewDub}
               onChange={(e) => setPreviewDub(e.target.value)}
-              className={`border text-[11px] rounded px-1.5 py-0.5 ${
-                previewDub
-                  ? 'bg-primary/10 border-primary/40 text-primary'
-                  : 'bg-surface-container-lowest border-outline-variant/20 text-on-surface'
-              }`}
+              className={toolbarSelectClass(previewDub ? 'primary' : 'neutral')}
               disabled={dubsForLang.length === 0}
               title={dubsForLang.length === 0 ? 'No dubs available for this language' : 'Play a generated dub instead of source audio'}
               aria-label="Dub audio"
@@ -445,50 +471,52 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
               ))}
             </select>
 
-            {/* Video quality selector */}
+            {/* Video quality */}
             <select
               value={useProxy ? '360p' : 'full'}
               onChange={(e) => { setUseProxy(e.target.value === '360p'); setVideoLoading(true); }}
-              className="bg-surface-container-lowest border border-outline-variant/20 text-[11px] rounded px-1.5 py-0.5 text-on-surface font-mono"
+              className={toolbarSelectClass()}
+              aria-label="Video quality"
             >
               <option value="360p">360p</option>
               <option value="full">Full Res</option>
             </select>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             {isDirty && (
-              <span className="font-mono text-[9px] text-amber-400 flex items-center gap-1">
+              <span className="font-mono text-[10px] text-amber-400 flex items-center gap-1 shrink-0">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                Unsaved changes
+                Unsaved
               </span>
             )}
             {saveStatus === 'saved' && (
-              <span className="font-mono text-[9px] text-emerald-400">Saved</span>
+              <span className="font-mono text-[10px] text-emerald-400 shrink-0">Saved</span>
             )}
             {saveStatus === 'error' && (
-              <span className="font-mono text-[9px] text-red-400">Save failed</span>
+              <span className="font-mono text-[10px] text-red-400 shrink-0">Save failed</span>
             )}
 
+            {/* Icon-only downloads — saves room for the action buttons. */}
             <a
               href={getRawVideoUrl(videoId)}
               download={`${videoId}.mp4`}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-container-highest text-on-surface-variant hover:bg-surface-container-high transition-colors"
-              title="Download original Douyin video"
+              className={toolbarIconBtnClass()}
+              title="Download original video"
+              aria-label="Download original video"
             >
-              <span className="material-symbols-outlined text-sm">download</span>
-              Video
+              <span className="material-symbols-outlined text-[18px]">movie</span>
             </a>
 
             {activeLang && (
               <a
                 href={getSrtDownloadUrl(videoId, activeLang)}
                 download={`${videoId}_${activeLang}.srt`}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-container-highest text-on-surface-variant hover:bg-surface-container-high transition-colors"
-                title={`Download ${activeLang.toUpperCase()} subtitles (working draft)`}
+                className={toolbarIconBtnClass()}
+                title={`Download ${activeLang.toUpperCase()} SRT (working draft)`}
+                aria-label="Download SRT"
               >
-                <span className="material-symbols-outlined text-sm">download</span>
-                SRT
+                <span className="material-symbols-outlined text-[18px]">subtitles</span>
               </a>
             )}
 
@@ -508,46 +536,41 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={importing || !activeLang}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-container-highest text-on-surface-variant hover:bg-surface-container-high disabled:opacity-50 transition-colors"
-              title={activeLang ? `Upload an edited ${activeLang.toUpperCase()} SRT as the next version` : 'Pick a language first'}
+              className={toolbarBtnClass('neutral')}
+              title={activeLang ? `Upload an edited ${activeLang.toUpperCase()} SRT as a new version` : 'Pick a language first'}
             >
-              <span className="material-symbols-outlined text-sm">
+              <span className="material-symbols-outlined text-[16px]">
                 {importing ? 'progress_activity' : 'upload'}
               </span>
-              {importing ? 'Importing...' : 'Import SRT'}
+              <span>{importing ? 'Importing…' : 'Import'}</span>
             </button>
 
             <button
               onClick={handleSave}
               disabled={!isDirty || saving}
-              className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                isDirty
-                  ? 'bg-primary text-on-primary hover:shadow-lg'
-                  : 'bg-surface-container-highest text-on-surface-variant cursor-not-allowed'
-              }`}
+              className={toolbarBtnClass(isDirty ? 'primary' : 'neutral')}
               title={isPreview ? `Save edits back to ${previewVersion}` : 'Save the working draft'}
             >
-              <span className="material-symbols-outlined text-sm">
+              <span className="material-symbols-outlined text-[16px]">
                 {saving ? 'progress_activity' : 'save'}
               </span>
-              {saving ? 'Saving...' : isPreview ? `Save to ${previewVersion}` : 'Save'}
+              <span>{saving ? 'Saving…' : isPreview ? `Save to ${previewVersion}` : 'Save'}</span>
             </button>
 
             <button
               onClick={async () => {
                 if (saving) return;
                 if (isDirty) {
-                  // Ensure the current target is up to date before snapshotting.
                   await handleSave();
                 }
                 await onCreateSnapshot(null);
               }}
               disabled={saving || segments.length === 0 || isPreview}
-              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium bg-secondary/20 text-secondary hover:bg-secondary/30 transition-colors disabled:opacity-50"
-              title={isPreview ? 'Switch to the working draft to snapshot a new version' : 'Save current draft as the next auto-numbered version'}
+              className={toolbarBtnClass('neutral')}
+              title={isPreview ? 'Switch to the working draft to snapshot' : 'Save current draft as the next auto-numbered version'}
             >
-              <span className="material-symbols-outlined text-sm">bookmark_add</span>
-              Save as version
+              <span className="material-symbols-outlined text-[16px]">bookmark_add</span>
+              <span>Save as version</span>
             </button>
           </div>
         </div>
