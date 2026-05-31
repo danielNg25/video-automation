@@ -40,33 +40,32 @@ const DEFAULT_OVERLAY_STYLE: SubtitleStyle = {
 };
 
 // ── Toolbar styling helpers ─────────────────────────────────────────────────
-// Every toolbar control shares the same h-8 height + rounded shape so the row
-// reads as one strip. Variants (amber, primary) only change the bg/border
-// tint, not the dimensions, so swapping doesn't shift adjacent controls.
+// All controls share h-8 + rounded-lg + the same elevated surface, so the row
+// reads as one cohesive strip. Borders are dropped (the elevated bg already
+// separates each control from the page background); the focus ring takes over
+// when needed. Variants tint the bg subtly without changing dimensions, so
+// switching between e.g. neutral and amber doesn't shift adjacent controls.
 
 type ToolbarVariant = 'neutral' | 'amber' | 'primary';
 
-const VARIANT_CLASSES: Record<ToolbarVariant, string> = {
-  neutral: 'bg-surface-container-lowest border-outline-variant/20 text-on-surface',
-  amber: 'bg-amber-500/10 border-amber-400/40 text-amber-300',
-  primary: 'bg-primary/10 border-primary/40 text-primary',
-};
-
 function toolbarSelectClass(variant: ToolbarVariant = 'neutral'): string {
-  return `h-8 px-2 pr-7 text-xs border rounded-md focus:outline-none focus:border-primary transition-colors ${VARIANT_CLASSES[variant]}`;
+  const tint =
+    variant === 'amber'
+      ? 'bg-amber-500/15 text-amber-200 ring-1 ring-amber-400/30'
+      : variant === 'primary'
+        ? 'bg-primary/15 text-primary ring-1 ring-primary/30'
+        : 'bg-surface-container-high text-on-surface';
+  return `h-8 px-2.5 pr-7 text-xs font-medium rounded-lg border-none appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${tint}`;
 }
 
 function toolbarBtnClass(variant: ToolbarVariant = 'neutral'): string {
-  const tint = variant === 'primary'
-    ? 'bg-primary text-on-primary border-transparent hover:brightness-110'
-    : variant === 'amber'
-      ? VARIANT_CLASSES.amber + ' hover:bg-amber-500/15'
-      : 'bg-surface-container-highest border-outline-variant/20 text-on-surface-variant hover:bg-surface-container-high';
-  return `h-8 px-3 inline-flex items-center gap-1.5 text-xs font-medium border rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${tint}`;
-}
-
-function toolbarIconBtnClass(): string {
-  return 'h-8 w-8 inline-flex items-center justify-center rounded-md border bg-surface-container-highest border-outline-variant/20 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors';
+  const tint =
+    variant === 'primary'
+      ? 'bg-primary text-on-primary hover:brightness-110 active:scale-[0.98]'
+      : variant === 'amber'
+        ? 'bg-amber-500/15 text-amber-200 hover:bg-amber-500/25'
+        : 'bg-surface-container-high text-on-surface hover:bg-surface-container-highest';
+  return `h-8 px-3 inline-flex items-center gap-1.5 text-xs font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${tint}`;
 }
 
 interface Props {
@@ -484,39 +483,50 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {isDirty && (
-              <span className="font-mono text-[10px] text-amber-400 flex items-center gap-1 shrink-0">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                Unsaved
-              </span>
-            )}
-            {saveStatus === 'saved' && (
-              <span className="font-mono text-[10px] text-emerald-400 shrink-0">Saved</span>
-            )}
-            {saveStatus === 'error' && (
-              <span className="font-mono text-[10px] text-red-400 shrink-0">Save failed</span>
+            {/* Save-status indicator — only rendered when there's something
+                to say, so the row doesn't carry empty chrome at rest. */}
+            {(isDirty || saveStatus !== 'idle') && (
+              <div className="flex items-center gap-2 pr-3 mr-1 border-r border-outline-variant/15">
+                {isDirty && (
+                  <span className="font-mono text-[10px] text-amber-400 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                    Unsaved
+                  </span>
+                )}
+                {saveStatus === 'saved' && (
+                  <span className="font-mono text-[10px] text-emerald-400 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-sm">check_circle</span>
+                    Saved
+                  </span>
+                )}
+                {saveStatus === 'error' && (
+                  <span className="font-mono text-[10px] text-red-400 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-sm">error</span>
+                    Save failed
+                  </span>
+                )}
+              </div>
             )}
 
-            {/* Icon-only downloads — saves room for the action buttons. */}
             <a
               href={getRawVideoUrl(videoId)}
               download={`${videoId}.mp4`}
-              className={toolbarIconBtnClass()}
+              className={toolbarBtnClass()}
               title="Download original video"
-              aria-label="Download original video"
             >
-              <span className="material-symbols-outlined text-[18px]">movie</span>
+              <span className="material-symbols-outlined text-[16px]">download</span>
+              <span>Video</span>
             </a>
 
             {activeLang && (
               <a
                 href={getSrtDownloadUrl(videoId, activeLang)}
                 download={`${videoId}_${activeLang}.srt`}
-                className={toolbarIconBtnClass()}
+                className={toolbarBtnClass()}
                 title={`Download ${activeLang.toUpperCase()} SRT (working draft)`}
-                aria-label="Download SRT"
               >
-                <span className="material-symbols-outlined text-[18px]">subtitles</span>
+                <span className="material-symbols-outlined text-[16px]">download</span>
+                <span>SRT</span>
               </a>
             )}
 
