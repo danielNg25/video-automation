@@ -49,7 +49,7 @@ export function DubStudioPage() {
   // ── form state ─────────────────────────────────────────────────────────────
   const [srtFile, setSrtFile] = useState<File | null>(null);
   const [provider, setProvider] = useState<string>(
-    () => storageGet(SK.provider) || 'edge',
+    () => storageGet(SK.provider) || 'google',
   );
   const [language, setLanguage] = useState<string>(
     () => storageGet(SK.language) || 'vi',
@@ -63,7 +63,7 @@ export function DubStudioPage() {
     return v === '' ? true : v === 'true';
   });
   const [voiceId, setVoiceId] = useState<string>(
-    () => storageGet(SK.voiceId(storageGet(SK.provider) || 'edge')),
+    () => storageGet(SK.voiceId(storageGet(SK.provider) || 'google')),
   );
   const [ttsApiKey, setTtsApiKey] = useState<string>(
     () => storageGet(SK.ttsApiKey),
@@ -91,8 +91,17 @@ export function DubStudioPage() {
   // ── load providers once ────────────────────────────────────────────────────
   useEffect(() => {
     getTTSProviders()
-      .then(setProviders)
+      .then((list) => {
+        setProviders(list);
+        // If the persisted provider isn't in the BE list (e.g. stale 'edge'
+        // from before Edge TTS was removed), fall back to the first one so
+        // the voice-load doesn't hit a 500.
+        if (list.length > 0 && !list.some((p) => p.id === provider)) {
+          handleSetProvider(list[0].id);
+        }
+      })
       .catch(() => {/* silently ignore */});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── SSE cleanup on unmount ─────────────────────────────────────────────────
