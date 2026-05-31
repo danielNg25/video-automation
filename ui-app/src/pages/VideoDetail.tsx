@@ -5,7 +5,7 @@ import { EditorTab } from './videoDetail/EditorTab';
 import { TranslateTab } from './videoDetail/TranslateTab';
 import { DubTab } from './videoDetail/DubTab';
 import {
-  getVideo, postTranslate, postTTS,
+  getVideo, postTranslate, postTTS, cancelTask,
   subscribeSSE, getProfiles, getTTSProviders, getTTSVoices,
   getTTSList,
 } from '../api/client';
@@ -95,6 +95,8 @@ function VideoDetailPage() {
   const [ttsGenerated, setTtsGenerated] = useState(false);
   const [ttsError, setTtsError] = useState('');
   const [ttsList, setTtsList] = useState<TTSAudioEntry[]>([]);
+  const [ttsTaskId, setTtsTaskId] = useState<string | null>(null);
+  const [ttsCancelling, setTtsCancelling] = useState(false);
 
   // Editor active language — lifted here so useVersions tracks the language
   // the user is actually editing, not the TTS dub language.
@@ -279,6 +281,8 @@ function VideoDetailPage() {
         playbackSpeed,
         underlayDb,
       );
+      setTtsTaskId(task_id);
+      setTtsCancelling(false);
       const es = subscribeSSE(task_id, (eventType, data) => {
         if (eventType === 'progress') {
           setTtsProgress({
@@ -289,18 +293,41 @@ function VideoDetailPage() {
           setIsGeneratingTts(false);
           setTtsGenerated(true);
           setTtsProgress({ pct: 100, message: 'TTS generation complete' });
+          setTtsTaskId(null);
           // Refresh TTS list to show new file
           if (videoMeta) getTTSList(videoMeta.video_id).then(setTtsList).catch(() => {});
           es.close();
         } else if (eventType === 'error') {
           setIsGeneratingTts(false);
           setTtsError(data.message as string);
+          setTtsTaskId(null);
+          es.close();
+        } else if (eventType === 'cancelled') {
+          setIsGeneratingTts(false);
+          setTtsCancelling(false);
+          setTtsProgress({ pct: 0, message: 'Cancelled' });
+          setTtsTaskId(null);
           es.close();
         }
       });
     } catch (e) {
       setIsGeneratingTts(false);
       setTtsError(e instanceof Error ? e.message : 'TTS generation failed');
+      setTtsTaskId(null);
+    }
+  };
+
+  const handleStopTTS = async () => {
+    if (!ttsTaskId || ttsCancelling) return;
+    setTtsCancelling(true);
+    try {
+      await cancelTask(ttsTaskId);
+      // The 'cancelled' SSE event finalizes UI state; this is a fallback if
+      // the BE acknowledges but the SSE drops.
+    } catch (e) {
+      setIsGeneratingTts(false);
+      setTtsCancelling(false);
+      setTtsError(e instanceof Error ? e.message : 'Stop failed');
     }
   };
 
@@ -447,6 +474,9 @@ function VideoDetailPage() {
               } catch { /* ignore */ }
             }}
             onGenerate={handleGenerateTts}
+            onStop={handleStopTTS}
+            canStop={!!ttsTaskId}
+            isStopping={ttsCancelling}
             llmBackend={llmBackend}
             llmApiKey={llmApiKey}
             enableShortening={enableShortening}

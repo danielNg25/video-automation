@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { getTTSProviders, getTTSVoices, subscribeSSE } from '../api/client';
+import { cancelTask, getTTSProviders, getTTSVoices, subscribeSSE } from '../api/client';
 import {
   postStandaloneDub,
   getStandaloneDubs,
@@ -79,6 +79,8 @@ export function DubStudioPage() {
     message: '',
   });
   const [genError, setGenError] = useState('');
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
   const esRef = useRef<EventSource | null>(null);
 
   // ── recent dubs ────────────────────────────────────────────────────────────
@@ -204,6 +206,8 @@ export function DubStudioPage() {
     setGenerating(true);
     setGenError('');
     setProgress({ pct: 0, message: 'Submitting…' });
+    setActiveTaskId(null);
+    setCancelling(false);
 
     // close any previous SSE stream
     esRef.current?.close();
@@ -225,6 +229,7 @@ export function DubStudioPage() {
         llmApiKey: llmPrefs.backend !== '' ? (apiKeys[llmPrefs.backend as keyof typeof apiKeys] || undefined) : undefined,
         llmBackend: llmPrefs.backend || undefined,
       });
+      setActiveTaskId(resp.task_id);
 
       // subscribe to SSE
       const es = subscribeSSE(resp.task_id, (eventType, data) => {
@@ -236,11 +241,19 @@ export function DubStudioPage() {
         } else if (eventType === 'complete') {
           setGenerating(false);
           setProgress({ pct: 100, message: 'Done!' });
+          setActiveTaskId(null);
           es.close();
           void refreshRecent();
         } else if (eventType === 'error') {
           setGenerating(false);
           setGenError(typeof data.message === 'string' ? data.message : 'Generation failed');
+          setActiveTaskId(null);
+          es.close();
+        } else if (eventType === 'cancelled') {
+          setGenerating(false);
+          setCancelling(false);
+          setProgress({ pct: 0, message: 'Cancelled' });
+          setActiveTaskId(null);
           es.close();
         }
       });
@@ -248,6 +261,22 @@ export function DubStudioPage() {
     } catch (err) {
       setGenerating(false);
       setGenError(err instanceof Error ? err.message : 'Unknown error');
+      setActiveTaskId(null);
+    }
+  };
+
+  // ── stop ───────────────────────────────────────────────────────────────────
+  const handleStop = async () => {
+    if (!activeTaskId || cancelling) return;
+    setCancelling(true);
+    try {
+      await cancelTask(activeTaskId);
+      // The SSE 'cancelled' event will flip generating=false; if the BE
+      // is unreachable, snap the UI back ourselves.
+    } catch (err) {
+      setGenerating(false);
+      setCancelling(false);
+      setGenError(err instanceof Error ? err.message : 'Stop failed');
     }
   };
 
@@ -428,32 +457,34 @@ export function DubStudioPage() {
             </div>
           </label>
 
-          {/* Generate button */}
-          <button
-            type="button"
-            disabled={!srtFile || !voiceId || generating}
-            onClick={() => void handleGenerate()}
-            aria-label="Generate dub"
-            className={`w-full py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
-              generating
-                ? 'bg-surface-container-highest text-on-surface-variant cursor-wait'
-                : !srtFile || !voiceId
+          {/* Generate / Stop button — same row, button swaps based on state */}
+          {generating ? (
+            <button
+              type="button"
+              onClick={() => void handleStop()}
+              disabled={!activeTaskId || cancelling}
+              aria-label="Stop dub generation"
+              className="w-full py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 bg-red-500/15 border border-red-500/30 text-red-300 hover:bg-red-500/25 active:scale-95 disabled:opacity-50 transition-all"
+            >
+              <span className="material-symbols-outlined text-sm">{cancelling ? 'progress_activity' : 'stop_circle'}</span>
+              {cancelling ? 'Stopping…' : `Stop · ${progress.message || 'generating'}`}
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={!srtFile || !voiceId}
+              onClick={() => void handleGenerate()}
+              aria-label="Generate dub"
+              className={`w-full py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
+                !srtFile || !voiceId
                   ? 'bg-surface-container-highest text-on-surface-variant cursor-not-allowed opacity-50'
                   : 'bg-primary text-on-primary-fixed hover:brightness-110 active:scale-95'
-            }`}
-          >
-            {generating ? (
-              <>
-                <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
-                {progress.message || 'Generating…'}
-              </>
-            ) : (
-              <>
-                <span className="material-symbols-outlined text-sm">record_voice_over</span>
-                Generate dub
-              </>
-            )}
-          </button>
+              }`}
+            >
+              <span className="material-symbols-outlined text-sm">record_voice_over</span>
+              Generate dub
+            </button>
+          )}
 
           {/* Progress bar */}
           {generating && (

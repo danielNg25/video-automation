@@ -40,6 +40,9 @@ function renderDubTab(overrides: Partial<React.ComponentProps<typeof DubTab>> = 
     ttsList: [],
     onReloadTtsList: vi.fn(),
     onGenerate: vi.fn(),
+    onStop: vi.fn(),
+    canStop: false,
+    isStopping: false,
     llmBackend: '',
     llmApiKey: '',
     enableShortening: true,
@@ -67,5 +70,40 @@ describe('DubTab — shorten-to-fit checkbox', () => {
     const box = screen.getByRole('checkbox', { name: /shorten dub to fit/i });
     fireEvent.click(box);
     expect(props.onChangeEnableShortening).toHaveBeenCalledWith(false);
+  });
+});
+
+describe('DubTab — Stop button', () => {
+  it('shows Generate when idle', () => {
+    renderDubTab({ isGeneratingTts: false });
+    expect(screen.getByRole('button', { name: /generate tts/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /stop/i })).not.toBeInTheDocument();
+  });
+
+  it('shows Stop while generating once the task_id is known', () => {
+    renderDubTab({ isGeneratingTts: true, canStop: true });
+    expect(screen.queryByRole('button', { name: /generate tts/i })).not.toBeInTheDocument();
+    const stopBtn = screen.getByRole('button', { name: /stop tts/i }) as HTMLButtonElement;
+    expect(stopBtn).toBeInTheDocument();
+    expect(stopBtn.disabled).toBe(false);
+  });
+
+  it('disables Stop until the task_id lands (canStop=false)', () => {
+    renderDubTab({ isGeneratingTts: true, canStop: false });
+    const stopBtn = screen.getByRole('button', { name: /stop tts/i }) as HTMLButtonElement;
+    expect(stopBtn.disabled).toBe(true);
+  });
+
+  it('disables Stop and shows "Stopping…" while a cancel is in flight', () => {
+    renderDubTab({ isGeneratingTts: true, canStop: true, isStopping: true });
+    const stopBtn = screen.getByRole('button', { name: /stop tts/i }) as HTMLButtonElement;
+    expect(stopBtn.disabled).toBe(true);
+    expect(stopBtn.textContent || '').toMatch(/stopping/i);
+  });
+
+  it('calls onStop when the Stop button is clicked', () => {
+    const { props } = renderDubTab({ isGeneratingTts: true, canStop: true });
+    fireEvent.click(screen.getByRole('button', { name: /stop tts/i }));
+    expect(props.onStop).toHaveBeenCalled();
   });
 });
