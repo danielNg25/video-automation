@@ -73,6 +73,7 @@ export function DubStudioPage() {
   const [providers, setProviders] = useState<TTSProviderInfo[]>([]);
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
   const [loadingVoices, setLoadingVoices] = useState(false);
+  const [voicesError, setVoicesError] = useState('');
 
   // ── generation state ───────────────────────────────────────────────────────
   const [generating, setGenerating] = useState(false);
@@ -114,6 +115,7 @@ export function DubStudioPage() {
   // ── load voices when provider or language changes ──────────────────────────
   useEffect(() => {
     setLoadingVoices(true);
+    setVoicesError('');
     const apiKeys = loadApiKeys();
     const key =
       ttsApiKey ||
@@ -132,7 +134,19 @@ export function DubStudioPage() {
           setVoiceId('');
         }
       })
-      .catch(() => setVoices([]))
+      .catch((err: unknown) => {
+        setVoices([]);
+        const msg = err instanceof Error ? err.message : String(err);
+        // The BE raises "Google TTS API key not configured..." when no key
+        // is set. Surface the most actionable form to the user.
+        if (/api[_ ]key/i.test(msg) || !key) {
+          setVoicesError(
+            `${provider} TTS needs an API key. Enter it below or save one in Settings → API Keys.`,
+          );
+        } else {
+          setVoicesError(`Failed to load voices: ${msg}`);
+        }
+      })
       .finally(() => setLoadingVoices(false));
   }, [provider, language, ttsApiKey]);
 
@@ -348,19 +362,26 @@ export function DubStudioPage() {
                 Loading voices…
               </div>
             ) : (
-              <select
-                className={selectClass}
-                value={voiceId}
-                onChange={(e) => handleSetVoiceId(e.target.value)}
-                disabled={voices.length === 0}
-              >
-                {voices.length === 0 && <option value="">— no voices available —</option>}
-                {voices.map((v) => (
-                  <option key={v.name} value={v.name}>
-                    {v.friendly_name} ({v.gender})
-                  </option>
-                ))}
-              </select>
+              <>
+                <select
+                  className={selectClass}
+                  value={voiceId}
+                  onChange={(e) => handleSetVoiceId(e.target.value)}
+                  disabled={voices.length === 0}
+                >
+                  {voices.length === 0 && <option value="">— no voices available —</option>}
+                  {voices.map((v) => (
+                    <option key={v.name} value={v.name}>
+                      {v.friendly_name} ({v.gender})
+                    </option>
+                  ))}
+                </select>
+                {voicesError && (
+                  <div className="mt-1.5 text-[11px] text-amber-300 bg-amber-500/10 border border-amber-400/20 px-2 py-1 rounded">
+                    {voicesError}
+                  </div>
+                )}
+              </>
             )}
           </div>
 
