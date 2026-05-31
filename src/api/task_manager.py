@@ -725,6 +725,151 @@ class TaskManager:
             self._emit(task_id, "error", {"message": str(e)})
             logger.error(f"TTS task {task_id} failed: {e}")
 
+    async def run_standalone_dub(
+        self,
+        task_id: str,
+        srt_content: bytes,
+        original_filename: str,
+        provider: str,
+        voice: str,
+        language: str,
+        playback_speed: float,
+        enable_shortening: bool,
+        config: dict,
+        api_key_override: str | None = None,
+        llm_api_key: str | None = None,
+        llm_backend: str | None = None,
+    ):
+        """Generate a dub WAV from uploaded SRT bytes alone.
+
+        Unlike run_tts, there's no video binding: SRT bytes are passed
+        directly, video_duration is derived from the last segment's end +
+        1s buffer, output lands in data/standalone_dubs/{uuid}.wav with a
+        {uuid}.json metadata sidecar.
+        """
+        import tempfile
+        import uuid as uuid_lib
+        from datetime import datetime, timezone
+
+        from src.api import standalone_dub as standalone_mod
+        from src.processor.subtitle import parse_srt
+        from src.tts.assembler import TTSAssembler
+        from src.tts.runner import build_llm_translator, get_tts_provider
+
+        task = self.tasks[task_id]
+        task.status = "running"
+        task.message = "Preparing standalone dub..."
+        self._emit(task_id, "progress", {"progress": 0.0, "message": "Preparing standalone dub..."})
+
+        try:
+            # 1. Parse SRT via temp file (parse_srt is path-based).
+            if not srt_content.strip():
+                raise ValueError("Invalid or empty SRT")
+
+            with tempfile.NamedTemporaryFile(suffix=".srt", delete=False) as tmp:
+                tmp.write(srt_content)
+                tmp_path = Path(tmp.name)
+            try:
+                try:
+                    segments = parse_srt(tmp_path)
+                except Exception as e:
+                    raise ValueError(f"Invalid SRT: {e}") from e
+                if not segments:
+                    raise ValueError("Invalid or empty SRT")
+            finally:
+                tmp_path.unlink(missing_ok=True)
+
+            # 2. Derive duration: last segment end + 1s buffer.
+            video_duration = max(seg["end"] for seg in segments) + 1.0
+
+            # 3. Generate uuid and output path.
+            dub_uuid = uuid_lib.uuid4().hex
+            standalone_mod.STANDALONE_DIR.mkdir(parents=True, exist_ok=True)
+            output_path = standalone_mod.wav_path(dub_uuid)
+
+            # 4. Build effective config with API-key override.
+            effective_config = dict(config)
+            if api_key_override:
+                tts_cfg = dict(effective_config.get("tts", {}))
+                tts_cfg[f"{provider}_api_key"] = api_key_override
+                effective_config["tts"] = tts_cfg
+
+            # 5. Build provider + translator (translator may be None if
+            # no LLM key is configured; that's fine — Stage 0 and 3 fall
+            # back to heuristic / no-op respectively).
+            tts_provider = get_tts_provider(effective_config, provider=provider)
+            translator = build_llm_translator(
+                effective_config,
+                llm_api_key=llm_api_key,
+                llm_backend=llm_backend,
+            )
+
+            # 6. Progress callback wires into SSE.
+            def on_progress(current: int, total: int, message: str):
+                pct = current / total if total > 0 else 0.0
+                task.progress = pct
+                task.message = message
+                self._emit(task_id, "progress", {"progress": pct, "message": message})
+
+            # 7. Build the LLM caller for Stage 0 sentence merging (if
+            # the translator is available).
+            llm_caller = None
+            if translator is not None:
+                async def _llm_caller(system: str, user: str, max_tokens: int) -> str:
+                    return await translator._call_llm(system, user, max_tokens=max_tokens)
+                llm_caller = _llm_caller
+
+            # 8. Build the voice_profile dict the assembler expects.
+            voice_profile = {"voice": voice, "language": language}
+
+            # 9. Run the assembler.
+            assembler = TTSAssembler(translator=translator)
+            await assembler.generate_full_track(
+                provider=tts_provider,
+                segments=segments,
+                voice_profile=voice_profile,
+                video_duration=video_duration,
+                output_path=output_path,
+                on_progress=on_progress,
+                llm_caller=llm_caller,
+                playback_speed=playback_speed,
+                video_id=dub_uuid,
+                language=language,
+                provider_name=provider,
+                enable_shortening=enable_shortening,
+            )
+
+            # 10. Write metadata sidecar.
+            if not output_path.exists():
+                raise RuntimeError(f"Assembler returned but {output_path} was not written")
+            file_size = output_path.stat().st_size
+            entry = standalone_mod.StandaloneDubEntry(
+                uuid=dub_uuid,
+                original_filename=original_filename,
+                provider=provider,
+                voice=voice,
+                language=language,
+                playback_speed=playback_speed,
+                enable_shortening=enable_shortening,
+                duration_seconds=video_duration,
+                created_at=datetime.now(timezone.utc),
+                file_size_bytes=file_size,
+            )
+            standalone_mod.save_meta(entry)
+
+            task.status = "completed"
+            task.progress = 1.0
+            task.message = "Dub generation complete"
+            task.result = {"uuid": dub_uuid, "file_size_bytes": file_size}
+            self._emit(task_id, "complete", task.result)
+
+        except Exception as e:
+            task.status = "failed"
+            task.error = str(e)
+            task.message = f"Standalone dub failed: {e}"
+            self._emit(task_id, "error", {"message": str(e)})
+            logger.error(f"Standalone dub task {task_id} failed: {e}")
+
     async def run_pipeline(
         self,
         task_id: str,

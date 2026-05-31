@@ -14,6 +14,7 @@ import re
 from collections.abc import Callable
 from pathlib import Path
 
+from src.tts import get_tts_provider  # re-exported for patching in tests
 from src.utils.logger import setup_logger
 
 _FILENAME_SAFE = re.compile(r"[^A-Za-z0-9._-]+")
@@ -168,7 +169,6 @@ async def run_tts_track(
         {"audio_path": str, "duration": float, "segment_count": int, "language": str}
     """
     from src.processor.subtitle import parse_srt
-    from src.tts import get_tts_provider
     from src.tts.assembler import TTSAssembler
     from src.utils.metadata import extract_metadata_from_file
 
@@ -334,3 +334,8 @@ async def run_tts_track(
         "plan_log_path": str(plan_log_path),
         "plan_tsv_path": str(plan_tsv_path),
     }
+
+
+# Public aliases — callers outside this module should import these names so
+# they don't cross module boundaries importing leading-underscore private names.
+build_llm_translator = _build_llm_translator

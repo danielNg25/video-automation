@@ -605,6 +605,21 @@ douyin-automation/
 
 ---
 
+### Standalone SRT → Dub Studio (2026-05-30)
+
+> Sub-project 3 of 3 in the refocused app. See [`docs/superpowers/specs/2026-05-30-standalone-dub-studio-design.md`](docs/superpowers/specs/2026-05-30-standalone-dub-studio-design.md) and [`docs/superpowers/plans/2026-05-30-standalone-dub-studio.md`](docs/superpowers/plans/2026-05-30-standalone-dub-studio.md).
+
+- [x] **Task 1** — BE `src/api/standalone_dub.py`: `StandaloneDubEntry` dataclass, `list_dubs`, `delete_dub`, `wav_path`, `save_meta`. 6 unit tests.
+- [x] **Task 2** — BE `TaskManager.run_standalone_dub` orchestrator. Parses SRT bytes via `parse_srt`, derives `video_duration = max(end) + 1s`, builds provider + LLM translator, calls `assembler.generate_full_track`, writes metadata sidecar on success. 2 tests (happy + invalid SRT).
+- [x] **Task 3** — BE router at `/api/standalone-dub`: POST (multipart), GET list, DELETE, GET `{uuid}.wav` download. 6 endpoint tests.
+- [x] **Task 4** — FE `standaloneDub.ts` API client. Same multipart `FormData` pattern as sub-project 2's `importVersion`.
+- [x] **Task 5** — FE `DubStudio` page + nav entry + `/dub-studio` route. 4 vitest tests covering empty state, seeded rows, Generate gating, and delete flow.
+- [x] **Task 6** — CHANGELOG + README updates.
+
+**Refocus complete.** The 3-part post-refocus app: download/transcribe/translate pipeline → per-video editor with SRT export and import + dub generation → standalone SRT→Dub tool for SRTs that don't have a video binding.
+
+---
+
 ### One-Time Setup Checklist
 
 - [ ] Docker installed, Douyin API container running
