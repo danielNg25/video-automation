@@ -41,6 +41,14 @@ export function getVideo(videoId: string): Promise<VideoMetadata> {
   return request(`/videos/${videoId}`);
 }
 
+export function updateVideoTitle(videoId: string, title: string): Promise<VideoMetadata> {
+  return request(`/videos/${videoId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  });
+}
+
 export function postTranscribe(
   videoId: string,
   language: string = 'zh',

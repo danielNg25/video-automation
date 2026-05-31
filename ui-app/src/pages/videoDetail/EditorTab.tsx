@@ -15,6 +15,7 @@ import {
   getProxyVideoUrl,
   getTTSList,
   getTTSAudioUrl,
+  updateVideoTitle,
 } from '../../api/client';
 import type { TTSAudioEntry } from '../../api/client';
 import type {
@@ -99,6 +100,25 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
+
+  // Title-rename state. `editingTitle` is null when not editing; otherwise the
+  // string value of the in-progress edit. Save on Enter or blur; revert on Esc.
+  const [editingTitle, setEditingTitle] = useState<string | null>(null);
+  const handleStartRename = useCallback(() => {
+    setEditingTitle(video?.title ?? videoId);
+  }, [video?.title, videoId]);
+  const handleCommitRename = useCallback(async () => {
+    if (editingTitle === null) return;
+    const next = editingTitle.trim();
+    setEditingTitle(null);
+    if (!next || next === (video?.title ?? videoId)) return;
+    try {
+      const updated = await updateVideoTitle(videoId, next);
+      setVideo(updated);
+    } catch (err) {
+      console.warn('[EditorTab] rename failed', err);
+    }
+  }, [editingTitle, video, videoId]);
 
   const handleImport = useCallback(async (file: File) => {
     setImporting(true);
@@ -416,12 +436,38 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
             buttons on the right (what you do with it). */}
         <div className="flex items-center justify-between gap-3 px-6 py-2.5 border-b border-outline-variant/10 flex-wrap">
           <div className="flex items-center gap-2 min-w-0">
-            <h1 className="text-sm font-semibold text-on-surface shrink-0">
-              Editor
-            </h1>
-            <span className="font-mono text-[10px] text-on-surface-variant bg-surface-container-highest px-2 h-8 inline-flex items-center rounded-md truncate max-w-[160px]" title={video?.title || videoId}>
-              {video?.title || videoId}
-            </span>
+            {/* Editable video title. Click the chip to rename; the BE update
+                only changes the display name — the underlying video_id (and
+                all files keyed on it) stay the same. */}
+            {editingTitle !== null ? (
+              <input
+                autoFocus
+                value={editingTitle}
+                onChange={(e) => setEditingTitle(e.target.value)}
+                onBlur={handleCommitRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void handleCommitRename();
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setEditingTitle(null);
+                  }
+                }}
+                className="h-8 px-2.5 text-sm font-semibold bg-surface-container-high text-on-surface rounded-lg border-none focus:outline-none focus:ring-2 focus:ring-primary max-w-[280px]"
+                placeholder={videoId}
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={handleStartRename}
+                className="h-8 px-2.5 inline-flex items-center gap-1.5 text-sm font-semibold text-on-surface rounded-lg hover:bg-surface-container-high transition-colors truncate max-w-[280px] group"
+                title={`Click to rename · ID: ${videoId}`}
+              >
+                <span className="truncate">{video?.title || videoId}</span>
+                <span className="material-symbols-outlined text-[14px] text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity shrink-0">edit</span>
+              </button>
+            )}
 
             {/* Language */}
             <select
