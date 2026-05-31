@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { getTTSProviders, getTTSVoices, subscribeSSE } from '../api/client';
 import {
   postStandaloneDub,
@@ -18,7 +19,6 @@ const SK = {
   playbackSpeed: 'dub_studio_playback_speed',
   enableShortening: 'dub_studio_enable_shortening',
   voiceId: (p: string) => `dub_studio_voice_id_${p}`,
-  ttsApiKey: 'dub_studio_tts_api_key',
 };
 
 // ── small helpers ─────────────────────────────────────────────────────────────
@@ -65,15 +65,12 @@ export function DubStudioPage() {
   const [voiceId, setVoiceId] = useState<string>(
     () => storageGet(SK.voiceId(storageGet(SK.provider) || 'google')),
   );
-  const [ttsApiKey, setTtsApiKey] = useState<string>(
-    () => storageGet(SK.ttsApiKey),
-  );
 
   // ── provider / voice lists ─────────────────────────────────────────────────
   const [providers, setProviders] = useState<TTSProviderInfo[]>([]);
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
   const [loadingVoices, setLoadingVoices] = useState(false);
-  const [voicesError, setVoicesError] = useState('');
+  const [missingKey, setMissingKey] = useState(false);
 
   // ── generation state ───────────────────────────────────────────────────────
   const [generating, setGenerating] = useState(false);
@@ -113,14 +110,23 @@ export function DubStudioPage() {
   }, []);
 
   // ── load voices when provider or language changes ──────────────────────────
+  // Keys come from Settings → API Keys only — no per-page key field.
   useEffect(() => {
-    setLoadingVoices(true);
-    setVoicesError('');
+    setMissingKey(false);
+
+    // Short-circuit if the provider needs a key and no key is saved.
     const apiKeys = loadApiKeys();
-    const key =
-      ttsApiKey ||
-      apiKeys[provider as keyof typeof apiKeys] ||
-      undefined;
+    const key = apiKeys[provider as keyof typeof apiKeys] || undefined;
+    const providerInfo = providers.find((p) => p.id === provider);
+    if (providerInfo?.requires_key && !key) {
+      setVoices([]);
+      setVoiceId('');
+      setMissingKey(true);
+      setLoadingVoices(false);
+      return;
+    }
+
+    setLoadingVoices(true);
     getTTSVoices(language, provider, key)
       .then((v) => {
         setVoices(v);
@@ -137,18 +143,15 @@ export function DubStudioPage() {
       .catch((err: unknown) => {
         setVoices([]);
         const msg = err instanceof Error ? err.message : String(err);
-        // The BE raises "Google TTS API key not configured..." when no key
-        // is set. Surface the most actionable form to the user.
-        if (/api[_ ]key/i.test(msg) || !key) {
-          setVoicesError(
-            `${provider} TTS needs an API key. Enter it below or save one in Settings → API Keys.`,
-          );
-        } else {
-          setVoicesError(`Failed to load voices: ${msg}`);
+        // Even with a saved key the BE might reject it (expired/wrong scope).
+        // Treat any "API key" error as a missing-key prompt; other failures
+        // we currently surface only as an empty list (rare in practice).
+        if (/api[_ ]key/i.test(msg)) {
+          setMissingKey(true);
         }
       })
       .finally(() => setLoadingVoices(false));
-  }, [provider, language, ttsApiKey]);
+  }, [provider, language, providers]);
 
   // ── load recent dubs ───────────────────────────────────────────────────────
   const refreshRecent = useCallback(async () => {
@@ -195,11 +198,6 @@ export function DubStudioPage() {
     storageSet(SK.voiceId(provider), v);
   };
 
-  const handleSetTtsApiKey = (v: string) => {
-    setTtsApiKey(v);
-    storageSet(SK.ttsApiKey, v);
-  };
-
   // ── generate ───────────────────────────────────────────────────────────────
   const handleGenerate = async () => {
     if (!srtFile) return;
@@ -214,9 +212,7 @@ export function DubStudioPage() {
       const apiKeys = loadApiKeys();
       const llmPrefs = loadLLMPrefs();
       const effectiveApiKey =
-        ttsApiKey ||
-        apiKeys[provider as keyof typeof apiKeys] ||
-        undefined;
+        apiKeys[provider as keyof typeof apiKeys] || undefined;
 
       const resp = await postStandaloneDub({
         file: srtFile,
@@ -270,11 +266,8 @@ export function DubStudioPage() {
 
   // ── render ─────────────────────────────────────────────────────────────────
   const selectedProvider = providers.find((p) => p.id === provider);
-  const requiresKey = selectedProvider?.requires_key ?? false;
 
   const selectClass =
-    'w-full bg-surface-container-highest border border-outline-variant/30 text-xs text-on-surface py-2 px-3 rounded focus:outline-none focus:border-primary';
-  const inputClass =
     'w-full bg-surface-container-highest border border-outline-variant/30 text-xs text-on-surface py-2 px-3 rounded focus:outline-none focus:border-primary';
   const labelClass = 'block text-[10px] text-zinc-500 uppercase tracking-tighter font-bold mb-1.5';
 
@@ -362,40 +355,41 @@ export function DubStudioPage() {
                 Loading voices…
               </div>
             ) : (
-              <>
-                <select
-                  className={selectClass}
-                  value={voiceId}
-                  onChange={(e) => handleSetVoiceId(e.target.value)}
-                  disabled={voices.length === 0}
-                >
-                  {voices.length === 0 && <option value="">— no voices available —</option>}
-                  {voices.map((v) => (
-                    <option key={v.name} value={v.name}>
-                      {v.friendly_name} ({v.gender})
-                    </option>
-                  ))}
-                </select>
-                {voicesError && (
-                  <div className="mt-1.5 text-[11px] text-amber-300 bg-amber-500/10 border border-amber-400/20 px-2 py-1 rounded">
-                    {voicesError}
-                  </div>
-                )}
-              </>
+              <select
+                className={selectClass}
+                value={voiceId}
+                onChange={(e) => handleSetVoiceId(e.target.value)}
+                disabled={voices.length === 0}
+              >
+                {voices.length === 0 && <option value="">— no voices available —</option>}
+                {voices.map((v) => (
+                  <option key={v.name} value={v.name}>
+                    {v.friendly_name} ({v.gender})
+                  </option>
+                ))}
+              </select>
             )}
           </div>
 
-          {/* API key (shown only when required) */}
-          {requiresKey && (
-            <div>
-              <label className={labelClass}>API key for {selectedProvider?.name}</label>
-              <input
-                type="password"
-                className={`${inputClass} font-mono`}
-                placeholder="sk-…"
-                value={ttsApiKey}
-                onChange={(e) => handleSetTtsApiKey(e.target.value)}
-              />
+          {/* Missing-key warning — when the selected provider needs a key and
+              none is saved in Settings → API Keys. The user can't enter it
+              here; they have to open Settings. */}
+          {missingKey && (
+            <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg bg-amber-500/10 border border-amber-400/20">
+              <span className="material-symbols-outlined text-sm text-amber-300 mt-0.5">
+                warning
+              </span>
+              <div className="flex-1 text-xs text-amber-100">
+                <strong>{selectedProvider?.name ?? provider}</strong> needs an API key. Save one in
+                Settings → API Keys to load voices.
+              </div>
+              <Link
+                to="/settings"
+                className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium bg-amber-400/20 text-amber-100 hover:bg-amber-400/30 transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm">settings</span>
+                Open Settings
+              </Link>
             </div>
           )}
 
