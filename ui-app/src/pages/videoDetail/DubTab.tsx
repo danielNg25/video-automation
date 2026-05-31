@@ -45,11 +45,10 @@ interface Props {
   ttsList: TTSAudioEntry[];
   onReloadTtsList: () => void;
   onGenerate: () => void;
-  // Stop button — parent tracks the active task_id and a cancelling flag.
+  // Stop button — parent fires cancel and resets state optimistically.
   // canStop is false until the task_id is known (between submit and SSE).
   onStop: () => void;
   canStop: boolean;
-  isStopping: boolean;
   // LLM context (TTSPreview/postTTSPreview don't currently use it, kept for
   // future generate-preview wiring and parity with the legacy fragment).
   llmBackend: string;
@@ -73,7 +72,7 @@ export function DubTab(props: Props) {
     underlayDb, onChangeUnderlayDb,
     isGeneratingTts, ttsProgress, ttsGenerated, ttsError,
     ttsList, onReloadTtsList, onGenerate,
-    onStop, canStop, isStopping,
+    onStop, canStop,
   } = props;
 
   const navigate = useNavigate();
@@ -303,14 +302,12 @@ export function DubTab(props: Props) {
       {isGeneratingTts ? (
         <button
           onClick={onStop}
-          disabled={!canStop || isStopping}
+          disabled={!canStop}
           aria-label="Stop TTS generation"
           className="w-full py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 bg-red-500/15 border border-red-500/30 text-red-300 hover:bg-red-500/25 active:scale-95 disabled:opacity-50 transition-all"
         >
-          <span className="material-symbols-outlined text-sm">
-            {isStopping ? 'progress_activity' : 'stop_circle'}
-          </span>
-          {isStopping ? 'Stopping…' : `Stop · ${ttsProgress.message || 'generating'}`}
+          <span className="material-symbols-outlined text-sm">stop_circle</span>
+          Stop · {ttsProgress.message || 'generating'}
         </button>
       ) : (
         <button

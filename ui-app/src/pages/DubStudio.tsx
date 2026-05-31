@@ -80,7 +80,6 @@ export function DubStudioPage() {
   });
   const [genError, setGenError] = useState('');
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
-  const [cancelling, setCancelling] = useState(false);
   const esRef = useRef<EventSource | null>(null);
 
   // ── recent dubs ────────────────────────────────────────────────────────────
@@ -207,7 +206,6 @@ export function DubStudioPage() {
     setGenError('');
     setProgress({ pct: 0, message: 'Submitting…' });
     setActiveTaskId(null);
-    setCancelling(false);
 
     // close any previous SSE stream
     esRef.current?.close();
@@ -251,7 +249,6 @@ export function DubStudioPage() {
           es.close();
         } else if (eventType === 'cancelled') {
           setGenerating(false);
-          setCancelling(false);
           setProgress({ pct: 0, message: 'Cancelled' });
           setActiveTaskId(null);
           es.close();
@@ -266,18 +263,25 @@ export function DubStudioPage() {
   };
 
   // ── stop ───────────────────────────────────────────────────────────────────
-  const handleStop = async () => {
-    if (!activeTaskId || cancelling) return;
-    setCancelling(true);
-    try {
-      await cancelTask(activeTaskId);
-      // The SSE 'cancelled' event will flip generating=false; if the BE
-      // is unreachable, snap the UI back ourselves.
-    } catch (err) {
-      setGenerating(false);
-      setCancelling(false);
-      setGenError(err instanceof Error ? err.message : 'Stop failed');
-    }
+  // Optimistic: snap the UI back the instant the user clicks. The BE's
+  // cancel_task awaits the asyncio task with a 5s timeout before responding,
+  // which used to make "Stopping…" feel stuck. We fire the cancel in the
+  // background and trust it; a network-level failure surfaces as an inline
+  // error toast.
+  const handleStop = () => {
+    if (!activeTaskId) return;
+    const taskId = activeTaskId;
+    esRef.current?.close();
+    esRef.current = null;
+    setGenerating(false);
+    setActiveTaskId(null);
+    setProgress({ pct: 0, message: 'Cancelled' });
+    cancelTask(taskId).catch((err) => {
+      console.warn('[DubStudio] cancel request failed', err);
+      setGenError(
+        'Stop request failed — the task may still be running. Refresh to confirm.',
+      );
+    });
   };
 
   // ── delete ─────────────────────────────────────────────────────────────────
@@ -461,13 +465,13 @@ export function DubStudioPage() {
           {generating ? (
             <button
               type="button"
-              onClick={() => void handleStop()}
-              disabled={!activeTaskId || cancelling}
+              onClick={handleStop}
+              disabled={!activeTaskId}
               aria-label="Stop dub generation"
               className="w-full py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 bg-red-500/15 border border-red-500/30 text-red-300 hover:bg-red-500/25 active:scale-95 disabled:opacity-50 transition-all"
             >
-              <span className="material-symbols-outlined text-sm">{cancelling ? 'progress_activity' : 'stop_circle'}</span>
-              {cancelling ? 'Stopping…' : `Stop · ${progress.message || 'generating'}`}
+              <span className="material-symbols-outlined text-sm">stop_circle</span>
+              Stop · {progress.message || 'generating'}
             </button>
           ) : (
             <button

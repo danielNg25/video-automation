@@ -42,7 +42,6 @@ function renderDubTab(overrides: Partial<React.ComponentProps<typeof DubTab>> = 
     onGenerate: vi.fn(),
     onStop: vi.fn(),
     canStop: false,
-    isStopping: false,
     llmBackend: '',
     llmApiKey: '',
     enableShortening: true,
@@ -92,13 +91,6 @@ describe('DubTab — Stop button', () => {
     renderDubTab({ isGeneratingTts: true, canStop: false });
     const stopBtn = screen.getByRole('button', { name: /stop tts/i }) as HTMLButtonElement;
     expect(stopBtn.disabled).toBe(true);
-  });
-
-  it('disables Stop and shows "Stopping…" while a cancel is in flight', () => {
-    renderDubTab({ isGeneratingTts: true, canStop: true, isStopping: true });
-    const stopBtn = screen.getByRole('button', { name: /stop tts/i }) as HTMLButtonElement;
-    expect(stopBtn.disabled).toBe(true);
-    expect(stopBtn.textContent || '').toMatch(/stopping/i);
   });
 
   it('calls onStop when the Stop button is clicked', () => {
