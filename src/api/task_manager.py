@@ -351,8 +351,13 @@ class TaskManager:
                 pass
 
         # Cleanup. Best-effort — failure here doesn't unmark cancellation.
+        # Only the pipeline-y task types (whose whole purpose is producing one
+        # video end-to-end) trigger delete_video. A cancelled TTS task carries
+        # the source video_id but the source itself is still good — wiping it
+        # would also nuke unrelated SRTs and dubs.
+        CLEANUP_TASK_TYPES = {"download", "pipeline", "full_pipeline"}
         cleaned = False
-        if task.video_id:
+        if task.video_id and task.task_type in CLEANUP_TASK_TYPES:
             try:
                 self.delete_video(task.video_id)
                 cleaned = True

@@ -4,11 +4,10 @@ import { DouyinSection } from './settings/DouyinSection';
 import { ApiKeysSection } from './settings/ApiKeysSection';
 import { OcrSection } from './settings/OcrSection';
 import { TtsSection } from './settings/TtsSection';
-import { VideoExportSection } from './settings/VideoExportSection';
 import { PipelineSection } from './settings/PipelineSection';
 import { TranslationSection } from './settings/TranslationSection';
 
-type CategoryId = 'douyin' | 'apikeys' | 'ocr' | 'translation' | 'tts' | 'video' | 'pipeline';
+type CategoryId = 'douyin' | 'apikeys' | 'ocr' | 'translation' | 'tts' | 'pipeline';
 
 const categoryGroups: { group: string; items: { id: CategoryId; icon: string; label: string }[] }[] = [
   {
@@ -24,7 +23,6 @@ const categoryGroups: { group: string; items: { id: CategoryId; icon: string; la
       { id: 'ocr', icon: 'document_scanner', label: 'Subtitles (OCR)' },
       { id: 'translation', icon: 'translate', label: 'Translation' },
       { id: 'tts', icon: 'record_voice_over', label: 'Dubbing (TTS)' },
-      { id: 'video', icon: 'movie_filter', label: 'Export & Video' },
     ],
   },
   {
@@ -84,7 +82,6 @@ function SettingsPage() {
             {activeCategory === 'ocr' && <OcrSection />}
             {activeCategory === 'translation' && <TranslationSection />}
             {activeCategory === 'tts' && <TtsSection />}
-            {activeCategory === 'video' && <VideoExportSection />}
             {activeCategory === 'pipeline' && <PipelineSection />}
           </div>
         </div>

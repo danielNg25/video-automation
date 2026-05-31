@@ -72,8 +72,8 @@ class TestGetSrtAcceptsVersion:
         assert "working draft" in r.json()["segments"][0]["text"]
 
 
-class TestPutSrtWritesWorkingDraftOnly:
-    def test_put_writes_working_draft_even_when_v1_exists(self, client):
+class TestPutSrtAcceptsVersion:
+    def test_put_without_version_writes_working_draft(self, client):
         c, srt_dir = client
         _seed_srt(srt_dir, "vidX_vi.srt", _SAMPLE_SRT)
         _seed_srt(srt_dir, "vidX_vi.v1.srt", _V1_SRT)
@@ -94,3 +94,47 @@ class TestPutSrtWritesWorkingDraftOnly:
         assert "edited" in (srt_dir / "vidX_vi.srt").read_text()
         # v1 snapshot still has its original content.
         assert "v1 snapshot" in (srt_dir / "vidX_vi.v1.srt").read_text()
+
+    def test_put_with_version_v1_overwrites_snapshot_in_place(self, client):
+        c, srt_dir = client
+        _seed_srt(srt_dir, "vidX_vi.srt", _SAMPLE_SRT)
+        _seed_srt(srt_dir, "vidX_vi.v1.srt", _V1_SRT)
+        r = c.put(
+            "/api/videos/vidX/srt",
+            json={
+                "language": "vi",
+                "version": "v1",
+                "segments": [{
+                    "id": 1,
+                    "startTime": "00:00:00,000",
+                    "endTime": "00:00:02,000",
+                    "text": "edited v1",
+                }],
+            },
+        )
+        assert r.status_code == 200
+        # v1 was rewritten.
+        assert "edited v1" in (srt_dir / "vidX_vi.v1.srt").read_text()
+        # Working draft untouched.
+        assert "working draft" in (srt_dir / "vidX_vi.srt").read_text()
+
+    def test_put_with_unknown_version_returns_404(self, client):
+        c, srt_dir = client
+        _seed_srt(srt_dir, "vidX_vi.srt", _SAMPLE_SRT)
+        # No v99 file exists.
+        r = c.put(
+            "/api/videos/vidX/srt",
+            json={
+                "language": "vi",
+                "version": "v99",
+                "segments": [{
+                    "id": 1,
+                    "startTime": "00:00:00,000",
+                    "endTime": "00:00:02,000",
+                    "text": "should not land",
+                }],
+            },
+        )
+        assert r.status_code == 404
+        # Nothing was created (the endpoint refused before write).
+        assert not (srt_dir / "vidX_vi.v99.srt").exists()

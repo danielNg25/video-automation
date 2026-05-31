@@ -5,7 +5,7 @@ import { EditorTab } from './videoDetail/EditorTab';
 import { TranslateTab } from './videoDetail/TranslateTab';
 import { DubTab } from './videoDetail/DubTab';
 import {
-  getVideo, postTranslate, postTTS,
+  getVideo, postTranslate, postTTS, cancelTask,
   subscribeSSE, getProfiles, getTTSProviders, getTTSVoices,
   getTTSList,
 } from '../api/client';
@@ -95,6 +95,7 @@ function VideoDetailPage() {
   const [ttsGenerated, setTtsGenerated] = useState(false);
   const [ttsError, setTtsError] = useState('');
   const [ttsList, setTtsList] = useState<TTSAudioEntry[]>([]);
+  const [ttsTaskId, setTtsTaskId] = useState<string | null>(null);
 
   // Editor active language — lifted here so useVersions tracks the language
   // the user is actually editing, not the TTS dub language.
@@ -279,6 +280,7 @@ function VideoDetailPage() {
         playbackSpeed,
         underlayDb,
       );
+      setTtsTaskId(task_id);
       const es = subscribeSSE(task_id, (eventType, data) => {
         if (eventType === 'progress') {
           setTtsProgress({
@@ -289,19 +291,44 @@ function VideoDetailPage() {
           setIsGeneratingTts(false);
           setTtsGenerated(true);
           setTtsProgress({ pct: 100, message: 'TTS generation complete' });
+          setTtsTaskId(null);
           // Refresh TTS list to show new file
           if (videoMeta) getTTSList(videoMeta.video_id).then(setTtsList).catch(() => {});
           es.close();
         } else if (eventType === 'error') {
           setIsGeneratingTts(false);
           setTtsError(data.message as string);
+          setTtsTaskId(null);
+          es.close();
+        } else if (eventType === 'cancelled') {
+          setIsGeneratingTts(false);
+          setTtsProgress({ pct: 0, message: 'Cancelled' });
+          setTtsTaskId(null);
           es.close();
         }
       });
     } catch (e) {
       setIsGeneratingTts(false);
       setTtsError(e instanceof Error ? e.message : 'TTS generation failed');
+      setTtsTaskId(null);
     }
+  };
+
+  // Optimistic: BE's cancel_task awaits the asyncio task for up to 5s before
+  // responding; the FE doesn't wait. UI snaps back immediately and the cancel
+  // fires in the background. Network failure surfaces as a ttsError.
+  const handleStopTTS = () => {
+    if (!ttsTaskId) return;
+    const taskId = ttsTaskId;
+    setIsGeneratingTts(false);
+    setTtsTaskId(null);
+    setTtsProgress({ pct: 0, message: 'Cancelled' });
+    cancelTask(taskId).catch((e) => {
+      console.warn('[VideoDetail] cancel request failed', e);
+      setTtsError(
+        'Stop request failed — the task may still be running. Refresh to confirm.',
+      );
+    });
   };
 
   const handleTtsProviderChange = (provider: string) => {
@@ -447,6 +474,8 @@ function VideoDetailPage() {
               } catch { /* ignore */ }
             }}
             onGenerate={handleGenerateTts}
+            onStop={handleStopTTS}
+            canStop={!!ttsTaskId}
             llmBackend={llmBackend}
             llmApiKey={llmApiKey}
             enableShortening={enableShortening}

@@ -41,6 +41,14 @@ export function getVideo(videoId: string): Promise<VideoMetadata> {
   return request(`/videos/${videoId}`);
 }
 
+export function updateVideoTitle(videoId: string, title: string): Promise<VideoMetadata> {
+  return request(`/videos/${videoId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  });
+}
+
 export function postTranscribe(
   videoId: string,
   language: string = 'zh',
@@ -162,7 +170,6 @@ export function postPipeline(
   translateProfile?: string,
   sourceLanguage: string = 'zh',
   translationOverride?: { backend: string; model: string; api_key?: string; base_url?: string },
-  blurEnabled: boolean = true,
   ttsOverrides?: {
     tts_provider?: string;
     tts_voice?: string;
@@ -172,7 +179,6 @@ export function postPipeline(
     llm_backend?: string;
     playback_speed?: number;
     underlay_db?: number;
-    subtitle_style?: Record<string, unknown> | null;
   },
 ): Promise<TaskResponse> {
   return request('/pipeline/full', {
@@ -184,7 +190,6 @@ export function postPipeline(
       translate_profile: translateProfile ?? null,
       translation_override: translationOverride ?? null,
       source_language: sourceLanguage,
-      blur_enabled: blurEnabled,
       tts_provider: ttsOverrides?.tts_provider ?? 'google',
       tts_voice: ttsOverrides?.tts_voice ?? null,
       tts_language: ttsOverrides?.tts_language ?? 'vi',
@@ -193,7 +198,6 @@ export function postPipeline(
       llm_backend: ttsOverrides?.llm_backend ?? null,
       playback_speed: ttsOverrides?.playback_speed ?? null,
       underlay_db: ttsOverrides?.underlay_db ?? null,
-      subtitle_style: ttsOverrides?.subtitle_style ?? null,
     }),
   });
 }

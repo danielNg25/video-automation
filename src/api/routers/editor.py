@@ -75,11 +75,12 @@ async def serve_proxy_video(video_id: str):
 
 @router.put("/api/videos/{video_id}/srt", response_model=SrtResponse)
 async def save_srt(video_id: str, request: SaveSrtRequest):
-    """Overwrite the working-draft SRT for this (video, language).
+    """Overwrite the SRT for this (video, language, version).
 
-    Snapshots are immutable — the editor never writes them. The DubTab's
-    'Save as version' button uses POST /api/videos/{id}/versions to
-    create a snapshot from the current working draft.
+    `version` defaults to 'draft' (the working draft). Passing a snapshot
+    id ('v1', 'v2', ...) overwrites that snapshot in place — only
+    allowed if the snapshot's SRT file already exists, so the editor
+    can't silently mint a new version through this endpoint.
     """
     from src.api.versions import ensure_migrated
 
@@ -89,7 +90,12 @@ async def save_srt(video_id: str, request: SaveSrtRequest):
         raise HTTPException(status_code=404, detail=f"Video {video_id} not found")
 
     ensure_migrated(video_id, request.language)
-    srt_path = _resolve_srt_path(video_id, request.language, "draft")
+    srt_path = _resolve_srt_path(video_id, request.language, request.version)
+    if request.version != "draft" and not srt_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Version {request.version} does not exist for {video_id} ({request.language})",
+        )
     srt_path.parent.mkdir(parents=True, exist_ok=True)
 
     segments = [

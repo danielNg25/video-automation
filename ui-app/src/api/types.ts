@@ -57,6 +57,8 @@ export interface DashboardStats {
 export interface SaveSrtRequest {
   language: string;
   segments: SubtitleSegment[];
+  /** 'draft' (default) overwrites the working draft; 'v1'/'v2'/... overwrites that snapshot in place. */
+  version?: string;
 }
 
 export interface TranslationProfileSummary {

@@ -45,6 +45,10 @@ interface Props {
   ttsList: TTSAudioEntry[];
   onReloadTtsList: () => void;
   onGenerate: () => void;
+  // Stop button — parent fires cancel and resets state optimistically.
+  // canStop is false until the task_id is known (between submit and SSE).
+  onStop: () => void;
+  canStop: boolean;
   // LLM context (TTSPreview/postTTSPreview don't currently use it, kept for
   // future generate-preview wiring and parity with the legacy fragment).
   llmBackend: string;
@@ -68,6 +72,7 @@ export function DubTab(props: Props) {
     underlayDb, onChangeUnderlayDb,
     isGeneratingTts, ttsProgress, ttsGenerated, ttsError,
     ttsList, onReloadTtsList, onGenerate,
+    onStop, canStop,
   } = props;
 
   const navigate = useNavigate();
@@ -291,35 +296,41 @@ export function DubTab(props: Props) {
         </div>
       )}
 
-      {/* Generate TTS button */}
-      <button
-        disabled={isGeneratingTts}
-        onClick={onGenerate}
-        className={`w-full py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
-          ttsGenerated
-            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20'
-            : isGeneratingTts
-              ? 'bg-surface-container-highest text-on-surface-variant cursor-wait'
+      {/* Generate / Stop TTS button. The button swaps to a Stop control
+          while a task is running so the user can abort a slow run instead
+          of waiting for it to finish. */}
+      {isGeneratingTts ? (
+        <button
+          onClick={onStop}
+          disabled={!canStop}
+          aria-label="Stop TTS generation"
+          className="w-full py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 bg-red-500/15 border border-red-500/30 text-red-300 hover:bg-red-500/25 active:scale-95 disabled:opacity-50 transition-all"
+        >
+          <span className="material-symbols-outlined text-sm">stop_circle</span>
+          Stop · {ttsProgress.message || 'generating'}
+        </button>
+      ) : (
+        <button
+          onClick={onGenerate}
+          className={`w-full py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
+            ttsGenerated
+              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20'
               : 'bg-primary text-on-primary-fixed hover:brightness-110 active:scale-95'
-        }`}
-      >
-        {isGeneratingTts ? (
-          <>
-            <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
-            {ttsProgress.message || 'Generating...'}
-          </>
-        ) : ttsGenerated ? (
-          <>
-            <span className="material-symbols-outlined text-sm">check_circle</span>
-            TTS Generated — Regenerate
-          </>
-        ) : (
-          <>
-            <span className="material-symbols-outlined text-sm">record_voice_over</span>
-            Generate TTS Audio
-          </>
-        )}
-      </button>
+          }`}
+        >
+          {ttsGenerated ? (
+            <>
+              <span className="material-symbols-outlined text-sm">check_circle</span>
+              TTS Generated — Regenerate
+            </>
+          ) : (
+            <>
+              <span className="material-symbols-outlined text-sm">record_voice_over</span>
+              Generate TTS Audio
+            </>
+          )}
+        </button>
+      )}
 
       {/* TTS Progress */}
       {isGeneratingTts && (

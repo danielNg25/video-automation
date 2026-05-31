@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getTTSProviders, getTTSVoices, subscribeSSE } from '../api/client';
+import { Link } from 'react-router-dom';
+import { cancelTask, getTTSProviders, getTTSVoices, subscribeSSE } from '../api/client';
 import {
   postStandaloneDub,
   getStandaloneDubs,
@@ -18,7 +19,6 @@ const SK = {
   playbackSpeed: 'dub_studio_playback_speed',
   enableShortening: 'dub_studio_enable_shortening',
   voiceId: (p: string) => `dub_studio_voice_id_${p}`,
-  ttsApiKey: 'dub_studio_tts_api_key',
 };
 
 // ── small helpers ─────────────────────────────────────────────────────────────
@@ -49,7 +49,7 @@ export function DubStudioPage() {
   // ── form state ─────────────────────────────────────────────────────────────
   const [srtFile, setSrtFile] = useState<File | null>(null);
   const [provider, setProvider] = useState<string>(
-    () => storageGet(SK.provider) || 'edge',
+    () => storageGet(SK.provider) || 'google',
   );
   const [language, setLanguage] = useState<string>(
     () => storageGet(SK.language) || 'vi',
@@ -63,16 +63,14 @@ export function DubStudioPage() {
     return v === '' ? true : v === 'true';
   });
   const [voiceId, setVoiceId] = useState<string>(
-    () => storageGet(SK.voiceId(storageGet(SK.provider) || 'edge')),
-  );
-  const [ttsApiKey, setTtsApiKey] = useState<string>(
-    () => storageGet(SK.ttsApiKey),
+    () => storageGet(SK.voiceId(storageGet(SK.provider) || 'google')),
   );
 
   // ── provider / voice lists ─────────────────────────────────────────────────
   const [providers, setProviders] = useState<TTSProviderInfo[]>([]);
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
   const [loadingVoices, setLoadingVoices] = useState(false);
+  const [missingKey, setMissingKey] = useState(false);
 
   // ── generation state ───────────────────────────────────────────────────────
   const [generating, setGenerating] = useState(false);
@@ -81,6 +79,7 @@ export function DubStudioPage() {
     message: '',
   });
   const [genError, setGenError] = useState('');
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
   // ── recent dubs ────────────────────────────────────────────────────────────
@@ -91,8 +90,17 @@ export function DubStudioPage() {
   // ── load providers once ────────────────────────────────────────────────────
   useEffect(() => {
     getTTSProviders()
-      .then(setProviders)
+      .then((list) => {
+        setProviders(list);
+        // If the persisted provider isn't in the BE list (e.g. stale 'edge'
+        // from before Edge TTS was removed), fall back to the first one so
+        // the voice-load doesn't hit a 500.
+        if (list.length > 0 && !list.some((p) => p.id === provider)) {
+          handleSetProvider(list[0].id);
+        }
+      })
       .catch(() => {/* silently ignore */});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── SSE cleanup on unmount ─────────────────────────────────────────────────
@@ -103,13 +111,23 @@ export function DubStudioPage() {
   }, []);
 
   // ── load voices when provider or language changes ──────────────────────────
+  // Keys come from Settings → API Keys only — no per-page key field.
   useEffect(() => {
-    setLoadingVoices(true);
+    setMissingKey(false);
+
+    // Short-circuit if the provider needs a key and no key is saved.
     const apiKeys = loadApiKeys();
-    const key =
-      ttsApiKey ||
-      apiKeys[provider as keyof typeof apiKeys] ||
-      undefined;
+    const key = apiKeys[provider as keyof typeof apiKeys] || undefined;
+    const providerInfo = providers.find((p) => p.id === provider);
+    if (providerInfo?.requires_key && !key) {
+      setVoices([]);
+      setVoiceId('');
+      setMissingKey(true);
+      setLoadingVoices(false);
+      return;
+    }
+
+    setLoadingVoices(true);
     getTTSVoices(language, provider, key)
       .then((v) => {
         setVoices(v);
@@ -123,9 +141,18 @@ export function DubStudioPage() {
           setVoiceId('');
         }
       })
-      .catch(() => setVoices([]))
+      .catch((err: unknown) => {
+        setVoices([]);
+        const msg = err instanceof Error ? err.message : String(err);
+        // Even with a saved key the BE might reject it (expired/wrong scope).
+        // Treat any "API key" error as a missing-key prompt; other failures
+        // we currently surface only as an empty list (rare in practice).
+        if (/api[_ ]key/i.test(msg)) {
+          setMissingKey(true);
+        }
+      })
       .finally(() => setLoadingVoices(false));
-  }, [provider, language, ttsApiKey]);
+  }, [provider, language, providers]);
 
   // ── load recent dubs ───────────────────────────────────────────────────────
   const refreshRecent = useCallback(async () => {
@@ -172,17 +199,13 @@ export function DubStudioPage() {
     storageSet(SK.voiceId(provider), v);
   };
 
-  const handleSetTtsApiKey = (v: string) => {
-    setTtsApiKey(v);
-    storageSet(SK.ttsApiKey, v);
-  };
-
   // ── generate ───────────────────────────────────────────────────────────────
   const handleGenerate = async () => {
     if (!srtFile) return;
     setGenerating(true);
     setGenError('');
     setProgress({ pct: 0, message: 'Submitting…' });
+    setActiveTaskId(null);
 
     // close any previous SSE stream
     esRef.current?.close();
@@ -191,9 +214,7 @@ export function DubStudioPage() {
       const apiKeys = loadApiKeys();
       const llmPrefs = loadLLMPrefs();
       const effectiveApiKey =
-        ttsApiKey ||
-        apiKeys[provider as keyof typeof apiKeys] ||
-        undefined;
+        apiKeys[provider as keyof typeof apiKeys] || undefined;
 
       const resp = await postStandaloneDub({
         file: srtFile,
@@ -206,6 +227,7 @@ export function DubStudioPage() {
         llmApiKey: llmPrefs.backend !== '' ? (apiKeys[llmPrefs.backend as keyof typeof apiKeys] || undefined) : undefined,
         llmBackend: llmPrefs.backend || undefined,
       });
+      setActiveTaskId(resp.task_id);
 
       // subscribe to SSE
       const es = subscribeSSE(resp.task_id, (eventType, data) => {
@@ -217,11 +239,18 @@ export function DubStudioPage() {
         } else if (eventType === 'complete') {
           setGenerating(false);
           setProgress({ pct: 100, message: 'Done!' });
+          setActiveTaskId(null);
           es.close();
           void refreshRecent();
         } else if (eventType === 'error') {
           setGenerating(false);
           setGenError(typeof data.message === 'string' ? data.message : 'Generation failed');
+          setActiveTaskId(null);
+          es.close();
+        } else if (eventType === 'cancelled') {
+          setGenerating(false);
+          setProgress({ pct: 0, message: 'Cancelled' });
+          setActiveTaskId(null);
           es.close();
         }
       });
@@ -229,7 +258,30 @@ export function DubStudioPage() {
     } catch (err) {
       setGenerating(false);
       setGenError(err instanceof Error ? err.message : 'Unknown error');
+      setActiveTaskId(null);
     }
+  };
+
+  // ── stop ───────────────────────────────────────────────────────────────────
+  // Optimistic: snap the UI back the instant the user clicks. The BE's
+  // cancel_task awaits the asyncio task with a 5s timeout before responding,
+  // which used to make "Stopping…" feel stuck. We fire the cancel in the
+  // background and trust it; a network-level failure surfaces as an inline
+  // error toast.
+  const handleStop = () => {
+    if (!activeTaskId) return;
+    const taskId = activeTaskId;
+    esRef.current?.close();
+    esRef.current = null;
+    setGenerating(false);
+    setActiveTaskId(null);
+    setProgress({ pct: 0, message: 'Cancelled' });
+    cancelTask(taskId).catch((err) => {
+      console.warn('[DubStudio] cancel request failed', err);
+      setGenError(
+        'Stop request failed — the task may still be running. Refresh to confirm.',
+      );
+    });
   };
 
   // ── delete ─────────────────────────────────────────────────────────────────
@@ -247,11 +299,8 @@ export function DubStudioPage() {
 
   // ── render ─────────────────────────────────────────────────────────────────
   const selectedProvider = providers.find((p) => p.id === provider);
-  const requiresKey = selectedProvider?.requires_key ?? false;
 
   const selectClass =
-    'w-full bg-surface-container-highest border border-outline-variant/30 text-xs text-on-surface py-2 px-3 rounded focus:outline-none focus:border-primary';
-  const inputClass =
     'w-full bg-surface-container-highest border border-outline-variant/30 text-xs text-on-surface py-2 px-3 rounded focus:outline-none focus:border-primary';
   const labelClass = 'block text-[10px] text-zinc-500 uppercase tracking-tighter font-bold mb-1.5';
 
@@ -355,17 +404,25 @@ export function DubStudioPage() {
             )}
           </div>
 
-          {/* API key (shown only when required) */}
-          {requiresKey && (
-            <div>
-              <label className={labelClass}>API key for {selectedProvider?.name}</label>
-              <input
-                type="password"
-                className={`${inputClass} font-mono`}
-                placeholder="sk-…"
-                value={ttsApiKey}
-                onChange={(e) => handleSetTtsApiKey(e.target.value)}
-              />
+          {/* Missing-key warning — when the selected provider needs a key and
+              none is saved in Settings → API Keys. The user can't enter it
+              here; they have to open Settings. */}
+          {missingKey && (
+            <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg bg-amber-500/10 border border-amber-400/20">
+              <span className="material-symbols-outlined text-sm text-amber-300 mt-0.5">
+                warning
+              </span>
+              <div className="flex-1 text-xs text-amber-100">
+                <strong>{selectedProvider?.name ?? provider}</strong> needs an API key. Save one in
+                Settings → API Keys to load voices.
+              </div>
+              <Link
+                to="/settings"
+                className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium bg-amber-400/20 text-amber-100 hover:bg-amber-400/30 transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm">settings</span>
+                Open Settings
+              </Link>
             </div>
           )}
 
@@ -404,32 +461,34 @@ export function DubStudioPage() {
             </div>
           </label>
 
-          {/* Generate button */}
-          <button
-            type="button"
-            disabled={!srtFile || !voiceId || generating}
-            onClick={() => void handleGenerate()}
-            aria-label="Generate dub"
-            className={`w-full py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
-              generating
-                ? 'bg-surface-container-highest text-on-surface-variant cursor-wait'
-                : !srtFile || !voiceId
+          {/* Generate / Stop button — same row, button swaps based on state */}
+          {generating ? (
+            <button
+              type="button"
+              onClick={handleStop}
+              disabled={!activeTaskId}
+              aria-label="Stop dub generation"
+              className="w-full py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 bg-red-500/15 border border-red-500/30 text-red-300 hover:bg-red-500/25 active:scale-95 disabled:opacity-50 transition-all"
+            >
+              <span className="material-symbols-outlined text-sm">stop_circle</span>
+              Stop · {progress.message || 'generating'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={!srtFile || !voiceId}
+              onClick={() => void handleGenerate()}
+              aria-label="Generate dub"
+              className={`w-full py-2.5 rounded-md font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
+                !srtFile || !voiceId
                   ? 'bg-surface-container-highest text-on-surface-variant cursor-not-allowed opacity-50'
                   : 'bg-primary text-on-primary-fixed hover:brightness-110 active:scale-95'
-            }`}
-          >
-            {generating ? (
-              <>
-                <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
-                {progress.message || 'Generating…'}
-              </>
-            ) : (
-              <>
-                <span className="material-symbols-outlined text-sm">record_voice_over</span>
-                Generate dub
-              </>
-            )}
-          </button>
+              }`}
+            >
+              <span className="material-symbols-outlined text-sm">record_voice_over</span>
+              Generate dub
+            </button>
+          )}
 
           {/* Progress bar */}
           {generating && (

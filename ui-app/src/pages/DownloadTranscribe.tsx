@@ -59,29 +59,10 @@ function PipelinePage() {
     const saved = parseFloat(storageGet('tts_underlay_db') || '');
     return Number.isFinite(saved) && saved >= -24 && saved <= 0 ? saved : -18;
   });
-  const [blurEnabled, setBlurEnabled] = useState(() => {
-    const saved = storageGet('pipeline_default_blur_enabled');
-    return saved === null ? false : saved === '1';
-  });
-
-  const SUBTITLE_BG_PRESETS = {
-    off:    { background_color: '',           background_opacity: 0   },
-    subtle: { background_color: '&H80000000', background_opacity: 128 },
-    strong: { background_color: '&HFF000000', background_opacity: 255 },
-  } as const;
-  type SubtitleBgPreset = keyof typeof SUBTITLE_BG_PRESETS;
-
-  const [subtitleBackground, setSubtitleBackground] = useState<SubtitleBgPreset>(() => {
-    const saved = storageGet('pipeline_default_subtitle_background');
-    return saved === 'subtle' || saved === 'strong' || saved === 'off' ? saved : 'subtle';
-  });
-
   const [defaultsSaved, setDefaultsSaved] = useState(false);
 
   const handleSaveDefaults = () => {
     storageSet('pipeline_default_translation_profile', selectedProfile);
-    storageSet('pipeline_default_blur_enabled', blurEnabled ? '1' : '0');
-    storageSet('pipeline_default_subtitle_background', subtitleBackground);
     setDefaultsSaved(true);
     setTimeout(() => setDefaultsSaved(false), 2000);
   };
@@ -236,8 +217,6 @@ function PipelinePage() {
     // Dub language: explicit picker override wins; otherwise follow the
     // translation profile's target_language.
     const targetLang = targetTtsLanguage;
-    // subtitle_style: null when "off" (preserves per-platform defaults); dict otherwise.
-    const subtitleStyle = subtitleBackground === 'off' ? null : SUBTITLE_BG_PRESETS[subtitleBackground];
     const ttsOverrides = {
       tts_provider: ttsProviderName || undefined,
       tts_voice: ttsVoiceId || undefined,
@@ -247,7 +226,6 @@ function PipelinePage() {
       llm_backend: llmBackend || undefined,
       playback_speed: playbackSpeed,
       underlay_db: underlayDb,
-      subtitle_style: subtitleStyle,
     };
 
     // Batch mode
@@ -264,8 +242,6 @@ function PipelinePage() {
             concurrency: batchConcurrency,
             translate_profile: selectedProfile || null,
             translation_override: selectedProfile ? { backend: llmBackend, model: llmModel, api_key: llmApiKey || undefined } : null,
-            blur_enabled: blurEnabled,
-            subtitle_style: subtitleStyle,
             ...ttsOverrides,
           }),
         });
@@ -281,7 +257,7 @@ function PipelinePage() {
     setError('');
     try {
       const translationOverride = selectedProfile ? { backend: llmBackend, model: llmModel, api_key: llmApiKey || undefined } : undefined;
-      const { task_id } = await postPipeline(url, selectedProfile || undefined, 'zh', translationOverride, blurEnabled, ttsOverrides);
+      const { task_id } = await postPipeline(url, selectedProfile || undefined, 'zh', translationOverride, ttsOverrides);
       startPolling(task_id, 'single');
     } catch (e) { setError(e instanceof Error ? e.message : 'Pipeline failed'); }
   };
@@ -648,43 +624,6 @@ function PipelinePage() {
                         {m.label}
                       </option>
                     ))}
-                  </select>
-                </div>
-
-                {/* Blur toggle */}
-                <div className="flex items-center gap-3 pt-1">
-                  <span className="material-symbols-outlined text-sm text-primary">blur_on</span>
-                  <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold flex-1">
-                    Blur Original Subtitles
-                  </label>
-                  <button
-                    onClick={() => setBlurEnabled(!blurEnabled)}
-                    className={`w-8 h-4 rounded-full relative cursor-pointer transition-colors ${
-                      blurEnabled ? 'bg-primary' : 'bg-surface-container-highest'
-                    }`}
-                  >
-                    <div
-                      className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${
-                        blurEnabled ? 'right-0.5' : 'left-0.5'
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                {/* Subtitle Background */}
-                <div className="flex items-center gap-3">
-                  <span className="material-symbols-outlined text-sm text-on-surface-variant">format_color_fill</span>
-                  <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold flex-1">
-                    Subtitle Background
-                  </label>
-                  <select
-                    value={subtitleBackground}
-                    onChange={(e) => setSubtitleBackground(e.target.value as SubtitleBgPreset)}
-                    className="px-2 py-1 text-xs font-mono text-on-surface bg-surface-container-low border border-outline-variant/30 rounded focus:outline-none focus:border-primary"
-                  >
-                    <option value="off">Off</option>
-                    <option value="subtle">Subtle</option>
-                    <option value="strong">Strong</option>
                   </select>
                 </div>
 
