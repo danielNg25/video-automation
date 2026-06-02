@@ -429,12 +429,10 @@ export function DubStudioPage() {
               selectedVoiceId={voiceId}
               onPick={(v) => handleSetVoiceId(v)}
               onRemove={(fav) => {
-                toggleFavorite(fav);
-                setFavorites(loadFavorites());
+                setFavorites(toggleFavorite(fav));
               }}
               onRename={(fav, nickname) => {
-                renameFavorite(fav, nickname);
-                setFavorites(loadFavorites());
+                setFavorites(renameFavorite(fav, nickname));
               }}
             />
           </div>

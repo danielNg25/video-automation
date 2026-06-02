@@ -212,7 +212,5 @@ describe('DubStudioPage — favorites strip', () => {
     renderPage();
 
     expect(await screen.findByText('Sarah')).toBeInTheDocument();
-    // Cleanup: drop the favorite so it doesn't leak into other tests.
-    localStorage.removeItem('tts_favorite_voices_v1');
   });
 });
