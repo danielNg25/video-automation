@@ -467,11 +467,12 @@ class TestImportSegmentsAsVersion:
         assert entry.id == "v3"
         assert entry.name is None
 
-    def test_calls_ensure_migrated_if_versions_json_missing(
+    def test_handles_missing_versions_json(
         self, tmp_path, monkeypatch
     ):
-        """With no versions.json and no legacy SRTs, ensure_migrated writes
-        an empty versions.json — then the new entry lands as v1."""
+        """With no versions.json and no legacy SRTs, the helper creates the
+        snapshot and versions.json from scratch (the happy missing-file
+        case)."""
         srt_dir = tmp_path / "srt"
         srt_dir.mkdir()
         tts_dir = tmp_path / "tts"
