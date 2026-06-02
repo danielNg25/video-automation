@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { DubStudioPage } from '../DubStudio';
 import * as standaloneDubApi from '../../api/standaloneDub';
 import * as clientApi from '../../api/client';
+import { saveFavorites } from '../../utils/favoriteVoices';
 
 // ── mocks ────────────────────────────────────────────────────────────────────
 
@@ -168,5 +169,50 @@ describe('DubStudioPage — delete flow', () => {
     await waitFor(() =>
       expect(standaloneDubApi.deleteStandaloneDub).toHaveBeenCalledWith('del-456'),
     );
+  });
+});
+
+describe('DubStudioPage — favorites strip', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.removeItem('tts_favorite_voices_v1');
+  });
+
+  it('renders the favorites strip when a matching favorite exists', async () => {
+    // Seed a favorite that matches what the page will load by default
+    // (provider=google, language=vi after the auto-correct effect).
+    saveFavorites([
+      {
+        provider: 'google',
+        voice: 'vi-VN-Wavenet-A',
+        language: 'vi',
+        nickname: 'Sarah',
+      },
+    ]);
+    // Make the voice list include that voice so the friendly-name fallback
+    // path isn't hit; the chip should still show "Sarah" (nickname wins).
+    // Also mock getTTSProviders to include 'google' so the auto-correct effect
+    // doesn't switch provider away from google (which would drop the scoped favorite).
+    const api = await import('../../api/client');
+    (api.getTTSProviders as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'google', name: 'Google TTS', free: false, requires_key: true },
+    ]);
+    (api.getTTSVoices as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        name: 'vi-VN-Wavenet-A',
+        friendly_name: 'Vietnamese Wavenet A',
+        gender: 'FEMALE',
+        language: 'vi',
+        provider: 'google',
+      },
+    ]);
+    const stdApi = await import('../../api/standaloneDub');
+    (stdApi.getStandaloneDubs as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+    renderPage();
+
+    expect(await screen.findByText('Sarah')).toBeInTheDocument();
+    // Cleanup: drop the favorite so it doesn't leak into other tests.
+    localStorage.removeItem('tts_favorite_voices_v1');
   });
 });

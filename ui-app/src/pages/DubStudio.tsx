@@ -10,6 +10,14 @@ import {
 import type { StandaloneDubEntry } from '../api/standaloneDub';
 import type { TTSProviderInfo, VoiceInfo } from '../api/types';
 import { loadApiKeys, loadLLMPrefs, storageGet, storageSet } from '../utils/storage';
+import { FavoriteVoiceStrip } from '../components/FavoriteVoiceStrip';
+import { FavoriteVoiceToggle } from '../components/FavoriteVoiceToggle';
+import {
+  loadFavorites,
+  renameFavorite,
+  toggleFavorite,
+} from '../utils/favoriteVoices';
+import type { FavoriteVoice } from '../utils/favoriteVoices';
 
 // ── localStorage keys (isolated from video-flow keys) ────────────────────────
 
@@ -69,6 +77,11 @@ export function DubStudioPage() {
   // ── provider / voice lists ─────────────────────────────────────────────────
   const [providers, setProviders] = useState<TTSProviderInfo[]>([]);
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
+  const [favorites, setFavorites] = useState<FavoriteVoice[]>(() => loadFavorites());
+  // Re-derive the scoped view on every render — cheap (favorites list is <100 entries).
+  const scopedFavorites = favorites.filter(
+    (f) => f.provider === provider && f.language === language,
+  );
   const [loadingVoices, setLoadingVoices] = useState(false);
   const [missingKey, setMissingKey] = useState(false);
 
@@ -388,20 +401,42 @@ export function DubStudioPage() {
                 Loading voices…
               </div>
             ) : (
-              <select
-                className={selectClass}
-                value={voiceId}
-                onChange={(e) => handleSetVoiceId(e.target.value)}
-                disabled={voices.length === 0}
-              >
-                {voices.length === 0 && <option value="">— no voices available —</option>}
-                {voices.map((v) => (
-                  <option key={v.name} value={v.name}>
-                    {v.friendly_name} ({v.gender})
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center gap-2">
+                <select
+                  className={selectClass}
+                  value={voiceId}
+                  onChange={(e) => handleSetVoiceId(e.target.value)}
+                  disabled={voices.length === 0}
+                >
+                  {voices.length === 0 && <option value="">— no voices available —</option>}
+                  {voices.map((v) => (
+                    <option key={v.name} value={v.name}>
+                      {v.friendly_name} ({v.gender})
+                    </option>
+                  ))}
+                </select>
+                <FavoriteVoiceToggle
+                  provider={provider}
+                  voice={voiceId}
+                  language={language}
+                  onChange={() => setFavorites(loadFavorites())}
+                />
+              </div>
             )}
+            <FavoriteVoiceStrip
+              favorites={scopedFavorites}
+              voices={voices}
+              selectedVoiceId={voiceId}
+              onPick={(v) => handleSetVoiceId(v)}
+              onRemove={(fav) => {
+                toggleFavorite(fav);
+                setFavorites(loadFavorites());
+              }}
+              onRename={(fav, nickname) => {
+                renameFavorite(fav, nickname);
+                setFavorites(loadFavorites());
+              }}
+            />
           </div>
 
           {/* Missing-key warning — when the selected provider needs a key and
