@@ -20,6 +20,8 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from src.processor.subtitle import parse_srt, write_srt
+
 SRT_DIR = Path("data/srt")
 TTS_DIR = Path("data/tts")
 _VERSION_ID_RE = re.compile(r"^v(\d+)$")
@@ -124,8 +126,6 @@ def import_as_version(
     """
     import tempfile
 
-    from src.processor.subtitle import parse_srt
-
     # Validate by parsing. Use a NamedTemporaryFile so parse_srt's
     # Path-based API works without changes. Reject empty content first
     # (parse_srt would return [] but the error message is clearer up front).
@@ -150,6 +150,42 @@ def import_as_version(
     snap_path = SRT_DIR / f"{video_id}_{language}.{new_id}.srt"
     snap_path.parent.mkdir(parents=True, exist_ok=True)
     snap_path.write_bytes(srt_content)
+    entry = VersionEntry(
+        id=new_id, name=name, created_at=datetime.now(timezone.utc)
+    )
+    entries.append(entry)
+    save_versions(video_id, language, entries)
+    return entry
+
+
+def import_segments_as_version(
+    video_id: str,
+    language: str,
+    segments: list[dict],
+    name: str | None = None,
+) -> VersionEntry:
+    """Write pre-parsed segment dicts as the next snapshot.
+
+    Like ``import_as_version`` but accepts segments directly (skipping
+    the bytes → temp-file → parse_srt round-trip). Calls
+    ``processor.subtitle.write_srt`` to produce the SRT file. Calls
+    ``ensure_migrated`` first so the snapshot lands cleanly even if no
+    versions.json exists yet.
+
+    For in-process callers (the TTS runner's auto-snapshot) that
+    already hold parsed segments. The HTTP upload path stays on
+    ``import_as_version``.
+
+    Raises ValueError if ``segments`` is empty.
+    """
+    if not segments:
+        raise ValueError("Cannot write a version snapshot with zero segments")
+
+    ensure_migrated(video_id, language)
+    entries = load_versions(video_id, language)
+    new_id = next_version_id(entries)
+    snap_path = SRT_DIR / f"{video_id}_{language}.{new_id}.srt"
+    write_srt(segments, snap_path)
     entry = VersionEntry(
         id=new_id, name=name, created_at=datetime.now(timezone.utc)
     )
