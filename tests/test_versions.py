@@ -404,3 +404,88 @@ class TestImportRouter:
             files={"file": ("garbage.srt", BytesIO(b"not an srt at all"), "text/plain")},
         )
         assert r.status_code == 400
+
+
+class TestImportSegmentsAsVersion:
+    """import_segments_as_version skips the bytes round-trip — useful for
+    in-process callers (like the TTS runner) that already have parsed
+    segments in hand."""
+
+    def test_creates_next_version_from_segments(self, tmp_path, monkeypatch):
+        """A 2-segment list lands as v1 with the expected file content + entry."""
+        srt_dir = tmp_path / "srt"
+        srt_dir.mkdir()
+        monkeypatch.setattr("src.api.versions.SRT_DIR", srt_dir)
+        # Seed an already-migrated versions.json so ensure_migrated is no-op.
+        (srt_dir / "vidA_vi.versions.json").write_text("[]")
+
+        from src.api.versions import import_segments_as_version, load_versions
+
+        segments = [
+            {"index": 1, "start": 0.0, "end": 1.5, "text": "first"},
+            {"index": 2, "start": 1.5, "end": 3.0, "text": "second"},
+        ]
+        entry = import_segments_as_version(
+            "vidA", "vi", segments, name="dub: google/voiceA"
+        )
+
+        assert entry.id == "v1"
+        assert entry.name == "dub: google/voiceA"
+
+        # File exists with the expected SRT content.
+        v1_path = srt_dir / "vidA_vi.v1.srt"
+        assert v1_path.exists()
+        body = v1_path.read_text(encoding="utf-8")
+        assert "first" in body
+        assert "second" in body
+        assert "00:00:00,000 --> 00:00:01,500" in body
+        assert "00:00:01,500 --> 00:00:03,000" in body
+
+        # versions.json has the entry.
+        loaded = load_versions("vidA", "vi")
+        assert len(loaded) == 1
+        assert loaded[0].id == "v1"
+
+    def test_increments_when_versions_already_exist(self, tmp_path, monkeypatch):
+        """Existing v1/v2 → new entry is v3."""
+        srt_dir = tmp_path / "srt"
+        srt_dir.mkdir()
+        monkeypatch.setattr("src.api.versions.SRT_DIR", srt_dir)
+        import json
+        (srt_dir / "vidB_en.versions.json").write_text(json.dumps([
+            {"id": "v1", "name": None, "created_at": "2026-05-30T00:00:00+00:00"},
+            {"id": "v2", "name": "edit-1", "created_at": "2026-05-30T01:00:00+00:00"},
+        ]))
+
+        from src.api.versions import import_segments_as_version
+
+        entry = import_segments_as_version(
+            "vidB", "en",
+            [{"index": 1, "start": 0.0, "end": 1.0, "text": "hi"}],
+            name=None,
+        )
+        assert entry.id == "v3"
+        assert entry.name is None
+
+    def test_calls_ensure_migrated_if_versions_json_missing(
+        self, tmp_path, monkeypatch
+    ):
+        """With no versions.json and no legacy SRTs, ensure_migrated writes
+        an empty versions.json — then the new entry lands as v1."""
+        srt_dir = tmp_path / "srt"
+        srt_dir.mkdir()
+        tts_dir = tmp_path / "tts"
+        tts_dir.mkdir()
+        monkeypatch.setattr("src.api.versions.SRT_DIR", srt_dir)
+        monkeypatch.setattr("src.api.versions.TTS_DIR", tts_dir)
+
+        from src.api.versions import import_segments_as_version
+
+        entry = import_segments_as_version(
+            "vidC", "vi",
+            [{"index": 1, "start": 0.0, "end": 1.0, "text": "ok"}],
+            name="dub: x/y",
+        )
+        assert entry.id == "v1"
+        assert (srt_dir / "vidC_vi.versions.json").exists()
+        assert (srt_dir / "vidC_vi.v1.srt").exists()
