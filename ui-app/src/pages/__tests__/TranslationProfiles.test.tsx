@@ -144,9 +144,11 @@ describe('TranslationProfiles — Import', () => {
         expect.objectContaining({ name: 'fresh-vi' }),
       );
     });
-    // Second getProfiles call (the post-import refresh) brings 'fresh-vi'
-    // into the list.
-    expect(await screen.findByText('fresh-vi')).toBeInTheDocument();
+    // The imported profile lands in the list (post-refresh) AND in the
+    // right-pane detail (auto-selected). findAllByText returns >=1 match
+    // for both cases.
+    const matches = await screen.findAllByText('fresh-vi');
+    expect(matches.length).toBeGreaterThanOrEqual(1);
   });
 
   it('409 shows the rename form with default suffix', async () => {

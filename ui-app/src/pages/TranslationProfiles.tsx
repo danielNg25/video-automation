@@ -151,8 +151,11 @@ function TranslationProfilesPage() {
     if (result.status === 201) {
       setSuccess(`Imported "${result.profile.name}"`);
       setPendingImport(null);
-      setRenameValue('');
       await loadProfiles();
+      setSelectedName(result.profile.name);
+      setProfileDraft(result.profile);
+      setIsEditing(false);
+      setIsNew(false);
       return;
     }
     if (result.status === 409) {
