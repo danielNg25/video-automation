@@ -1,4 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { saveFavorites } from '../../../utils/favoriteVoices';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { DubTab } from '../DubTab';
 
@@ -97,5 +98,37 @@ describe('DubTab — Stop button', () => {
     const { props } = renderDubTab({ isGeneratingTts: true, canStop: true });
     fireEvent.click(screen.getByRole('button', { name: /stop tts/i }));
     expect(props.onStop).toHaveBeenCalled();
+  });
+});
+
+describe('DubTab — favorites strip', () => {
+  afterEach(() => {
+    localStorage.removeItem('tts_favorite_voices_v1');
+  });
+
+  it('renders the chip strip when a matching favorite exists', () => {
+    saveFavorites([
+      {
+        provider: 'google',
+        voice: 'vi-VN-Wavenet-A',
+        language: 'vi',
+        nickname: 'Sarah',
+      },
+    ]);
+    renderDubTab({
+      selectedTtsProvider: 'google',
+      ttsLanguage: 'vi',
+      ttsVoices: [
+        {
+          name: 'vi-VN-Wavenet-A',
+          friendly_name: 'Vietnamese Wavenet A',
+          gender: 'FEMALE',
+          language: 'vi',
+          provider: 'google',
+        },
+      ],
+      selectedVoiceId: 'vi-VN-Wavenet-A',
+    });
+    expect(screen.getByText('Sarah')).toBeInTheDocument();
   });
 });

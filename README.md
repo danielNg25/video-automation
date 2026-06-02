@@ -631,6 +631,19 @@ douyin-automation/
 
 ---
 
+### Favorite voices with nicknames (2026-05-31)
+
+> Quick-select chips for the user's preferred TTS voices, with optional user-defined nicknames. See [`docs/superpowers/specs/2026-05-31-favorite-voices-design.md`](docs/superpowers/specs/2026-05-31-favorite-voices-design.md) and [`docs/superpowers/plans/2026-05-31-favorite-voices.md`](docs/superpowers/plans/2026-05-31-favorite-voices.md).
+
+- [x] **Task 1** — `ui-app/src/utils/favoriteVoices.ts`: `loadFavorites`, `saveFavorites`, `isFavorite`, `toggleFavorite`, `renameFavorite`, `favoritesFor`. Identity is `(provider, voice, language)`; nickname is optional metadata. 12 unit tests covering load edge cases, identity ops, rename, and scope filter.
+- [x] **Task 2** — `ui-app/src/components/FavoriteVoiceStrip.tsx`: pill-chip row with body-click pick, hover-pencil rename (via `window.prompt`), hover-× remove. Three-tier label fallback (nickname → friendly_name → voice id). 11 component tests.
+- [x] **Task 3** — `ui-app/src/components/FavoriteVoiceToggle.tsx`: star button rendered next to the voice picker. Filled vs outlined per `isFavorite`; click toggles + fires optional `onChange`. 4 component tests.
+- [x] **Task 4** — Wire into Dub Studio: toggle inline with voice select, strip below. 1 new integration test.
+- [x] **Task 5** — Wire into DubTab (non-elevenlabs branch): same wire-up. 1 new integration test.
+- [x] **Task 6** — CHANGELOG + README updates.
+
+---
+
 ### One-Time Setup Checklist
 
 - [ ] Docker installed, Douyin API container running
