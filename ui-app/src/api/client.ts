@@ -133,6 +133,41 @@ export function createProfile(profile: TranslationProfile): Promise<TranslationP
   });
 }
 
+export type CreateProfileResult =
+  | { status: 201; profile: TranslationProfile }
+  | { status: 409; message: string }
+  | { status: number; message: string };
+
+/**
+ * Like createProfile but returns status code + body instead of throwing
+ * on non-2xx. Used by the import flow to branch on 409 (name conflict)
+ * without parsing error text.
+ */
+export async function createProfileWithStatus(
+  profile: TranslationProfile,
+): Promise<CreateProfileResult> {
+  const res = await fetch(`${BASE}/profiles`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(profile),
+  });
+  if (res.status === 201) {
+    return { status: 201, profile: (await res.json()) as TranslationProfile };
+  }
+  // FastAPI 4xx/5xx bodies are JSON: { "detail": "..." }. Try to extract;
+  // fall back to raw text.
+  const text = await res.text();
+  let message = text;
+  try {
+    const parsed = JSON.parse(text) as { detail?: string };
+    if (typeof parsed.detail === 'string') message = parsed.detail;
+  } catch {
+    // Keep raw text.
+  }
+  if (res.status === 409) return { status: 409, message };
+  return { status: res.status, message };
+}
+
 export function updateProfile(name: string, profile: TranslationProfile): Promise<TranslationProfile> {
   return request(`/profiles/${encodeURIComponent(name)}`, {
     method: 'PUT',
