@@ -80,16 +80,20 @@ export function renameFavorite(
   nickname: string,
 ): FavoriteVoice[] {
   const current = loadFavorites();
+  const idx = current.findIndex((f) => sameIdentity(f, fav));
+  if (idx < 0) return current; // No matching entry; don't waste a write.
   const trimmed = nickname.trim();
-  const next = current.map((f) => {
-    if (!sameIdentity(f, fav)) return f;
-    if (trimmed === '') {
-      const { nickname: _drop, ...rest } = f;
-      return rest;
-    }
-    return { ...f, nickname: trimmed };
-  });
-  // If the identity wasn't present, current === next by reference — saving is harmless.
+  const updated: FavoriteVoice = trimmed === ''
+    ? (() => {
+        const { nickname: _drop, ...rest } = current[idx];
+        return rest;
+      })()
+    : { ...current[idx], nickname: trimmed };
+  const next = [
+    ...current.slice(0, idx),
+    updated,
+    ...current.slice(idx + 1),
+  ];
   saveFavorites(next);
   return next;
 }

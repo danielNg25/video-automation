@@ -62,8 +62,11 @@ describe('favoriteVoices — identity ops', () => {
       { provider: 'google', voice: 'v1', language: 'vi', nickname: 'Sarah' },
     ]);
     expect(isFavorite({ provider: 'google', voice: 'v1', language: 'vi' })).toBe(true);
-    // Different nickname doesn't matter — identity still matches.
-    expect(isFavorite({ provider: 'google', voice: 'v1', language: 'vi' })).toBe(true);
+    // Different nickname doesn't matter — identity still matches. (isFavorite's
+    // type is Pick<…> so an extra nickname field is structurally compatible.)
+    expect(
+      isFavorite({ provider: 'google', voice: 'v1', language: 'vi', nickname: 'Other' } as never),
+    ).toBe(true);
     // Different language → no match.
     expect(isFavorite({ provider: 'google', voice: 'v1', language: 'en' })).toBe(false);
   });
