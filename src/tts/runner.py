@@ -324,6 +324,28 @@ async def run_tts_track(
     except Exception as e:  # noqa: BLE001 — log file is informational only
         logger.warning(f"Could not write dub plan log: {e}")
 
+    # Auto-save the post-shortening text as a new version snapshot so the
+    # user can see what the dub actually said from the editor's version
+    # dropdown. Failure here is logged but never fails the dub — the WAV
+    # is the primary deliverable; the snapshot is convenience.
+    try:
+        from src.api.versions import import_segments_as_version
+        from src.tts.shortened_srt import build_shortened_srt
+
+        if sentence_plan:
+            shortened_segments = build_shortened_srt(sentence_plan, segments)
+            entry = import_segments_as_version(
+                video_id=video_id,
+                language=language,
+                segments=shortened_segments,
+                name=f"dub: {provider}/{voice}",
+            )
+            logger.info(
+                f"Saved shortened version {entry.id} as '{entry.name}'"
+            )
+    except Exception as e:  # noqa: BLE001 — snapshot save is convenience
+        logger.warning(f"Could not save shortened version: {e}")
+
     return {
         "audio_path": str(output_path),
         "duration": out_duration,
