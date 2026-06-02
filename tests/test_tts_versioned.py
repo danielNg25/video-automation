@@ -186,8 +186,14 @@ class TestRunTtsTrackAutoSavesShortenedVersion:
         v1_path = srt_dir / "vid1_vi.v1.srt"
         assert v1_path.exists()
         body = v1_path.read_text(encoding="utf-8")
-        assert "shortened" in body  # at least one of the words landed
-        assert "00:00:00,000 --> 00:00:01,500" in body  # original timings
+        # All three plan words should land somewhere across the 3 segments.
+        assert "shortened" in body
+        assert "final" in body
+        assert "text" in body
+        # All three original-timing windows preserved.
+        assert "00:00:00,000 --> 00:00:01,500" in body
+        assert "00:00:01,500 --> 00:00:03,000" in body
+        assert "00:00:03,000 --> 00:00:04,500" in body
 
         # The versions index records it with the expected name.
         from src.api.versions import load_versions
@@ -227,7 +233,7 @@ class TestRunTtsTrackAutoSavesShortenedVersion:
             "src.tts.runner._build_llm_translator",
             return_value=None,
         ), patch(
-            "src.tts.shortened_srt.build_shortened_srt",
+            "src.tts.runner.build_shortened_srt",
             side_effect=RuntimeError("boom"),
         ):
             from src.tts.runner import run_tts_track

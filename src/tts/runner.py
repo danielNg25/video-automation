@@ -14,7 +14,9 @@ import re
 from collections.abc import Callable
 from pathlib import Path
 
+from src.api.versions import import_segments_as_version
 from src.tts import get_tts_provider  # re-exported for patching in tests
+from src.tts.shortened_srt import build_shortened_srt
 from src.utils.logger import setup_logger
 
 _FILENAME_SAFE = re.compile(r"[^A-Za-z0-9._-]+")
@@ -329,9 +331,6 @@ async def run_tts_track(
     # dropdown. Failure here is logged but never fails the dub — the WAV
     # is the primary deliverable; the snapshot is convenience.
     try:
-        from src.api.versions import import_segments_as_version
-        from src.tts.shortened_srt import build_shortened_srt
-
         if sentence_plan:
             shortened_segments = build_shortened_srt(sentence_plan, segments)
             entry = import_segments_as_version(
