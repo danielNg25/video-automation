@@ -8,6 +8,14 @@ import type {
   TTSProviderInfo, VoiceInfo, VersionEntry,
 } from '../../api/types';
 import { VersionPicker } from '../../components/dub/VersionPicker';
+import { FavoriteVoiceStrip } from '../../components/FavoriteVoiceStrip';
+import { FavoriteVoiceToggle } from '../../components/FavoriteVoiceToggle';
+import {
+  loadFavorites,
+  renameFavorite,
+  toggleFavorite,
+} from '../../utils/favoriteVoices';
+import type { FavoriteVoice } from '../../utils/favoriteVoices';
 
 interface Props {
   videoId: string;
@@ -78,6 +86,10 @@ export function DubTab(props: Props) {
   const navigate = useNavigate();
   const [playingFilename, setPlayingFilename] = useState<string | null>(null);
   const [savedDefault, setSavedDefault] = useState(false);
+  const [favorites, setFavorites] = useState<FavoriteVoice[]>(() => loadFavorites());
+  const scopedFavorites = favorites.filter(
+    (f) => f.provider === selectedTtsProvider && f.language === ttsLanguage,
+  );
 
   const handleSaveAsDefault = () => {
     storageSet('tts_playback_speed', String(playbackSpeed));
@@ -180,26 +192,49 @@ export function DubTab(props: Props) {
         </div>
       )}
 
-      {/* Other providers: voice dropdown */}
+      {/* Other providers: voice dropdown + favorites strip */}
       {selectedTtsProvider !== 'elevenlabs' && (
         <div className="space-y-1">
           <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block">Voice</label>
-          <select
-            value={selectedVoiceId}
-            onChange={(e) => {
-              const v = e.target.value;
+          <div className="flex items-center gap-2">
+            <select
+              value={selectedVoiceId}
+              onChange={(e) => {
+                const v = e.target.value;
+                onChangeSelectedVoiceId(v);
+                storageSet(`tts_voice_id_${selectedTtsProvider}`, v);
+              }}
+              className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
+            >
+              {ttsVoices.length === 0 && <option value="">Loading voices...</option>}
+              {ttsVoices.map((v) => (
+                <option key={v.name} value={v.name}>
+                  {v.friendly_name || v.name} ({v.gender}) — {v.language}
+                </option>
+              ))}
+            </select>
+            <FavoriteVoiceToggle
+              provider={selectedTtsProvider}
+              voice={selectedVoiceId}
+              language={ttsLanguage}
+              onChange={() => setFavorites(loadFavorites())}
+            />
+          </div>
+          <FavoriteVoiceStrip
+            favorites={scopedFavorites}
+            voices={ttsVoices}
+            selectedVoiceId={selectedVoiceId}
+            onPick={(v) => {
               onChangeSelectedVoiceId(v);
               storageSet(`tts_voice_id_${selectedTtsProvider}`, v);
             }}
-            className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
-          >
-            {ttsVoices.length === 0 && <option value="">Loading voices...</option>}
-            {ttsVoices.map((v) => (
-              <option key={v.name} value={v.name}>
-                {v.friendly_name || v.name} ({v.gender}) — {v.language}
-              </option>
-            ))}
-          </select>
+            onRemove={(fav) => {
+              setFavorites(toggleFavorite(fav));
+            }}
+            onRename={(fav, nickname) => {
+              setFavorites(renameFavorite(fav, nickname));
+            }}
+          />
         </div>
       )}
 
