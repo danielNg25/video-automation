@@ -28,7 +28,7 @@ class TestSplitSentence:
             "the quick brown fox jumps",
             ["a", "the quick brown fox jumps over a lazy dog"],
         )
-        # First original is 1 char of 41 total ≈ 2.4%. Round-half-up of
+        # First original is 1 char of 42 total ≈ 2.4%. Round-half-up of
         # 5 words * 0.024 = 0 → first slot gets 0 words; all 5 land in
         # the second slot.
         assert result[0] == ""
@@ -124,4 +124,40 @@ class TestBuildShortenedSrt:
         # The second entry still applies.
         assert result[2]["text"] == "gamma"
         assert result[3]["text"] == "delta"
+        assert result[4]["text"] == "epsilon"
+
+    def test_plan_entry_missing_segment_indices_skipped(self):
+        """A plan entry without a 'segment_indices' key (malformed) is
+        skipped without crashing; all originals keep their text."""
+        original = self._orig()
+        plan = [
+            {"text": "stray text"},  # no segment_indices
+            {"segment_indices": [0, 1], "text": "alpha beta"},
+        ]
+        result = build_shortened_srt(plan, original)
+        # First entry skipped; second applies.
+        assert result[0]["text"] == "alpha"
+        assert result[1]["text"] == "beta"
+        # Untouched segments keep originals.
+        assert result[2]["text"] == "gamma"
+        assert result[3]["text"] == "delta"
+        assert result[4]["text"] == "epsilon"
+
+    def test_plan_entry_with_any_out_of_range_index_skipped(self):
+        """If even one of the entry's indices is out of range, the whole
+        entry is skipped — no partial application across the valid ones."""
+        original = self._orig()
+        plan = [
+            {"segment_indices": [0, 99], "text": "hello world"},
+            {"segment_indices": [2, 3], "text": "gamma delta"},
+        ]
+        result = build_shortened_srt(plan, original)
+        # First entry skipped because index 99 doesn't exist; segments 0,1
+        # keep their original text.
+        assert result[0]["text"] == "alpha"
+        assert result[1]["text"] == "beta"
+        # Second entry applies normally.
+        assert result[2]["text"] == "gamma"
+        assert result[3]["text"] == "delta"
+        # Untouched.
         assert result[4]["text"] == "epsilon"

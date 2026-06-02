@@ -49,8 +49,8 @@ def split_sentence_to_segments(
 
     # Allocate word counts using the largest-remainder method so the total
     # always matches len(words) exactly. Ties in remainder are broken by
-    # earlier index so words fill from the front (trailing segments get ''
-    # before leading ones when there are fewer words than segments).
+    # earlier index so leading segments win — trailing segments get ''
+    # when there are fewer words than segments.
     total_words = len(words)
     raw = [share * total_words for share in shares]
     floors = [int(x) for x in raw]
@@ -92,8 +92,8 @@ def build_shortened_srt(
     (defensive — doesn't happen for a successful dub).
 
     Malformed plan entries (missing 'text' or 'segment_indices', or with
-    out-of-range indices) are skipped silently so a partial plan doesn't
-    crash the snapshot.
+    any out-of-range index) are skipped silently so a partial plan can't
+    crash or partially-apply.
     """
     # Start with a shallow copy of each original so we can mutate the
     # text without touching the caller's list.
@@ -104,9 +104,12 @@ def build_shortened_srt(
         text = entry.get("text")
         if indices is None or text is None:
             continue
-        valid_indices = [i for i in indices if 0 <= i < len(output)]
-        if not valid_indices:
+        # Skip the entry entirely if ANY index is out of range — partial
+        # application would silently distribute the sentence across fewer
+        # slots than the plan intended.
+        if any(not (0 <= i < len(output)) for i in indices):
             continue
+        valid_indices = list(indices)
         originals = [output[i].get("text", "") for i in valid_indices]
         parts = split_sentence_to_segments(text, originals)
         for i, part in zip(valid_indices, parts):
