@@ -9,6 +9,10 @@ import { usePipelineStatus } from '../lib/pipelineStatus';
 import { PipelineStageTracker } from '../components/PipelineStageTracker';
 import { PipelineRunsTable } from '../components/PipelineRunsTable';
 import { StopButton } from '../components/pipeline/StopButton';
+import { FavoriteVoiceStrip } from '../components/FavoriteVoiceStrip';
+import { FavoriteVoiceToggle } from '../components/FavoriteVoiceToggle';
+import { loadFavorites, renameFavorite, toggleFavorite } from '../utils/favoriteVoices';
+import type { FavoriteVoice } from '../utils/favoriteVoices';
 
 function PipelinePage() {
   const navigate = useNavigate();
@@ -89,6 +93,13 @@ function PipelinePage() {
   // override (set via the Language dropdown) wins when non-empty.
   const profileLang = profiles.find((p) => p.name === selectedProfile)?.target_language ?? 'vi';
   const targetTtsLanguage = ttsLanguageOverride || profileLang;
+
+  // Favorites state — same shape as DubTab / DubStudio. Scoped to the
+  // current (provider, language) at render time.
+  const [favorites, setFavorites] = useState<FavoriteVoice[]>(() => loadFavorites());
+  const scopedFavorites = favorites.filter(
+    (f) => f.provider === selectedTtsProvider && f.language === targetTtsLanguage,
+  );
   useEffect(() => {
     if (selectedTtsProvider === 'elevenlabs') {
       setTtsVoices([]);
@@ -140,15 +151,21 @@ function PipelinePage() {
     getTTSProviders().then(setTtsProviders).catch(() => {});
   }, [loadVideos]);
 
-  // React to pipeline completion / failure
+  // React to pipeline completion / failure. After handling, reset the
+  // shared pipelineStatus context to idle so re-mounting this page
+  // (e.g. user navigates away then clicks the Pipeline tab again)
+  // doesn't re-fire the navigate / cleanup branches against the stale
+  // completion.
   useEffect(() => {
     if (
       pipelineStatus.status === 'completed' &&
       pipelineStatus.mode === 'single' &&
       pipelineStatus.videoId
     ) {
+      const dest = `/videos/${pipelineStatus.videoId}`;
       loadVideos();
-      navigate(`/videos/${pipelineStatus.videoId}`);
+      stopPolling();
+      navigate(dest);
     } else if (
       pipelineStatus.status === 'completed' &&
       pipelineStatus.mode === 'batch'
@@ -156,8 +173,10 @@ function PipelinePage() {
       loadVideos();
       setBatchResults(null);
       setUrlInput('');
+      stopPolling();
     } else if (pipelineStatus.status === 'failed') {
       setError(pipelineStatus.error || 'Pipeline failed');
+      stopPolling();
     }
   }, [
     pipelineStatus.status,
@@ -166,6 +185,7 @@ function PipelinePage() {
     pipelineStatus.error,
     loadVideos,
     navigate,
+    stopPolling,
   ]);
 
   // Mirror batch progress into the existing batchResults display
@@ -501,21 +521,46 @@ function PipelinePage() {
                     )}
                   </div>
                 ) : (
-                  <select
-                    value={selectedVoiceId}
-                    onChange={(e) => {
-                      setSelectedVoiceId(e.target.value);
-                      storageSet(`tts_voice_id_${selectedTtsProvider}`, e.target.value);
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={selectedVoiceId}
+                      onChange={(e) => {
+                        setSelectedVoiceId(e.target.value);
+                        storageSet(`tts_voice_id_${selectedTtsProvider}`, e.target.value);
+                      }}
+                      className="w-full bg-surface-container border-none text-xs text-on-surface h-10 px-3 rounded-lg focus:ring-1 focus:ring-primary"
+                    >
+                      {ttsVoices.length === 0 && <option value="">No voices loaded (check API key)</option>}
+                      {ttsVoices.map((v) => (
+                        <option key={v.name} value={v.name}>
+                          {v.friendly_name || v.name} ({v.gender}) — {v.language}
+                        </option>
+                      ))}
+                    </select>
+                    <FavoriteVoiceToggle
+                      provider={selectedTtsProvider}
+                      voice={selectedVoiceId}
+                      language={targetTtsLanguage}
+                      onChange={() => setFavorites(loadFavorites())}
+                    />
+                  </div>
+                )}
+                {selectedTtsProvider !== 'elevenlabs' && (
+                  <FavoriteVoiceStrip
+                    favorites={scopedFavorites}
+                    voices={ttsVoices}
+                    selectedVoiceId={selectedVoiceId}
+                    onPick={(v) => {
+                      setSelectedVoiceId(v);
+                      storageSet(`tts_voice_id_${selectedTtsProvider}`, v);
                     }}
-                    className="w-full bg-surface-container border-none text-xs text-on-surface h-10 px-3 rounded-lg focus:ring-1 focus:ring-primary"
-                  >
-                    {ttsVoices.length === 0 && <option value="">No voices loaded (check API key)</option>}
-                    {ttsVoices.map((v) => (
-                      <option key={v.name} value={v.name}>
-                        {v.friendly_name || v.name} ({v.gender}) — {v.language}
-                      </option>
-                    ))}
-                  </select>
+                    onRemove={(fav) => {
+                      setFavorites(toggleFavorite(fav));
+                    }}
+                    onRename={(fav, nickname) => {
+                      setFavorites(renameFavorite(fav, nickname));
+                    }}
+                  />
                 )}
               </div>
             </div>
