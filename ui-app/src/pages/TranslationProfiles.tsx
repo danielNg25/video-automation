@@ -1,7 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { TopBar } from '../components/TopBar';
-import { getProfiles, getProfile, createProfile, updateProfile, deleteProfileApi } from '../api/client';
+import {
+  getProfiles, getProfile, createProfile, createProfileWithStatus,
+  updateProfile, deleteProfileApi,
+} from '../api/client';
 import type { TranslationProfileSummary, TranslationProfile } from '../api/types';
+import { downloadProfileJson, validateProfileJson } from '../utils/profileJson';
 
 const EMPTY_PROFILE: TranslationProfile = {
   name: '', description: '', target_language: 'vi', source_language: 'zh',
@@ -16,6 +20,14 @@ function TranslationProfilesPage() {
   const [isNew, setIsNew] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  // Import state. importError surfaces parse + validation + non-409 HTTP errors.
+  // pendingImport holds the parsed profile while the user is in the rename form
+  // (set when createProfileWithStatus returns 409).
+  const [importError, setImportError] = useState('');
+  const [pendingImport, setPendingImport] = useState<TranslationProfile | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadProfiles = useCallback(async () => {
     try {
@@ -92,6 +104,82 @@ function TranslationProfilesPage() {
     }
   };
 
+  const handleExport = async () => {
+    if (!selectedName) return;
+    setError('');
+    try {
+      const full = await getProfile(selectedName);
+      downloadProfileJson(full);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to export profile');
+    }
+  };
+
+  const handleImportFilePicked = (file: File) => {
+    setImportError('');
+    setError('');
+    setSuccess('');
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      const text = evt.target?.result as string;
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch (e) {
+        setImportError(`Invalid JSON: ${e instanceof Error ? e.message : String(e)}`);
+        return;
+      }
+
+      const validated = validateProfileJson(parsed);
+      if (!validated.ok) {
+        setImportError(validated.reason);
+        return;
+      }
+
+      await tryImport(validated.profile);
+    };
+    reader.onerror = () => {
+      setImportError(`Could not read file: ${reader.error?.message ?? 'unknown error'}`);
+    };
+    reader.readAsText(file);
+  };
+
+  const tryImport = async (profile: TranslationProfile) => {
+    const result = await createProfileWithStatus(profile);
+    if (result.status === 201) {
+      setSuccess(`Imported "${result.profile.name}"`);
+      setPendingImport(null);
+      setRenameValue('');
+      await loadProfiles();
+      return;
+    }
+    if (result.status === 409) {
+      setPendingImport(profile);
+      setRenameValue(`${profile.name}-imported`);
+      setImportError('');
+      return;
+    }
+    setImportError(result.message || `Import failed: HTTP ${result.status}`);
+  };
+
+  const handleRenameConfirm = async () => {
+    if (!pendingImport) return;
+    const next = renameValue.trim();
+    if (!next) {
+      setImportError('Name cannot be empty');
+      return;
+    }
+    await tryImport({ ...pendingImport, name: next });
+  };
+
+  const handleRenameCancel = () => {
+    setPendingImport(null);
+    setRenameValue('');
+    setImportError('');
+  };
+
   return (
     <div className="flex flex-col h-full bg-surface">
       <TopBar breadcrumb="Translation Profiles" />
@@ -102,14 +190,75 @@ function TranslationProfilesPage() {
           <div className="lg:col-span-4 space-y-3">
             <div className="flex justify-between items-center mb-2">
               <h2 className="text-xs font-bold uppercase tracking-widest">Profiles</h2>
-              <button
-                onClick={handleNew}
-                className="text-[10px] font-bold text-primary uppercase tracking-wider hover:underline flex items-center gap-1"
-              >
-                <span className="material-symbols-outlined text-sm">add</span>
-                New
-              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  aria-label="Import"
+                  className="text-[10px] font-bold text-primary uppercase tracking-wider hover:underline flex items-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-sm" aria-hidden="true">upload</span>
+                  Import
+                </button>
+                <button
+                  onClick={handleNew}
+                  className="text-[10px] font-bold text-primary uppercase tracking-wider hover:underline flex items-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-sm" aria-hidden="true">add</span>
+                  New
+                </button>
+              </div>
             </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json,application/json"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleImportFilePicked(file);
+                e.target.value = ''; // allow re-selecting the same file
+              }}
+            />
+            {importError && (
+              <div className="bg-error/10 border border-error/30 text-error text-xs p-3 rounded-lg flex items-start gap-2">
+                <span className="material-symbols-outlined text-sm">error</span>
+                <span className="flex-1 break-words">{importError}</span>
+                <button onClick={() => setImportError('')} aria-label="Dismiss import error">
+                  <span className="material-symbols-outlined text-sm">close</span>
+                </button>
+              </div>
+            )}
+            {pendingImport && (
+              <div className="bg-primary/5 border border-primary/30 rounded-lg p-3 space-y-2">
+                <p className="text-[10px] text-zinc-500 uppercase tracking-wider">
+                  Name already exists. Pick a new name to import as:
+                </p>
+                <label className="block">
+                  <span className="sr-only">Rename profile</span>
+                  <input
+                    type="text"
+                    aria-label="Rename profile"
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-1 focus:ring-primary"
+                  />
+                </label>
+                <div className="flex gap-2 justify-end">
+                  <button
+                    onClick={handleRenameCancel}
+                    className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider hover:underline"
+                  >
+                    Cancel rename
+                  </button>
+                  <button
+                    onClick={handleRenameConfirm}
+                    className="text-[10px] font-bold text-primary uppercase tracking-wider hover:underline"
+                  >
+                    Confirm
+                  </button>
+                </div>
+              </div>
+            )}
             {profiles.length === 0 && (
               <p className="text-xs text-zinc-500">No profiles yet. Create one to get started.</p>
             )}
@@ -158,6 +307,12 @@ function TranslationProfilesPage() {
                           className="text-[10px] font-bold text-primary uppercase tracking-wider hover:underline"
                         >
                           Edit
+                        </button>
+                        <button
+                          onClick={handleExport}
+                          className="text-[10px] font-bold text-primary uppercase tracking-wider hover:underline"
+                        >
+                          Export
                         </button>
                         <button
                           onClick={() => handleDelete(selectedName)}
