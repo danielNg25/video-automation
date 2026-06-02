@@ -101,9 +101,24 @@ Two new affordances and one inline rename form:
 
    The form lives inline (no modal) to keep the implementation surface small and consistent with how Edit currently swaps the right pane.
 
-### `ui-app/src/api/client.ts` — no change
+### `ui-app/src/api/client.ts` — one small addition
 
-Confirmed: `getProfile(name)`, `createProfile(profile)`, `updateProfile(name, profile)`, `deleteProfileApi(name)`, and `getProfiles()` all already exist and are exported. Nothing to add.
+`getProfile(name)`, `createProfile(profile)`, `updateProfile(name, profile)`, `deleteProfileApi(name)`, and `getProfiles()` all already exist and are exported. The export path uses `getProfile` as-is.
+
+The import path needs to distinguish HTTP 409 (name conflict — triggers the rename form) from other failures (display as a generic error). The existing `createProfile` helper goes through a shared `request()` wrapper that throws an `Error` with just the response body — the status code is lost, and detecting 409 would require substring-matching the BE's error wording. To keep that coupling out, add one sibling helper:
+
+```ts
+export type CreateProfileResult =
+  | { status: 201; profile: TranslationProfile }
+  | { status: 409; message: string }
+  | { status: number; message: string };
+
+export async function createProfileWithStatus(
+  profile: TranslationProfile,
+): Promise<CreateProfileResult>;
+```
+
+Behaviour: same POST as `createProfile`, but returns `{ status, profile }` on 201 or `{ status, message }` on any non-2xx. Unwraps FastAPI's `{ detail: '...' }` body so callers see the human message; falls back to raw text if the body isn't JSON. The existing `createProfile` stays untouched (still used by the page's Save flow).
 
 ## Data flow
 
@@ -200,7 +215,7 @@ If `TranslationProfiles.test.tsx` doesn't exist, create it with a minimal `rende
 - New: `ui-app/src/utils/__tests__/profileJson.test.ts` (~90 lines, 8 tests).
 - Modified: `ui-app/src/pages/TranslationProfiles.tsx` — Export + Import buttons, hidden file input, inline rename form, import-error state. Net ~80 lines.
 - New or modified: `ui-app/src/pages/__tests__/TranslationProfiles.test.tsx` — 9 component tests covering the export + import flows.
-- Unchanged: `ui-app/src/api/client.ts` — `getProfile`, `createProfile`, etc. already exist.
+- Modified: `ui-app/src/api/client.ts` — append one helper `createProfileWithStatus` (status-aware POST). The existing `createProfile` stays as-is.
 - Docs: `CHANGELOG.md`, `README.md`.
 
 ## Out of scope (future ideas, not in this PR)
