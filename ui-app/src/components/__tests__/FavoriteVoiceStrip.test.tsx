@@ -132,7 +132,8 @@ describe('FavoriteVoiceStrip', () => {
 
   it('pencil click opens prompt and fires onRename with the trimmed value', () => {
     const onRename = vi.fn();
-    vi.stubGlobal('prompt', vi.fn(() => '  Renamed  '));
+    const promptMock = vi.fn(() => '  Renamed  ');
+    vi.stubGlobal('prompt', promptMock);
     render(
       <FavoriteVoiceStrip
         favorites={[fav()]}
@@ -145,6 +146,7 @@ describe('FavoriteVoiceStrip', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: /rename vi-VN-Wavenet-A/i }));
     expect(onRename).toHaveBeenCalledWith(fav(), 'Renamed');
+    expect(promptMock).toHaveBeenCalledWith('Nickname (leave blank to clear)', '');
     vi.unstubAllGlobals();
   });
 

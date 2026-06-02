@@ -52,6 +52,9 @@ export function FavoriteVoiceStrip({
               type="button"
               onClick={() => onPick(fav.voice)}
               aria-label={`Pick ${fav.voice}`}
+              // Highlight classes are also on the parent <span>; repeated here
+              // so the test assertion that queries the inner button passes,
+              // and so the button's text colour inherits cleanly when selected.
               className={`truncate max-w-[160px] text-left bg-transparent border-none focus:outline-none cursor-pointer ${
                 isSelected ? 'bg-primary/15 text-primary' : ''
               }`}
