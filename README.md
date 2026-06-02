@@ -644,6 +644,17 @@ douyin-automation/
 
 ---
 
+### Translation Profile Export / Import (2026-05-31)
+
+> Move a translation profile between machines via plain JSON download/upload. See [`docs/superpowers/specs/2026-05-31-translation-profile-export-import-design.md`](docs/superpowers/specs/2026-05-31-translation-profile-export-import-design.md) and [`docs/superpowers/plans/2026-05-31-translation-profile-export-import.md`](docs/superpowers/plans/2026-05-31-translation-profile-export-import.md).
+
+- [x] **Task 1** — `ui-app/src/utils/profileJson.ts`: `validateProfileJson` narrows an `unknown` JSON to a `TranslationProfile` or returns a human-readable reason for the first failing field; `downloadProfileJson` builds a `Blob`, synthesises a hidden `<a download>`, clicks it, revokes the URL on the next tick. 8 unit tests.
+- [x] **Task 2** — `createProfileWithStatus` in `ui-app/src/api/client.ts`: status-aware sibling of `createProfile` so the import flow can branch on 409 without parsing error text. Returns `{ status: 201, profile }` or `{ status: number, message }`; unwraps FastAPI's `{ detail: '...' }` payload.
+- [x] **Task 3** — Page wire-up: Export button next to Edit/Delete (right pane), Import button next to New (left pane) with hidden file input. 409 from the BE pops an inline rename form pre-filled with `{name}-imported`; Confirm re-posts, Cancel discards. Parse/validation/HTTP errors surface as an inline banner above the profile list. 9 component tests.
+- [x] **Task 4** — CHANGELOG + README updates.
+
+---
+
 ### One-Time Setup Checklist
 
 - [ ] Docker installed, Douyin API container running
