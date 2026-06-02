@@ -138,7 +138,11 @@ function TranslationProfilesPage() {
         return;
       }
 
-      await tryImport(validated.profile);
+      try {
+        await tryImport(validated.profile);
+      } catch (err) {
+        setImportError(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
     };
     reader.onerror = () => {
       setImportError(`Could not read file: ${reader.error?.message ?? 'unknown error'}`);
@@ -151,6 +155,7 @@ function TranslationProfilesPage() {
     if (result.status === 201) {
       setSuccess(`Imported "${result.profile.name}"`);
       setPendingImport(null);
+      setRenameValue('');
       await loadProfiles();
       setSelectedName(result.profile.name);
       setProfileDraft(result.profile);
@@ -174,7 +179,11 @@ function TranslationProfilesPage() {
       setImportError('Name cannot be empty');
       return;
     }
-    await tryImport({ ...pendingImport, name: next });
+    try {
+      await tryImport({ ...pendingImport, name: next });
+    } catch (err) {
+      setImportError(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   };
 
   const handleRenameCancel = () => {

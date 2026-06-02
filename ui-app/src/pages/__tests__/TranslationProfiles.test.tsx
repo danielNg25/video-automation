@@ -86,6 +86,8 @@ describe('TranslationProfiles — Export', () => {
 });
 
 describe('TranslationProfiles — Import', () => {
+  // Finds the single hidden file input on the Translation Profiles page.
+  // If a future page adds another file picker, narrow this selector.
   function pickFile(contents: string, filename = 'profile.json'): void {
     const input = document.querySelector<HTMLInputElement>('input[type="file"]');
     if (!input) throw new Error('file input not found');
@@ -144,11 +146,10 @@ describe('TranslationProfiles — Import', () => {
         expect.objectContaining({ name: 'fresh-vi' }),
       );
     });
-    // The imported profile lands in the list (post-refresh) AND in the
-    // right-pane detail (auto-selected). findAllByText returns >=1 match
-    // for both cases.
+    // After import the name appears in BOTH the list entry and the
+    // auto-selected right-pane name label. >= 2 verifies both placements.
     const matches = await screen.findAllByText('fresh-vi');
-    expect(matches.length).toBeGreaterThanOrEqual(1);
+    expect(matches.length).toBeGreaterThanOrEqual(2);
   });
 
   it('409 shows the rename form with default suffix', async () => {
