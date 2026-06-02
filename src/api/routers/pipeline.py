@@ -171,7 +171,7 @@ async def _run_full_pipeline(
             "subtitle_style": subtitle_style,
         }
 
-        result = await pipeline.process_single(url, platforms, options, emit)
+        result = await pipeline.process_single(url, options, emit)
 
         if result.get("status") == "done":
             task.status = "completed"
