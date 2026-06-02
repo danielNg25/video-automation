@@ -620,6 +620,17 @@ douyin-automation/
 
 ---
 
+### Auto-save shortened-dub SRT (2026-05-31)
+
+> Closes the loop on the dub-shortening pipeline. See [`docs/superpowers/specs/2026-05-31-auto-save-shortened-srt-design.md`](docs/superpowers/specs/2026-05-31-auto-save-shortened-srt-design.md) and [`docs/superpowers/plans/2026-05-31-auto-save-shortened-srt.md`](docs/superpowers/plans/2026-05-31-auto-save-shortened-srt.md).
+
+- [x] **Task 1** — `src/tts/shortened_srt.py`: `split_sentence_to_segments` + `build_shortened_srt` pure helpers (largest-remainder allocation). 13 unit tests covering single-segment passthrough, proportional split, unbalanced segments, more-segments-than-words, empty input, empty originals, the build-srt assembly, missing-key skips, and out-of-range-index skips.
+- [x] **Task 2** — `src/api/versions.py::import_segments_as_version`: bytes-free entry point that writes pre-parsed segments through the existing version-snapshot machinery. Calls `ensure_migrated` so callers don't need to. 3 new tests.
+- [x] **Task 3** — Wire the auto-save into `run_tts_track`: try-block after the existing `.plan.json` write, builds the shortened SRT from `sentence_plan`, saves as `dub: {provider}/{voice}`. Snapshot failures are warning-logged and swallowed. 3 integration tests.
+- [x] **Task 4** — CHANGELOG + README updates.
+
+---
+
 ### One-Time Setup Checklist
 
 - [ ] Docker installed, Douyin API container running
