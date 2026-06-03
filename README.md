@@ -655,6 +655,17 @@ douyin-automation/
 
 ---
 
+### Subtitle cleanup: OCR dedup + translator __SKIP__ (2026-06-03)
+
+> Two narrow source-side fixes for translated subtitle quality. See [`docs/superpowers/specs/2026-06-03-subtitle-cleanup-design.md`](docs/superpowers/specs/2026-06-03-subtitle-cleanup-design.md) and [`docs/superpowers/plans/2026-06-03-subtitle-cleanup.md`](docs/superpowers/plans/2026-06-03-subtitle-cleanup.md).
+
+- [x] **Task 1** — `src/transcriber/ocr.py::_merge_consecutive_duplicates`: collapses runs of adjacent same-text OCR segments into one with spanning timing. Wired into `_build_segments_from_frames`'s final step. 8 unit tests.
+- [x] **Task 2** — `src/translator/llm.py`: `LLMTranslator.__init__` gains `skip_noise: bool = True`; `_build_system_prompt` conditionally appends the `__SKIP__` instruction; `translate_srt` filters SKIP entries before reassembly (exact-string match after `.strip().upper()`). 4 unit tests.
+- [x] **Task 3** — Factory + config wire-up: `get_translator` reads `translation.skip_noise` (default true); `config.example.yaml` documents the flag. 2 factory tests.
+- [x] **Task 4** — CHANGELOG + README updates.
+
+---
+
 ### One-Time Setup Checklist
 
 - [ ] Docker installed, Douyin API container running
