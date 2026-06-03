@@ -313,11 +313,18 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
         let newEnd: number;
         let insertAt: number;
 
-        if (afterIndex < 0 || prev.length === 0) {
+        if (afterIndex < 0 && prev.length === 0) {
           // Empty-list case: insert a row at t=0 with up to 2s duration.
           newStart = 0;
           const cap = playerState.duration > 0 ? playerState.duration : 2;
           newEnd = Math.min(2, cap);
+          insertAt = 0;
+        } else if (afterIndex < 0) {
+          // Prepend before the current first segment.
+          const firstStart = srtTimestampToSeconds(prev[0].startTime);
+          newStart = 0;
+          const room = firstStart - 0.1;
+          newEnd = room > 0.1 ? Math.min(2, room) : Math.min(2, Math.max(0.5, firstStart));
           insertAt = 0;
         } else {
           const afterSeg = prev[afterIndex];

@@ -666,6 +666,15 @@ douyin-automation/
 
 ---
 
+### Editor: add-subtitle-at-top button (2026-06-03)
+
+> Lets the user insert a row before the current first segment from the Editor's segment list.
+
+- [x] `ui-app/src/components/editor/SegmentList.tsx`: dashed-border button at the head of the list (mirrors the existing "+ Add subtitle" footer button) wired to `onAdd(-1)`; only renders when the list is non-empty.
+- [x] `ui-app/src/pages/videoDetail/EditorTab.tsx`: `handleAddSegment` now distinguishes empty-list (`afterIndex<0 && length===0`) from prepend (`afterIndex<0`, non-empty). Prepend timing is `[0, min(2, firstSegStart − 0.1)]`, falling back to `[0, min(2, max(0.5, firstSegStart))]` when there's no usable gap.
+
+---
+
 ### One-Time Setup Checklist
 
 - [ ] Docker installed, Douyin API container running
