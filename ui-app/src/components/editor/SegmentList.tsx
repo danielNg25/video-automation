@@ -146,6 +146,16 @@ export function SegmentList({
             </div>
           )}
 
+          {segments.length > 0 && (
+            <button
+              type="button"
+              onClick={() => onAdd(-1)}
+              className="w-full py-1.5 text-xs rounded-lg border border-dashed border-primary/40 text-primary/80 hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
+            >
+              + Add subtitle at top
+            </button>
+          )}
+
           {segments.map((seg, i) => {
           const isActive = i === activeIndex;
           const startSec = srtTimestampToSeconds(seg.startTime);
