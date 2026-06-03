@@ -24,6 +24,7 @@ def get_translator(config: dict) -> LLMTranslator:
         full_document_threshold=trans_cfg.get("full_document_threshold", 100),
         chunk_size=trans_cfg.get("chunk_size", 50),
         temperature=trans_cfg.get("temperature", 0.7),
+        skip_noise=trans_cfg.get("skip_noise", True),
     )
 
 

@@ -598,10 +598,18 @@ class OCRTranscriber(BaseTranscriber):
                     {"start": current_start, "end": end, "text": current_text}
                 )
 
-        logger.info(
-            f"OCR produced {len(segments)} segments from {len(frame_texts)} frames"
-        )
-        return segments
+        merged = _merge_consecutive_duplicates(segments)
+        if len(merged) < len(segments):
+            logger.info(
+                f"OCR produced {len(segments)} segments from {len(frame_texts)} frames; "
+                f"merged {len(segments) - len(merged)} consecutive-duplicate segments → "
+                f"{len(merged)} final"
+            )
+        else:
+            logger.info(
+                f"OCR produced {len(segments)} segments from {len(frame_texts)} frames"
+            )
+        return merged
 
     def _save_ocr_metadata(
         self,
@@ -703,3 +711,29 @@ class OCRTranscriber(BaseTranscriber):
         """Emit progress update if callback is set."""
         if self.progress_callback:
             self.progress_callback(progress, message)
+
+
+def _merge_consecutive_duplicates(segments: list[dict]) -> list[dict]:
+    """Collapse runs of consecutive segments whose text is identical
+    (after .strip()) into a single segment spanning start[first] to
+    end[last]. Non-adjacent duplicates (e.g. segment 3 and segment 11
+    both saying 'hello') are left alone — they're distinct spoken
+    moments.
+
+    Empty-text segments are left untouched; empty matching empty isn't
+    a meaningful duplicate.
+    """
+    if not segments:
+        return []
+
+    out: list[dict] = [dict(segments[0])]
+    for seg in segments[1:]:
+        last = out[-1]
+        cur_text = seg["text"].strip()
+        last_text = last["text"].strip()
+        if cur_text and cur_text == last_text:
+            # Extend the previous segment's end to swallow this one.
+            last["end"] = seg["end"]
+            continue
+        out.append(dict(seg))
+    return out

@@ -29,6 +29,7 @@ class LLMTranslator:
         full_document_threshold: int = 100,
         chunk_size: int = 50,
         temperature: float = 0.7,
+        skip_noise: bool = True,
     ):
         self.backend = backend
         self.model = model
@@ -38,6 +39,7 @@ class LLMTranslator:
         self.full_document_threshold = full_document_threshold
         self.chunk_size = chunk_size
         self.temperature = temperature
+        self.skip_noise = skip_noise
         self._client = None
 
     def _build_system_prompt(self, profile: TranslationProfile) -> str:
@@ -55,6 +57,18 @@ class LLMTranslator:
                 parts.append(f"  {profile.source_language}: {pair['source']}")
                 parts.append(f"  {profile.target_language}: {pair['target']}")
                 parts.append("")
+
+        if self.skip_noise:
+            parts.append("")
+            parts.append(
+                "Some inputs may be OCR noise — channel handles (e.g. '@user', "
+                "'抖音号: xyz'), watermark text, or random fragments that aren't "
+                "part of the actual subtitle. For those, output the literal "
+                "__SKIP__ (exactly, no quotes, no translation) as the entire "
+                "translation for that numbered line. Do NOT attempt to translate "
+                "watermarks or handles. Use the surrounding context to judge what "
+                "is real subtitle text vs noise."
+            )
 
         return "\n".join(parts)
 
@@ -537,9 +551,27 @@ class LLMTranslator:
                 translations[idx] = segments[idx]["text"]
                 logger.warning(f"Missing translation for segment {idx + 1}, using original")
 
+        # Drop segments the LLM marked as __SKIP__ (OCR noise). Comparison is
+        # case-insensitive and exact-string (substring matches are NOT
+        # dropped — preserves real content that happens to contain the
+        # token). Runs AFTER fill-missing so the warning log above doesn't
+        # spuriously fire for indices the LLM intentionally skipped.
+        skipped_indices: set[int] = set()
+        if self.skip_noise:
+            for idx, text in list(translations.items()):
+                if text.strip().upper() == "__SKIP__":
+                    skipped_indices.add(idx)
+                    del translations[idx]
+            if skipped_indices:
+                logger.info(
+                    f"Dropped {len(skipped_indices)} noise segments via __SKIP__ marker"
+                )
+
         # Reassemble all segments with translations
         translated_segments = []
         for i, seg in enumerate(segments):
+            if i in skipped_indices:
+                continue  # noise segment — drop from final SRT entirely
             translated_segments.append(
                 {
                     "start": seg["start"],

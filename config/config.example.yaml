@@ -19,6 +19,11 @@ translation:
     full_document_threshold: 100         # single LLM call up to this many segments
     chunk_size: 50                       # segments per chunk when exceeding threshold
     temperature: 0.7
+    # When true (default), the translator is instructed to mark OCR noise
+    # (watermarks, channel handles, stray fragments) with __SKIP__. Those
+    # segments are then dropped from the final SRT entirely. Set false if
+    # you find it removing legit content.
+    skip_noise: true
     default_profile: 'funny-casual-vi'
 
 # OCR Subtitle Extraction (RapidOCR / ONNX Runtime)
