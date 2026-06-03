@@ -5,6 +5,12 @@ import { TTSPreview } from '../components/TTSPreview';
 import { postDownload, getVideos, subscribeSSE, deleteVideo, getProfiles, postPipeline, getTTSProviders, getTTSVoices } from '../api/client';
 import type { VideoMetadata, TranslationProfileSummary, TTSProviderInfo, VoiceInfo } from '../api/types';
 import { loadApiKeys, loadLLMPrefs, saveLLMPrefs, storageGet, storageSet } from '../utils/storage';
+import {
+  GEMINI_TTS_MODELS,
+  DEFAULT_GEMINI_TTS_MODEL,
+  GEMINI_MODEL_STORAGE_KEY,
+} from '../constants/geminiModels';
+import type { GeminiTTSModelId } from '../constants/geminiModels';
 import { usePipelineStatus } from '../lib/pipelineStatus';
 import { PipelineStageTracker } from '../components/PipelineStageTracker';
 import { PipelineRunsTable } from '../components/PipelineRunsTable';
@@ -62,6 +68,12 @@ function PipelinePage() {
   const [underlayDb, setUnderlayDb] = useState(() => {
     const saved = parseFloat(storageGet('tts_underlay_db') || '');
     return Number.isFinite(saved) && saved >= -24 && saved <= 0 ? saved : -18;
+  });
+  const [geminiModel, setGeminiModel] = useState<GeminiTTSModelId>(() => {
+    const saved = storageGet(GEMINI_MODEL_STORAGE_KEY);
+    return (GEMINI_TTS_MODELS.map((m) => m.id) as string[]).includes(saved)
+      ? (saved as GeminiTTSModelId)
+      : DEFAULT_GEMINI_TTS_MODEL;
   });
   const [defaultsSaved, setDefaultsSaved] = useState(false);
 
@@ -230,6 +242,7 @@ function PipelinePage() {
     const ttsApiKeyVal =
       ttsProviderName === 'elevenlabs' ? apiKeys.elevenlabs :
       ttsProviderName === 'openai' ? apiKeys.openai :
+      ttsProviderName === 'gemini' ? apiKeys.gemini :
       ttsProviderName === 'google' ? apiKeys.google : '';
     // All providers now forward a voice override — use the per-provider key,
     // falling back to the in-memory selection if localStorage is empty.
@@ -564,6 +577,30 @@ function PipelinePage() {
                 )}
               </div>
             </div>
+
+            {/* Gemini model picker — only when Gemini provider is selected */}
+            {selectedTtsProvider === 'gemini' && (
+              <div>
+                <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold block mb-1.5">
+                  Gemini Model
+                </label>
+                <select
+                  value={geminiModel}
+                  onChange={(e) => {
+                    const m = e.target.value as GeminiTTSModelId;
+                    setGeminiModel(m);
+                    storageSet(GEMINI_MODEL_STORAGE_KEY, m);
+                  }}
+                  className="w-full bg-surface-container border-none text-xs text-on-surface h-10 px-3 rounded-lg focus:ring-1 focus:ring-primary"
+                >
+                  {GEMINI_TTS_MODELS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Inline voice preview, when a voice is selected */}
             {selectedVoiceId && (

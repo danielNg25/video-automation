@@ -23,6 +23,7 @@ export interface PostStandaloneDubOpts {
   apiKey?: string;
   llmApiKey?: string;
   llmBackend?: string;
+  model?: string;
 }
 
 export async function postStandaloneDub(
@@ -38,6 +39,7 @@ export async function postStandaloneDub(
   if (opts.apiKey) formData.append('api_key', opts.apiKey);
   if (opts.llmApiKey) formData.append('llm_api_key', opts.llmApiKey);
   if (opts.llmBackend) formData.append('llm_backend', opts.llmBackend);
+  if (opts.model) formData.append('model', opts.model);
 
   const r = await fetch('/api/standalone-dub', {
     method: 'POST',

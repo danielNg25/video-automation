@@ -7,6 +7,10 @@ import type { TTSAudioEntry } from '../../api/client';
 import type {
   TTSProviderInfo, VoiceInfo, VersionEntry,
 } from '../../api/types';
+import {
+  GEMINI_TTS_MODELS,
+  type GeminiTTSModelId,
+} from '../../constants/geminiModels';
 import { VersionPicker } from '../../components/dub/VersionPicker';
 import { FavoriteVoiceStrip } from '../../components/FavoriteVoiceStrip';
 import { FavoriteVoiceToggle } from '../../components/FavoriteVoiceToggle';
@@ -64,6 +68,9 @@ interface Props {
   // Shortening toggle
   enableShortening: boolean;
   onChangeEnableShortening: (next: boolean) => void;
+  // Gemini model picker (only rendered when selectedTtsProvider === 'gemini')
+  geminiModel: GeminiTTSModelId;
+  onChangeGeminiModel: (m: GeminiTTSModelId) => void;
 }
 
 export function DubTab(props: Props) {
@@ -77,6 +84,7 @@ export function DubTab(props: Props) {
     ttsLanguage, onChangeTtsLanguage, availableTtsLanguages,
     playbackSpeed, onChangePlaybackSpeed,
     enableShortening, onChangeEnableShortening,
+    geminiModel, onChangeGeminiModel,
     underlayDb, onChangeUnderlayDb,
     isGeneratingTts, ttsProgress, ttsGenerated, ttsError,
     ttsList, onReloadTtsList, onGenerate,
@@ -153,6 +161,24 @@ export function DubTab(props: Props) {
           </select>
         </div>
       </div>
+
+      {/* Gemini model picker — only when Gemini provider is selected */}
+      {selectedTtsProvider === 'gemini' && (
+        <div>
+          <label className="text-[10px] text-zinc-500 uppercase tracking-tighter block mb-1">Gemini Model</label>
+          <select
+            value={geminiModel}
+            onChange={(e) => onChangeGeminiModel(e.target.value as GeminiTTSModelId)}
+            className="w-full bg-surface-container-highest border-none text-xs text-on-surface py-2 px-3 rounded focus:ring-0"
+          >
+            {GEMINI_TTS_MODELS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* API key warning for paid providers */}
       {providerInfo?.requires_key && !ttsApiKey && (

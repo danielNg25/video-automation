@@ -10,6 +10,12 @@ import {
 import type { StandaloneDubEntry } from '../api/standaloneDub';
 import type { TTSProviderInfo, VoiceInfo } from '../api/types';
 import { loadApiKeys, loadLLMPrefs, storageGet, storageSet } from '../utils/storage';
+import {
+  GEMINI_TTS_MODELS,
+  DEFAULT_GEMINI_TTS_MODEL,
+  GEMINI_MODEL_STORAGE_KEY,
+} from '../constants/geminiModels';
+import type { GeminiTTSModelId } from '../constants/geminiModels';
 import { FavoriteVoiceStrip } from '../components/FavoriteVoiceStrip';
 import { FavoriteVoiceToggle } from '../components/FavoriteVoiceToggle';
 import {
@@ -73,6 +79,12 @@ export function DubStudioPage() {
   const [voiceId, setVoiceId] = useState<string>(
     () => storageGet(SK.voiceId(storageGet(SK.provider) || 'google')),
   );
+  const [geminiModel, setGeminiModel] = useState<GeminiTTSModelId>(() => {
+    const saved = storageGet(GEMINI_MODEL_STORAGE_KEY);
+    return (GEMINI_TTS_MODELS.map((m) => m.id) as string[]).includes(saved)
+      ? (saved as GeminiTTSModelId)
+      : DEFAULT_GEMINI_TTS_MODEL;
+  });
 
   // ── provider / voice lists ─────────────────────────────────────────────────
   const [providers, setProviders] = useState<TTSProviderInfo[]>([]);
@@ -239,6 +251,7 @@ export function DubStudioPage() {
         apiKey: effectiveApiKey,
         llmApiKey: llmPrefs.backend !== '' ? (apiKeys[llmPrefs.backend as keyof typeof apiKeys] || undefined) : undefined,
         llmBackend: llmPrefs.backend || undefined,
+        model: provider === 'gemini' ? geminiModel : undefined,
       });
       setActiveTaskId(resp.task_id);
 
@@ -392,6 +405,28 @@ export function DubStudioPage() {
               </select>
             </div>
           </div>
+
+          {/* Gemini model picker — only when Gemini provider is selected */}
+          {provider === 'gemini' && (
+            <div>
+              <label className={labelClass}>Gemini Model</label>
+              <select
+                className={selectClass}
+                value={geminiModel}
+                onChange={(e) => {
+                  const m = e.target.value as GeminiTTSModelId;
+                  setGeminiModel(m);
+                  storageSet(GEMINI_MODEL_STORAGE_KEY, m);
+                }}
+              >
+                {GEMINI_TTS_MODELS.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Voice */}
           <div>
