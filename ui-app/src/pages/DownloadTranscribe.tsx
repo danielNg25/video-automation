@@ -255,6 +255,7 @@ function PipelinePage() {
       tts_voice: ttsVoiceId || undefined,
       tts_language: targetLang,
       tts_api_key: ttsApiKeyVal || undefined,
+      ...(ttsProviderName === 'gemini' ? { tts_model: geminiModel } : {}),
       llm_api_key: llmApiKey || undefined,
       llm_backend: llmBackend || undefined,
       playback_speed: playbackSpeed,
@@ -521,6 +522,29 @@ function PipelinePage() {
                   <option value="id">Indonesian (id)</option>
                 </select>
               </div>
+              {/* Gemini model picker — only when Gemini provider is selected */}
+              {selectedTtsProvider === 'gemini' && (
+                <div>
+                  <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold block mb-1.5">
+                    Gemini Model
+                  </label>
+                  <select
+                    value={geminiModel}
+                    onChange={(e) => {
+                      const m = e.target.value as GeminiTTSModelId;
+                      setGeminiModel(m);
+                      storageSet(GEMINI_MODEL_STORAGE_KEY, m);
+                    }}
+                    className="w-full bg-surface-container border-none text-xs text-on-surface h-10 px-3 rounded-lg focus:ring-1 focus:ring-primary"
+                  >
+                    {GEMINI_TTS_MODELS.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold block mb-1.5">
                   Voice
@@ -578,30 +602,6 @@ function PipelinePage() {
               </div>
             </div>
 
-            {/* Gemini model picker — only when Gemini provider is selected */}
-            {selectedTtsProvider === 'gemini' && (
-              <div>
-                <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold block mb-1.5">
-                  Gemini Model
-                </label>
-                <select
-                  value={geminiModel}
-                  onChange={(e) => {
-                    const m = e.target.value as GeminiTTSModelId;
-                    setGeminiModel(m);
-                    storageSet(GEMINI_MODEL_STORAGE_KEY, m);
-                  }}
-                  className="w-full bg-surface-container border-none text-xs text-on-surface h-10 px-3 rounded-lg focus:ring-1 focus:ring-primary"
-                >
-                  {GEMINI_TTS_MODELS.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
             {/* Inline voice preview, when a voice is selected */}
             {selectedVoiceId && (
               <div className="flex items-center gap-3">
@@ -612,6 +612,7 @@ function PipelinePage() {
                   pitch="+0Hz"
                   apiKey={ttsApiKey || undefined}
                   playbackSpeed={playbackSpeed}
+                  model={selectedTtsProvider === 'gemini' ? geminiModel : undefined}
                   sampleText={
                     targetTtsLanguage === 'en'
                       ? 'Hello everyone, today we will talk about a very interesting topic.'

@@ -66,6 +66,7 @@ class FullPipelineRequest(BaseModel):
     tts_voice: str | None = None
     tts_language: str = "vi"
     tts_api_key: str | None = None  # ElevenLabs/OpenAI/Google API key
+    tts_model: str | None = None  # Gemini model ID; ignored by other providers
     llm_api_key: str | None = None  # for the TTS-shortening LLM
     llm_backend: str | None = None  # deepseek, openai, anthropic
     playback_speed: float | None = None  # fixed dub playback speed
@@ -93,6 +94,7 @@ class BatchPipelineRequest(BaseModel):
     tts_voice: str | None = None
     tts_language: str = "vi"
     tts_api_key: str | None = None
+    tts_model: str | None = None  # Gemini model ID; ignored by other providers
     llm_api_key: str | None = None
     llm_backend: str | None = None
     playback_speed: float | None = None

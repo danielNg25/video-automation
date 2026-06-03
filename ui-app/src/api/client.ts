@@ -210,6 +210,7 @@ export function postPipeline(
     tts_voice?: string;
     tts_language?: string;
     tts_api_key?: string;
+    tts_model?: string;
     llm_api_key?: string;
     llm_backend?: string;
     playback_speed?: number;
@@ -229,6 +230,7 @@ export function postPipeline(
       tts_voice: ttsOverrides?.tts_voice ?? null,
       tts_language: ttsOverrides?.tts_language ?? 'vi',
       tts_api_key: ttsOverrides?.tts_api_key ?? null,
+      tts_model: ttsOverrides?.tts_model ?? null,
       llm_api_key: ttsOverrides?.llm_api_key ?? null,
       llm_backend: ttsOverrides?.llm_backend ?? null,
       playback_speed: ttsOverrides?.playback_speed ?? null,
