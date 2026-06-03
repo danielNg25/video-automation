@@ -499,7 +499,7 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
               ))}
             </select>
 
-            {/* Dub audio */}
+            {/* Dub audio + download */}
             <select
               value={previewDub}
               onChange={(e) => setPreviewDub(e.target.value)}
@@ -515,6 +515,17 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
                 </option>
               ))}
             </select>
+            {previewDub && activeLang && (
+              <a
+                href={getTTSAudioUrl(videoId, activeLang, previewDub)}
+                download={previewDub}
+                className="inline-flex items-center justify-center h-8 w-8 rounded-md text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
+                title={`Download ${previewDub}`}
+                aria-label="Download selected dub"
+              >
+                <span className="material-symbols-outlined text-[18px]">download</span>
+              </a>
+            )}
 
             {/* Video quality */}
             <select
