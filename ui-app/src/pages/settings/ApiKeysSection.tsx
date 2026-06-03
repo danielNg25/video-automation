@@ -7,6 +7,7 @@ const PROVIDERS: { key: string; label: string; placeholder: string; icon: string
   { key: 'deepseek', label: 'DeepSeek', placeholder: 'sk-...', icon: 'model_training' },
   { key: 'elevenlabs', label: 'ElevenLabs', placeholder: 'xi-...', icon: 'record_voice_over' },
   { key: 'google', label: 'Google Cloud', placeholder: 'AIza...', icon: 'cloud' },
+  { key: 'gemini', label: 'Gemini (Google AI Studio)', placeholder: 'AIza...', icon: 'auto_awesome' },
 ];
 
 export function ApiKeysSection() {

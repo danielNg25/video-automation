@@ -36,6 +36,7 @@ export interface LLMApiKeys {
   deepseek: string;
   elevenlabs: string;
   google: string;
+  gemini: string;
   [key: string]: string;
 }
 
@@ -46,6 +47,7 @@ export function loadApiKeys(): LLMApiKeys {
     deepseek: storageGet('api_key_deepseek'),
     elevenlabs: storageGet('api_key_elevenlabs'),
     google: storageGet('api_key_google'),
+    gemini: storageGet('api_key_gemini'),
   };
 }
 
