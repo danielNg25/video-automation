@@ -241,13 +241,22 @@ class Pipeline:
                     pct = 0.60 + (current / max(total, 1)) * 0.40
                     emit("tts", pct, message)
 
+                # Inject Gemini model into config when the provider is gemini
+                # and the caller supplied a model override via tts_model.
+                tts_config = self.config
+                tts_model = options.get("tts_model")
+                if tts_provider == "gemini" and tts_model:
+                    tts_section = dict(tts_config.get("tts", {}))
+                    tts_section["gemini_model"] = tts_model
+                    tts_config = {**tts_config, "tts": tts_section}
+
                 tts_result = await run_tts_track(
                     video_id=video_id,
                     video_path=video_path,
                     language=tts_lang,
                     voice=tts_voice,
                     provider=tts_provider,
-                    config=self.config,
+                    config=tts_config,
                     canonical_duration=canonical_duration,
                     api_key_override=options.get("tts_api_key"),
                     llm_api_key=options.get("llm_api_key"),

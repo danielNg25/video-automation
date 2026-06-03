@@ -15,6 +15,12 @@ import type {
   TTSProviderInfo, VoiceInfo,
 } from '../api/types';
 import { loadApiKeys, loadLLMPrefs, storageGet, storageSet } from '../utils/storage';
+import {
+  GEMINI_TTS_MODELS,
+  DEFAULT_GEMINI_TTS_MODEL,
+  GEMINI_MODEL_STORAGE_KEY,
+} from '../constants/geminiModels';
+import type { GeminiTTSModelId } from '../constants/geminiModels';
 import { useVersions } from '../hooks/useVersions';
 
 type Tab = 'editor' | 'translate' | 'dub';
@@ -90,6 +96,12 @@ function VideoDetailPage() {
     return stored === null ? true : stored === 'true';
   });
   const [useDirectVoice, setUseDirectVoice] = useState(false);
+  const [geminiModel, setGeminiModel] = useState<GeminiTTSModelId>(() => {
+    const saved = storageGet(GEMINI_MODEL_STORAGE_KEY);
+    return (GEMINI_TTS_MODELS.map((m) => m.id) as string[]).includes(saved)
+      ? (saved as GeminiTTSModelId)
+      : DEFAULT_GEMINI_TTS_MODEL;
+  });
   const [isGeneratingTts, setIsGeneratingTts] = useState(false);
   const [ttsProgress, setTtsProgress] = useState({ pct: 0, message: '' });
   const [ttsGenerated, setTtsGenerated] = useState(false);
@@ -279,6 +291,7 @@ function VideoDetailPage() {
         llmBackend || undefined,
         playbackSpeed,
         underlayDb,
+        selectedTtsProvider === 'gemini' ? geminiModel : undefined,
       );
       setTtsTaskId(task_id);
       const es = subscribeSSE(task_id, (eventType, data) => {
@@ -480,6 +493,11 @@ function VideoDetailPage() {
             llmApiKey={llmApiKey}
             enableShortening={enableShortening}
             onChangeEnableShortening={setEnableShortening}
+            geminiModel={geminiModel}
+            onChangeGeminiModel={(m) => {
+              setGeminiModel(m);
+              storageSet(GEMINI_MODEL_STORAGE_KEY, m);
+            }}
           />
         )}
 

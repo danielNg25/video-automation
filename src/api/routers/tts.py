@@ -16,6 +16,7 @@ from src.api.models import (
     TTSRequest,
     VoiceInfo,
 )
+from src.tts import get_tts_provider
 
 _FNAME_RE = re.compile(
     r"^(?P<video_id>[^_]+)_(?P<lang>[^_]+)_(?P<version>v\d+|draft)_(?P<provider>[^_]+)_(?P<voice>.+)\.wav$"
@@ -34,6 +35,13 @@ async def start_tts(request: TTSRequest):
     """Generate TTS audio track for a video."""
     tm = get_task_manager()
     config = get_config()
+
+    # Inject per-request Gemini model into the local config dict so the
+    # downstream factory call (inside tm.run_tts) sees the right model.
+    if request.provider == "gemini" and request.model:
+        tts_section = dict(config.get("tts", {}))
+        tts_section["gemini_model"] = request.model
+        config = {**config, "tts": tts_section}
 
     video = tm.video_index.get(request.video_id)
     if not video:
@@ -64,8 +72,6 @@ async def list_voices(language: str | None = None, provider: str = "google", api
     """List available TTS voices, optionally filtered by language."""
     config = get_config()
 
-    from src.tts import get_tts_provider
-
     # Inject per-request API key for paid providers
     effective_config = config
     if api_key:
@@ -83,6 +89,7 @@ async def list_providers():
     """List available TTS providers."""
     return [
         {"id": "google", "name": "Google Cloud TTS", "free": False, "requires_key": True},
+        {"id": "gemini", "name": "Gemini TTS", "free": False, "requires_key": True},
         {"id": "elevenlabs", "name": "ElevenLabs", "free": False, "requires_key": True},
         {"id": "openai", "name": "OpenAI TTS", "free": False, "requires_key": True},
     ]
@@ -188,14 +195,18 @@ async def preview_tts(request: TTSPreviewRequest):
     """Generate a quick TTS preview for a text snippet."""
     config = get_config()
 
-    from src.tts import get_tts_provider
-
     # Inject per-request API key for paid providers
     effective_config = config
     if request.api_key:
         tts_section = dict(config.get("tts", {}))
         tts_section[f"{request.provider}_api_key"] = request.api_key
         effective_config = {**config, "tts": tts_section}
+
+    # Inject per-request Gemini model so the factory passes it to GeminiTTSProvider.
+    if request.provider == "gemini" and request.model:
+        tts_section = dict(effective_config.get("tts", {}))
+        tts_section["gemini_model"] = request.model
+        effective_config = {**effective_config, "tts": tts_section}
 
     tts = get_tts_provider(effective_config, provider=request.provider)
     try:
@@ -219,6 +230,7 @@ async def preview_tts(request: TTSPreviewRequest):
     if request.playback_speed and abs(request.playback_speed - 1.0) > 0.01:
         import subprocess
         import tempfile
+
         from src.tts.assembler import _build_atempo_filter
 
         try:

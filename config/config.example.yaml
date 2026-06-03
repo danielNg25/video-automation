@@ -46,11 +46,16 @@ ocr:
 # TTS Dubbing
 tts:
     enabled: true
-    default_provider: google            # "google", "openai", "elevenlabs"
+    default_provider: google            # "google", "gemini", "openai", "elevenlabs"
     # Underlay level (dB) for the original-language audio mixed under the dub.
     # 0 disables the underlay entirely. Default: -12 (audible undertone).
     # Request bodies / UI settings override this value.
     underlay_db: ${TTS_UNDERLAY_DB:--18.0}
+    # Gemini Audio Generation API (separate from Google Cloud TTS).
+    # Uses a Google AI Studio API key — enable the Generative Language
+    # API in your AI Studio project, NOT the same key as Google Cloud TTS.
+    # API keys are typically supplied per-request via the UI/Settings instead.
+    gemini_model: 'gemini-2.5-flash-preview-tts'
 
 # Pipeline
 pipeline:

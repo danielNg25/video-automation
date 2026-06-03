@@ -10,6 +10,7 @@ interface TTSPreviewProps {
   apiKey?: string;
   playbackSpeed?: number;
   underlayDb?: number;   // forwarded as underlay_db on the preview request; default 0 (off)
+  model?: string;        // Gemini model ID; ignored by other providers
 }
 
 export function TTSPreview({
@@ -21,6 +22,7 @@ export function TTSPreview({
   apiKey,
   playbackSpeed = 1.0,
   underlayDb = 0,
+  model,
 }: TTSPreviewProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -40,7 +42,7 @@ export function TTSPreview({
     setError('');
 
     try {
-      const blob = await postTTSPreview(sampleText, voice, provider, speed, pitch, apiKey, playbackSpeed, underlayDb);
+      const blob = await postTTSPreview(sampleText, voice, provider, speed, pitch, apiKey, playbackSpeed, underlayDb, model);
       // Clean up previous URL
       if (urlRef.current) URL.revokeObjectURL(urlRef.current);
 
@@ -63,7 +65,7 @@ export function TTSPreview({
     } finally {
       setIsLoading(false);
     }
-  }, [voice, provider, speed, pitch, sampleText, apiKey, playbackSpeed, underlayDb, isPlaying]);
+  }, [voice, provider, speed, pitch, sampleText, apiKey, playbackSpeed, underlayDb, model, isPlaying]);
 
   return (
     <div className="flex items-center gap-2">

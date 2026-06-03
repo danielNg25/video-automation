@@ -210,6 +210,7 @@ export function postPipeline(
     tts_voice?: string;
     tts_language?: string;
     tts_api_key?: string;
+    tts_model?: string;
     llm_api_key?: string;
     llm_backend?: string;
     playback_speed?: number;
@@ -229,6 +230,7 @@ export function postPipeline(
       tts_voice: ttsOverrides?.tts_voice ?? null,
       tts_language: ttsOverrides?.tts_language ?? 'vi',
       tts_api_key: ttsOverrides?.tts_api_key ?? null,
+      tts_model: ttsOverrides?.tts_model ?? null,
       llm_api_key: ttsOverrides?.llm_api_key ?? null,
       llm_backend: ttsOverrides?.llm_backend ?? null,
       playback_speed: ttsOverrides?.playback_speed ?? null,
@@ -265,6 +267,7 @@ export function postTTS(
   llmBackend?: string,
   playbackSpeed?: number,
   underlayDb?: number,
+  model?: string,
 ): Promise<TaskResponse> {
   return request('/tts', {
     method: 'POST',
@@ -281,6 +284,7 @@ export function postTTS(
       llm_backend: llmBackend ?? null,
       playback_speed: playbackSpeed ?? null,
       underlay_db: underlayDb ?? null,
+      ...(model ? { model } : {}),
     }),
   });
 }
@@ -328,11 +332,12 @@ export async function postTTSPreview(
   apiKey?: string,
   playbackSpeed: number = 1.0,
   underlayDb: number = 0,
+  model?: string,
 ): Promise<Blob> {
   const res = await fetch(`${BASE}/tts/preview`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, voice, provider, speed, pitch, api_key: apiKey ?? null, playback_speed: playbackSpeed, underlay_db: underlayDb }),
+    body: JSON.stringify({ text, voice, provider, speed, pitch, api_key: apiKey ?? null, playback_speed: playbackSpeed, underlay_db: underlayDb, ...(model ? { model } : {}) }),
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => '');

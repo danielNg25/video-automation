@@ -675,6 +675,20 @@ douyin-automation/
 
 ---
 
+### Gemini TTS provider (2026-06-03)
+
+> New TTS provider that calls Google's Gemini Audio Generation API (`generativelanguage.googleapis.com`), distinct from the existing Cloud TTS provider. Lets the user pick a Gemini model tier (Flash / Pro). See [`docs/superpowers/specs/2026-06-03-gemini-tts-provider-design.md`](docs/superpowers/specs/2026-06-03-gemini-tts-provider-design.md) and [`docs/superpowers/plans/2026-06-03-gemini-tts-provider.md`](docs/superpowers/plans/2026-06-03-gemini-tts-provider.md).
+
+- [x] **Task 1** — `src/tts/gemini_tts.py::GeminiTTSProvider`: POSTs to `v1beta/models/{model}:generateContent`, wraps the 24 kHz mono PCM response to WAV in-memory. Static 29-name prebuilt voice list. 5 unit tests.
+- [x] **Task 2** — Factory wire-up in `src/tts/__init__.py` reads `gemini_api_key` + `gemini_model` from the `tts` config section. 2 factory tests.
+- [x] **Task 3** — API: `TTSRequest` / `TTSPreviewRequest` gain optional `model` field; `/api/tts/providers` returns the new entry; `start_tts` and `preview_tts` thread `gemini_model` into the config dict. 3 router tests.
+- [x] **Task 4** — `config/config.example.yaml` documents `tts.gemini_model`.
+- [x] **Task 5** — Settings page gains "Gemini (Google AI Studio)" API key field, stored as `apiKeys.gemini`.
+- [x] **Task 6** — Shared `ui-app/src/constants/geminiModels.ts` constant + provider-aware model dropdown on DubTab / DubStudio / Pipeline (only shown when provider === 'gemini'). `model` plumbed end-to-end through `/api/tts`, `/api/standalone-dub`, and `/api/pipeline` paths so all three pages reach `GeminiTTSProvider` with the right model.
+- [x] **Task 7** — CHANGELOG + README updates.
+
+---
+
 ### One-Time Setup Checklist
 
 - [ ] Docker installed, Douyin API container running

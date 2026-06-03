@@ -744,6 +744,7 @@ class TaskManager:
         api_key_override: str | None = None,
         llm_api_key: str | None = None,
         llm_backend: str | None = None,
+        model: str | None = None,
     ):
         """Generate a dub WAV from uploaded SRT bytes alone.
 
@@ -798,6 +799,12 @@ class TaskManager:
                 tts_cfg = dict(effective_config.get("tts", {}))
                 tts_cfg[f"{provider}_api_key"] = api_key_override
                 effective_config["tts"] = tts_cfg
+
+            # Inject Gemini model override when the provider is gemini.
+            if provider == "gemini" and model:
+                tts_cfg = dict(effective_config.get("tts", {}))
+                tts_cfg["gemini_model"] = model
+                effective_config = {**effective_config, "tts": tts_cfg}
 
             # 5. Build provider + translator (translator may be None if
             # no LLM key is configured; that's fine — Stage 0 and 3 fall
