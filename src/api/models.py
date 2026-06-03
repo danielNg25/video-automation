@@ -233,7 +233,8 @@ class TranslationProfileSummary(BaseModel):
 class TTSRequest(BaseModel):
     video_id: str
     language: str = "vi"
-    provider: str = "google"  # google | elevenlabs | openai (FE picks)
+    provider: str = "google"  # google | elevenlabs | openai | gemini (FE picks)
+    model: str | None = None  # Gemini model ID; ignored by other providers
     voice: str                # provider's voice ID (e.g. "vi-VN-Wavenet-A"); required
     api_key: str | None = None  # per-request API key for paid providers
     llm_api_key: str | None = None  # API key for LLM text shortening
@@ -251,6 +252,7 @@ class TTSPreviewRequest(BaseModel):
     text: str
     voice: str = "vi-VN-HoaiMyNeural"
     provider: str = "google"
+    model: str | None = None  # Gemini model ID; ignored by other providers
     # Apply atempo at this speed to the previewed sample so the user can
     # hear what the dub will sound like at their chosen playback speed.
     playback_speed: float = 1.0
