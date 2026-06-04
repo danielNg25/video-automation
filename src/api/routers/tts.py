@@ -17,6 +17,7 @@ from src.api.models import (
     VoiceInfo,
 )
 from src.tts import get_tts_provider
+from src.utils.filename import safe_filename
 
 _FNAME_RE = re.compile(
     r"^(?P<video_id>[^_]+)_(?P<lang>[^_]+)_(?P<version>v\d+|draft)_(?P<provider>[^_]+)_(?P<voice>.+)\.wav$"
@@ -183,10 +184,22 @@ async def get_tts_audio(video_id: str, language: str, file: str | None = None):
             status_code=404,
             detail=f"TTS audio not found for {video_id}/{language}",
         )
+    # Suggested download name uses the video's edited title; version/voice
+    # are kept as a suffix so multiple dubs for the same video don't collide
+    # in the user's Downloads folder.
+    tm = get_task_manager()
+    video = tm.video_index.get(video_id)
+    base = safe_filename(video.title if video else None, video_id)
+    parsed = _parse_dub_filename(audio_path.name)
+    if parsed:
+        suffix = f".{parsed['version']}.{parsed['voice']}"
+    else:
+        suffix = ""
+    download_name = f"{base}.{language}{suffix}.wav"
     return FileResponse(
         path=str(audio_path),
         media_type="audio/wav",
-        filename=audio_path.name,
+        filename=download_name,
     )
 
 
