@@ -6,6 +6,7 @@ import type { SubtitleStyle } from '../../components/editor/SubtitleOverlay';
 import { Timeline } from '../../components/editor/Timeline';
 import { useVideoPlayer } from '../../hooks/useVideoPlayer';
 import { srtTimestampToSeconds, secondsToSrtTimestamp } from '../../utils/srtTime';
+import { safeFilename } from '../../utils/filename';
 import {
   getVideo,
   getSrt,
@@ -150,6 +151,13 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
   const isDirty = useMemo(
     () => JSON.stringify(segments) !== JSON.stringify(originalSegments),
     [segments, originalSegments],
+  );
+
+  // Suggested download base — matches the BE's safe_filename() so the
+  // `<a download>` attribute agrees with the Content-Disposition header.
+  const downloadBase = useMemo(
+    () => safeFilename(video?.title, videoId),
+    [video?.title, videoId],
   );
 
   // Refresh video metadata. `initialVideo` seeds the state synchronously so the
@@ -522,17 +530,23 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
                 </option>
               ))}
             </select>
-            {previewDub && activeLang && (
+            {previewDub && activeLang && (() => {
+              const sel = dubsForLang.find((d) => d.filename === previewDub);
+              const dubName = sel
+                ? `${downloadBase}.${activeLang}.${sel.version}.${sel.voice}.wav`
+                : previewDub;
+              return (
               <a
                 href={getTTSAudioUrl(videoId, activeLang, previewDub)}
-                download={previewDub}
+                download={dubName}
                 className="inline-flex items-center justify-center h-8 w-8 rounded-md text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
-                title={`Download ${previewDub}`}
+                title={`Download ${dubName}`}
                 aria-label="Download selected dub"
               >
                 <span className="material-symbols-outlined text-[18px]">download</span>
               </a>
-            )}
+              );
+            })()}
 
             {/* Video quality */}
             <select
@@ -574,7 +588,7 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
 
             <a
               href={getRawVideoUrl(videoId)}
-              download={`${videoId}.mp4`}
+              download={`${downloadBase}.mp4`}
               className={toolbarBtnClass()}
               title="Download original video"
             >
@@ -587,8 +601,8 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
                 href={getSrtDownloadUrl(videoId, activeLang, previewVersion)}
                 download={
                   previewVersion === 'draft'
-                    ? `${videoId}_${activeLang}.srt`
-                    : `${videoId}_${activeLang}_${previewVersion}.srt`
+                    ? `${downloadBase}.${activeLang}.srt`
+                    : `${downloadBase}.${activeLang}.${previewVersion}.srt`
                 }
                 className={toolbarBtnClass()}
                 title={`Download ${activeLang.toUpperCase()} SRT (${isPreview ? previewVersion : 'working draft'})`}

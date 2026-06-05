@@ -12,6 +12,7 @@ from src.api.deps import get_config, get_task_manager
 from src.api.models import SrtResponse, SubtitleSegment, TaskResponse, TranscribeRequest
 from src.processor.subtitle import parse_srt
 from src.transcriber.base import BaseTranscriber
+from src.utils.filename import safe_filename
 
 router = APIRouter()
 
@@ -146,13 +147,16 @@ async def download_srt(video_id: str, language: str = "zh", version: str = "draf
             detail=f"SRT file not found for {video_id} ({language}, version={version})",
         )
 
-    # Include the version in the suggested filename when it's a snapshot
-    # so the user can tell v1.srt and v2.srt apart in their Downloads.
-    suffix = "" if version == "draft" else f"_{version}"
-    download_name = f"{video_id}_{language}{suffix}.srt"
+    # Suggested download name: "<edited title>.<lang>[.<version>].srt".
+    # Falls back to video_id when the title is missing/empty. The version
+    # suffix is only added for snapshots so a draft download stays clean.
+    tm = get_task_manager()
+    video = tm.video_index.get(video_id)
+    base = safe_filename(video.title if video else None, video_id)
+    suffix = "" if version == "draft" else f".{version}"
+    download_name = f"{base}.{language}{suffix}.srt"
     return FileResponse(
         path=str(srt_path),
         media_type="text/plain",
         filename=download_name,
-        headers={"Content-Disposition": f'attachment; filename="{download_name}"'},
     )

@@ -18,6 +18,7 @@ from src.processor.subtitle import (
     _timestamp_to_seconds,
     write_srt,
 )
+from src.utils.filename import safe_filename
 
 router = APIRouter()
 
@@ -34,11 +35,11 @@ async def serve_raw_video(video_id: str):
     if not video_path.exists():
         raise HTTPException(status_code=404, detail="Video file not found on disk")
 
+    download_name = f"{safe_filename(video.title, video_id)}.mp4"
     return FileResponse(
         path=str(video_path),
         media_type="video/mp4",
-        filename=f"{video_id}.mp4",
-        headers={"Content-Disposition": f'attachment; filename="{video_id}.mp4"'},
+        filename=download_name,
     )
 
 
