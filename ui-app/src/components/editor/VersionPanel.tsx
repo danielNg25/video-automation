@@ -19,7 +19,9 @@ export function VersionPanel({ versions, onRename, onDelete }: VersionPanelProps
       <div className="text-[10px] uppercase tracking-wider text-on-surface-variant mb-2">
         Saved versions
       </div>
-      <div className="flex flex-col gap-1">
+      {/* Caps the list height so a long version history doesn't push up
+          into the segment list above. Scrolls internally beyond ~7 entries. */}
+      <div className="flex flex-col gap-1 max-h-56 overflow-y-auto pr-1">
         {versions.map((v) => (
           <div
             key={v.id}
