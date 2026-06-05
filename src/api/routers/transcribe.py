@@ -133,15 +133,23 @@ async def get_srt(
 
 
 @router.get("/api/videos/{video_id}/srt/download")
-async def download_srt(video_id: str, language: str = "zh"):
-    """Download SRT file as attachment (always serves the working draft)."""
-    srt_path = _resolve_srt_path(video_id, language)
+async def download_srt(video_id: str, language: str = "zh", version: str = "draft"):
+    """Download the SRT file as an attachment.
+
+    `version='draft'` (default) → the working-draft SRT.
+    `version='v1'`, `'v2'`, ... → the corresponding snapshot.
+    """
+    srt_path = _resolve_srt_path(video_id, language, version)
     if not srt_path.exists():
         raise HTTPException(
-            status_code=404, detail=f"SRT file not found for {video_id} ({language})"
+            status_code=404,
+            detail=f"SRT file not found for {video_id} ({language}, version={version})",
         )
 
-    download_name = f"{video_id}_{language}.srt"
+    # Include the version in the suggested filename when it's a snapshot
+    # so the user can tell v1.srt and v2.srt apart in their Downloads.
+    suffix = "" if version == "draft" else f"_{version}"
+    download_name = f"{video_id}_{language}{suffix}.srt"
     return FileResponse(
         path=str(srt_path),
         media_type="text/plain",

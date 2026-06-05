@@ -584,10 +584,14 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
 
             {activeLang && (
               <a
-                href={getSrtDownloadUrl(videoId, activeLang)}
-                download={`${videoId}_${activeLang}.srt`}
+                href={getSrtDownloadUrl(videoId, activeLang, previewVersion)}
+                download={
+                  previewVersion === 'draft'
+                    ? `${videoId}_${activeLang}.srt`
+                    : `${videoId}_${activeLang}_${previewVersion}.srt`
+                }
                 className={toolbarBtnClass()}
-                title={`Download ${activeLang.toUpperCase()} SRT (working draft)`}
+                title={`Download ${activeLang.toUpperCase()} SRT (${isPreview ? previewVersion : 'working draft'})`}
               >
                 <span className="material-symbols-outlined text-[16px]">download</span>
                 <span>SRT</span>
