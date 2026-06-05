@@ -158,7 +158,15 @@ function PipelinePage() {
     loadVideos();
     getProfiles().then(p => {
       setProfiles(p);
-      setSelectedProfile(prev => prev || (p.length > 0 ? p[0].name : ''));
+      // Drop a stale localStorage selection that no longer exists on the
+      // server (e.g. the user deleted the profile). Without this, the
+      // stored name reaches the BE which 404s with "Translation profile
+      // not found: config/translation_profiles/<name>.yaml".
+      setSelectedProfile(prev => {
+        if (prev && p.some(prof => prof.name === prev)) return prev;
+        if (prev) storageSet('pipeline_default_translation_profile', '');
+        return p.length > 0 ? p[0].name : '';
+      });
     }).catch(() => {});
     getTTSProviders().then(setTtsProviders).catch(() => {});
   }, [loadVideos]);
