@@ -351,8 +351,8 @@ export async function postTTSPreview(
 
 // --- Download URLs ---
 
-export function getSrtDownloadUrl(videoId: string, language: string): string {
-  return `${BASE}/videos/${videoId}/srt/download?language=${language}`;
+export function getSrtDownloadUrl(videoId: string, language: string, version: string = 'draft'): string {
+  return `${BASE}/videos/${videoId}/srt/download?language=${language}&version=${version}`;
 }
 
 // --- System info ---
