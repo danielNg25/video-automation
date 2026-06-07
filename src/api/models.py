@@ -11,6 +11,11 @@ class DownloadRequest(BaseModel):
     url: str
 
 
+class BatchDownloadRequest(BaseModel):
+    urls: list[str]
+    concurrency: int = 3
+
+
 class TranscribeRequest(BaseModel):
     video_id: str
     language: str = "zh"

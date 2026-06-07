@@ -32,6 +32,20 @@ export function postDownload(url: string): Promise<TaskResponse> {
   });
 }
 
+export interface BatchDownloadResponse {
+  batch_id: string;
+  task_ids: string[];
+  total: number;
+}
+
+export function postDownloadBatch(urls: string[], concurrency: number = 3): Promise<BatchDownloadResponse> {
+  return request('/download/batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ urls, concurrency }),
+  });
+}
+
 export function getVideos(status?: string): Promise<VideoListResponse> {
   const params = status ? `?status=${status}` : '';
   return request(`/videos${params}`);
