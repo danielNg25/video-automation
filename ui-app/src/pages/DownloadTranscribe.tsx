@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
 import { TTSPreview } from '../components/TTSPreview';
-import { postDownload, getVideos, subscribeSSE, deleteVideo, getProfiles, postPipeline, getTTSProviders, getTTSVoices } from '../api/client';
+import { postDownload, postDownloadBatch, getVideos, subscribeSSE, deleteVideo, getProfiles, postPipeline, getTTSProviders, getTTSVoices } from '../api/client';
 import type { VideoMetadata, TranslationProfileSummary, TTSProviderInfo, VoiceInfo } from '../api/types';
 import { loadApiKeys, loadLLMPrefs, saveLLMPrefs, storageGet, storageSet } from '../utils/storage';
 import {
@@ -32,6 +32,14 @@ function PipelinePage() {
 
   // Download-only state
   const [isDownloading, setIsDownloading] = useState(false);
+
+  // Pipeline-vs-download mode toggle. When true, the form skips
+  // transcribe / translate / TTS and only fetches the source videos.
+  // Persisted so the user's preference survives reloads.
+  const [downloadOnly, setDownloadOnly] = useState(() => storageGet('pipeline_download_only') === '1');
+  useEffect(() => {
+    storageSet('pipeline_download_only', downloadOnly ? '1' : '');
+  }, [downloadOnly]);
 
   // Batch state
   const [batchConcurrency, setBatchConcurrency] = useState(3);
@@ -239,6 +247,19 @@ function PipelinePage() {
     } catch (e) { setIsDownloading(false); setError(e instanceof Error ? e.message : 'Download failed'); }
   };
 
+  const handleBatchDownload = async () => {
+    if (parsedUrls.length === 0) return;
+    setError('');
+    setBatchResults({ completed: 0, total: parsedUrls.length });
+    try {
+      const { batch_id } = await postDownloadBatch(parsedUrls, batchConcurrency);
+      startPolling(batch_id, 'batch');
+    } catch (e) {
+      setBatchResults(null);
+      setError(e instanceof Error ? e.message : 'Batch download failed');
+    }
+  };
+
   const handlePipeline = async () => {
     if (parsedUrls.length === 0) return;
 
@@ -320,26 +341,53 @@ function PipelinePage() {
         {/* URL Input — supports single or multiple URLs */}
         <div className="bg-surface-container-low rounded-xl shadow-sm overflow-hidden">
           <div className="p-4 space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-primary text-lg">link</span>
                 <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">
                   {isBatchMode ? `${parsedUrls.length} URLs` : 'Source URL'}
                 </span>
               </div>
-              {isBatchMode && (
-                <div className="flex items-center gap-3">
-                  <span className="text-[10px] font-mono text-zinc-500 uppercase">Concurrency</span>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="range" min={1} max={5} value={batchConcurrency}
-                      onChange={(e) => setBatchConcurrency(Number(e.target.value))}
-                      className="w-20 accent-primary h-1 bg-surface-container-highest rounded-lg appearance-none cursor-pointer"
-                    />
-                    <span className="text-xs font-mono text-primary w-4 text-center">{batchConcurrency}</span>
+              <div className="flex items-center gap-4">
+                {isBatchMode && (
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] font-mono text-zinc-500 uppercase">Concurrency</span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range" min={1} max={5} value={batchConcurrency}
+                        onChange={(e) => setBatchConcurrency(Number(e.target.value))}
+                        className="w-20 accent-primary h-1 bg-surface-container-highest rounded-lg appearance-none cursor-pointer"
+                      />
+                      <span className="text-xs font-mono text-primary w-4 text-center">{batchConcurrency}</span>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+                {/* Download-only toggle — when on, skips transcribe/translate/TTS
+                    and just fetches the source videos. */}
+                <label
+                  className="flex items-center gap-2 cursor-pointer select-none"
+                  title="When on, only fetch the Douyin video. Skip transcribe, translate, and TTS."
+                >
+                  <span className="text-[10px] font-mono text-zinc-500 uppercase">Download only</span>
+                  <input
+                    type="checkbox"
+                    checked={downloadOnly}
+                    onChange={(e) => setDownloadOnly(e.target.checked)}
+                    className="sr-only"
+                  />
+                  <span
+                    className={`relative inline-block w-8 h-4 rounded-full transition-colors ${
+                      downloadOnly ? 'bg-primary' : 'bg-surface-container-highest'
+                    }`}
+                  >
+                    <span
+                      className={`absolute left-0.5 top-0.5 w-3 h-3 rounded-full transition-transform ${
+                        downloadOnly ? 'translate-x-4 bg-on-primary-fixed' : 'bg-on-surface-variant'
+                      }`}
+                    />
+                  </span>
+                </label>
+              </div>
             </div>
 
             <textarea
@@ -384,17 +432,36 @@ function PipelinePage() {
             )}
 
             <div className="flex gap-2">
-              <button onClick={handlePipeline} disabled={isDownloading || isPipeline || parsedUrls.length === 0}
-                className="bg-primary text-on-primary-fixed px-8 py-3 rounded-lg font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:brightness-110 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-                <span className="material-symbols-outlined text-sm">{isBatchMode ? 'playlist_play' : 'rocket_launch'}</span>
-                <span>{isPipeline ? 'Running...' : isBatchMode ? `Process ${parsedUrls.length} Videos` : 'Run Pipeline'}</span>
-              </button>
-              {!isBatchMode && (
-                <button onClick={handleDownload} disabled={isDownloading || isPipeline || !url}
-                  className="bg-surface-container-highest text-on-surface px-5 py-3 rounded-lg font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:bg-surface-container-high active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-                  <span className="material-symbols-outlined text-sm">download</span>
-                  <span>{isDownloading ? 'Downloading...' : 'Download Only'}</span>
+              {downloadOnly ? (
+                <button
+                  onClick={isBatchMode ? handleBatchDownload : handleDownload}
+                  disabled={isDownloading || isPipeline || parsedUrls.length === 0}
+                  className="bg-primary text-on-primary-fixed px-8 py-3 rounded-lg font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:brightness-110 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <span className="material-symbols-outlined text-sm">{isBatchMode ? 'cloud_download' : 'download'}</span>
+                  <span>
+                    {isDownloading || isPipeline
+                      ? 'Downloading...'
+                      : isBatchMode
+                        ? `Download ${parsedUrls.length} Videos`
+                        : 'Download Video'}
+                  </span>
                 </button>
+              ) : (
+                <>
+                  <button onClick={handlePipeline} disabled={isDownloading || isPipeline || parsedUrls.length === 0}
+                    className="bg-primary text-on-primary-fixed px-8 py-3 rounded-lg font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:brightness-110 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span className="material-symbols-outlined text-sm">{isBatchMode ? 'playlist_play' : 'rocket_launch'}</span>
+                    <span>{isPipeline ? 'Running...' : isBatchMode ? `Process ${parsedUrls.length} Videos` : 'Run Pipeline'}</span>
+                  </button>
+                  {!isBatchMode && (
+                    <button onClick={handleDownload} disabled={isDownloading || isPipeline || !url}
+                      className="bg-surface-container-highest text-on-surface px-5 py-3 rounded-lg font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:bg-surface-container-high active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                      <span className="material-symbols-outlined text-sm">download</span>
+                      <span>{isDownloading ? 'Downloading...' : 'Download Only'}</span>
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -427,8 +494,10 @@ function PipelinePage() {
           </div>
         )}
 
-        {/* Configuration card — hidden during a pipeline run */}
-        {!isPipeline && (
+        {/* Configuration card — hidden during a pipeline run, and hidden
+            entirely in download-only mode (translation/TTS settings don't
+            apply when we're only fetching the source video). */}
+        {!isPipeline && !downloadOnly && (
           <div className="bg-surface-container-low rounded-xl p-5 space-y-4">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-primary text-lg">tune</span>
