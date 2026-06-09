@@ -7,7 +7,7 @@ import { DubTab } from './videoDetail/DubTab';
 import {
   getVideo, postTranslate, postTTS, cancelTask,
   subscribeSSE, getProfiles, getTTSProviders, getTTSVoices,
-  getTTSList,
+  getTTSList, updateVideoTitle,
 } from '../api/client';
 import type { TTSAudioEntry } from '../api/client';
 import type {
@@ -40,6 +40,57 @@ function migrateLegacyVoiceId(currentProvider: string): void {
     localStorage.setItem(targetKey, legacy);
   }
   localStorage.removeItem('tts_voice_id');
+}
+
+/** Click-to-rename title chip. Lives in the TopBar so the page header
+ *  serves double duty: title display + rename affordance. */
+function EditableTitleChip({
+  value,
+  fallback,
+  onCommit,
+}: {
+  value: string;
+  fallback: string;
+  onCommit: (next: string) => void | Promise<void>;
+}) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const display = value || fallback;
+  if (editing !== null) {
+    return (
+      <input
+        autoFocus
+        value={editing}
+        onChange={(e) => setEditing(e.target.value)}
+        onBlur={() => {
+          const next = editing.trim();
+          setEditing(null);
+          if (next && next !== value) void onCommit(next);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            (e.target as HTMLInputElement).blur();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            setEditing(null);
+          }
+        }}
+        className="h-7 px-2 text-sm font-semibold bg-surface-container-high text-on-surface rounded border-none focus:outline-none focus:ring-2 focus:ring-primary max-w-[480px] w-full"
+        placeholder={fallback}
+      />
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(display)}
+      className="inline-flex items-center gap-1.5 text-sm font-semibold text-on-surface hover:text-on-surface-variant transition-colors truncate max-w-[480px] group"
+      title={`Click to rename · ID: ${fallback}`}
+    >
+      <span className="truncate">{display}</span>
+      <span className="material-symbols-outlined text-[14px] text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity shrink-0">edit</span>
+    </button>
+  );
 }
 
 function VideoDetailPage() {
@@ -371,9 +422,23 @@ function VideoDetailPage() {
 
   return (
     <div className="flex flex-col h-full bg-surface">
-      {/* No breadcrumb here — the editable title chip inside EditorTab
-          serves as the canonical title display + rename affordance. */}
-      <TopBar />
+      <TopBar
+        breadcrumb={
+          <EditableTitleChip
+            value={videoMeta?.title ?? ''}
+            fallback={videoId ?? ''}
+            onCommit={async (next) => {
+              if (!videoId) return;
+              try {
+                const updated = await updateVideoTitle(videoId, next);
+                setVideoMeta(updated);
+              } catch (err) {
+                console.warn('[VideoDetail] rename failed', err);
+              }
+            }}
+          />
+        }
+      />
 
       <div className="px-6 pt-4">
         <div className="flex gap-1 bg-surface-container-lowest p-1 rounded-md w-fit">

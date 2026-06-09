@@ -1,5 +1,8 @@
 interface TopBarProps {
-  readonly breadcrumb?: string;
+  /** A plain page label (rendered with the default text style) OR a
+   *  custom React node (rendered as-is — caller owns styling).
+   *  Used for richer headers like the per-video editable title chip. */
+  readonly breadcrumb?: React.ReactNode;
   readonly showSearch?: boolean;
   readonly searchPlaceholder?: string;
 }
@@ -22,9 +25,9 @@ export const TopBar: React.FC<TopBarProps> = ({
             placeholder={searchPlaceholder}
           />
         </div>
-      ) : breadcrumb ? (
+      ) : typeof breadcrumb === 'string' ? (
         <span className="text-sm font-semibold text-on-surface-variant tracking-tight">{breadcrumb}</span>
-      ) : null}
+      ) : breadcrumb ?? null}
     </header>
   );
 };

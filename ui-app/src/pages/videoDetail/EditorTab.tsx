@@ -16,7 +16,6 @@ import {
   getProxyVideoUrl,
   getTTSList,
   getTTSAudioUrl,
-  updateVideoTitle,
 } from '../../api/client';
 import type { TTSAudioEntry } from '../../api/client';
 import type {
@@ -102,25 +101,6 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
-
-  // Title-rename state. `editingTitle` is null when not editing; otherwise the
-  // string value of the in-progress edit. Save on Enter or blur; revert on Esc.
-  const [editingTitle, setEditingTitle] = useState<string | null>(null);
-  const handleStartRename = useCallback(() => {
-    setEditingTitle(video?.title ?? videoId);
-  }, [video?.title, videoId]);
-  const handleCommitRename = useCallback(async () => {
-    if (editingTitle === null) return;
-    const next = editingTitle.trim();
-    setEditingTitle(null);
-    if (!next || next === (video?.title ?? videoId)) return;
-    try {
-      const updated = await updateVideoTitle(videoId, next);
-      setVideo(updated);
-    } catch (err) {
-      console.warn('[EditorTab] rename failed', err);
-    }
-  }, [editingTitle, video, videoId]);
 
   const handleImport = useCallback(async (file: File) => {
     setImporting(true);
@@ -446,46 +426,12 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-hidden flex flex-col">
-        {/* Header — stacked in three rows so each band reads cleanly on its
-            own: title, then preview/quality selects, then action buttons.
-            Replaces the previous single packed strip. */}
+        {/* Header — two rows: preview selects on top, action buttons below.
+            The editable title chip lives in the parent TopBar (see
+            VideoDetail.tsx → EditableTitleChip) so it doesn't eat a row
+            inside the editor body. */}
         <div className="flex flex-col gap-2 px-6 py-2.5 border-b border-outline-variant/10">
-          {/* Row 1 — Editable title. The parent TopBar no longer shows the
-              title (intentional dedup); this chip is the canonical display
-              + rename affordance. Click → input → Enter/blur to save. */}
-          <div className="flex items-center min-w-0">
-            {editingTitle !== null ? (
-              <input
-                autoFocus
-                value={editingTitle}
-                onChange={(e) => setEditingTitle(e.target.value)}
-                onBlur={handleCommitRename}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    void handleCommitRename();
-                  } else if (e.key === 'Escape') {
-                    e.preventDefault();
-                    setEditingTitle(null);
-                  }
-                }}
-                className="h-8 px-2.5 text-sm font-semibold bg-surface-container-high text-on-surface rounded-lg border-none focus:outline-none focus:ring-2 focus:ring-primary max-w-[420px] w-full"
-                placeholder={videoId}
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={handleStartRename}
-                className="h-8 px-2.5 inline-flex items-center gap-1.5 text-sm font-semibold text-on-surface rounded-lg hover:bg-surface-container-high transition-colors truncate max-w-[420px] group"
-                title={`Click to rename · ID: ${videoId}`}
-              >
-                <span className="truncate">{video?.title || videoId}</span>
-                <span className="material-symbols-outlined text-[14px] text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity shrink-0">edit</span>
-              </button>
-            )}
-          </div>
-
-          {/* Row 2 — Preview selects: language / subtitle version / dub.
+          {/* Row 1 — Preview selects: language / subtitle version / dub.
               Video quality lives here too — it tunes what you're previewing,
               not an action you take. */}
           <div className="flex items-center gap-2 flex-wrap">
@@ -558,7 +504,7 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
             </select>
           </div>
 
-          {/* Row 3 — Action buttons + save-status indicator. */}
+          {/* Row 2 — Action buttons + save-status indicator. */}
           <div className="flex items-center gap-2 flex-wrap">
             {(isDirty || saveStatus !== 'idle') && (
               <div className="flex items-center gap-2 pr-3 mr-1 border-r border-outline-variant/15">
