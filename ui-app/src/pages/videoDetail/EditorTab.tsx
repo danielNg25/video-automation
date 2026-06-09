@@ -16,7 +16,6 @@ import {
   getProxyVideoUrl,
   getTTSList,
   getTTSAudioUrl,
-  updateVideoTitle,
 } from '../../api/client';
 import type { TTSAudioEntry } from '../../api/client';
 import type {
@@ -25,6 +24,7 @@ import type {
   VersionEntry,
 } from '../../api/types';
 import { VersionPanel } from '../../components/editor/VersionPanel';
+import { DubPanel } from '../../components/editor/DubPanel';
 
 // Plain-text subtitle overlay style. The SubtitleOverlay component supports
 // the deleted styling UI's full ASS-spec style, but the refocused app only
@@ -101,25 +101,6 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
-
-  // Title-rename state. `editingTitle` is null when not editing; otherwise the
-  // string value of the in-progress edit. Save on Enter or blur; revert on Esc.
-  const [editingTitle, setEditingTitle] = useState<string | null>(null);
-  const handleStartRename = useCallback(() => {
-    setEditingTitle(video?.title ?? videoId);
-  }, [video?.title, videoId]);
-  const handleCommitRename = useCallback(async () => {
-    if (editingTitle === null) return;
-    const next = editingTitle.trim();
-    setEditingTitle(null);
-    if (!next || next === (video?.title ?? videoId)) return;
-    try {
-      const updated = await updateVideoTitle(videoId, next);
-      setVideo(updated);
-    } catch (err) {
-      console.warn('[EditorTab] rename failed', err);
-    }
-  }, [editingTitle, video, videoId]);
 
   const handleImport = useCallback(async (file: File) => {
     setImporting(true);
@@ -445,46 +426,25 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-hidden flex flex-col">
-        {/* Header with editor toolbar — all controls share the same h-8 shape so
-            the row reads as a single uniform strip instead of mixed-height
-            chips. Selects on the left (what you're looking at), action
-            buttons on the right (what you do with it). */}
-        <div className="flex items-center justify-between gap-3 px-6 py-2.5 border-b border-outline-variant/10 flex-wrap">
-          <div className="flex items-center gap-2 min-w-0">
-            {/* Editable video title. Click the chip to rename; the BE update
-                only changes the display name — the underlying video_id (and
-                all files keyed on it) stay the same. */}
-            {editingTitle !== null ? (
-              <input
-                autoFocus
-                value={editingTitle}
-                onChange={(e) => setEditingTitle(e.target.value)}
-                onBlur={handleCommitRename}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    void handleCommitRename();
-                  } else if (e.key === 'Escape') {
-                    e.preventDefault();
-                    setEditingTitle(null);
-                  }
-                }}
-                className="h-8 px-2.5 text-sm font-semibold bg-surface-container-high text-on-surface rounded-lg border-none focus:outline-none focus:ring-2 focus:ring-primary max-w-[280px]"
-                placeholder={videoId}
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={handleStartRename}
-                className="h-8 px-2.5 inline-flex items-center gap-1.5 text-sm font-semibold text-on-surface rounded-lg hover:bg-surface-container-high transition-colors truncate max-w-[280px] group"
-                title={`Click to rename · ID: ${videoId}`}
-              >
-                <span className="truncate">{video?.title || videoId}</span>
-                <span className="material-symbols-outlined text-[14px] text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity shrink-0">edit</span>
-              </button>
-            )}
+        {/* Preview banner — sits above the 2-column main area when active. */}
+        {/* (Original preview banner moved below the main flex declaration.) */}
 
-            {/* Language */}
+        {/* Main content: 2-column layout. The toolbar lives INSIDE the left
+            column so the right column (segment list) extends up to the same
+            top y-line as the selects row — no wasted space to the right of
+            the selects. */}
+        <div className="flex-1 overflow-hidden flex">
+          {/* Left: toolbar + Video + Timeline (60%) */}
+          <div className="w-[60%] flex flex-col overflow-hidden">
+            {/* Toolbar — two rows: preview selects on top, action buttons below.
+                The editable title chip lives in the parent TopBar (see
+                VideoDetail.tsx → EditableTitleChip) so it doesn't eat a row
+                inside the editor body. */}
+            <div className="flex flex-col gap-2 px-6 py-2.5 border-b border-outline-variant/10 shrink-0">
+              {/* Row 1 — Preview selects: language / subtitle version / dub.
+                  Video quality lives here too — it tunes what you're previewing,
+                  not an action you take. */}
+              <div className="flex items-center gap-2 flex-wrap">
             <select
               value={activeLang}
               onChange={(e) => onActiveLangChange(e.target.value)}
@@ -497,12 +457,10 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
                 </option>
               ))}
             </select>
-
-            {/* Subtitle version */}
             <select
               value={previewVersion}
               onChange={(e) => setPreviewVersion(e.target.value)}
-              className={toolbarSelectClass(isPreview ? 'amber' : 'neutral')}
+              className={`${toolbarSelectClass(isPreview ? 'amber' : 'neutral')} w-44`}
               title={isPreview ? `Editing ${previewVersion} — Save overwrites it` : 'Editing the working draft'}
               aria-label="Subtitle version"
             >
@@ -513,12 +471,10 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
                 </option>
               ))}
             </select>
-
-            {/* Dub audio + download */}
             <select
               value={previewDub}
               onChange={(e) => setPreviewDub(e.target.value)}
-              className={toolbarSelectClass(previewDub ? 'primary' : 'neutral')}
+              className={`${toolbarSelectClass(previewDub ? 'primary' : 'neutral')} w-44`}
               disabled={dubsForLang.length === 0}
               title={dubsForLang.length === 0 ? 'No dubs available for this language' : 'Play a generated dub instead of source audio'}
               aria-label="Dub audio"
@@ -536,19 +492,17 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
                 ? `${downloadBase}.${activeLang}.${sel.version}.${sel.voice}.wav`
                 : previewDub;
               return (
-              <a
-                href={getTTSAudioUrl(videoId, activeLang, previewDub)}
-                download={dubName}
-                className="inline-flex items-center justify-center h-8 w-8 rounded-md text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
-                title={`Download ${dubName}`}
-                aria-label="Download selected dub"
-              >
-                <span className="material-symbols-outlined text-[18px]">download</span>
-              </a>
+                <a
+                  href={getTTSAudioUrl(videoId, activeLang, previewDub)}
+                  download={dubName}
+                  className="inline-flex items-center justify-center h-8 w-8 rounded-md text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
+                  title={`Download ${dubName}`}
+                  aria-label="Download selected dub"
+                >
+                  <span className="material-symbols-outlined text-[18px]">download</span>
+                </a>
               );
             })()}
-
-            {/* Video quality */}
             <select
               value={useProxy ? '360p' : 'full'}
               onChange={(e) => { setUseProxy(e.target.value === '360p'); setVideoLoading(true); }}
@@ -560,9 +514,8 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
             </select>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Save-status indicator — only rendered when there's something
-                to say, so the row doesn't carry empty chrome at rest. */}
+          {/* Row 2 — Action buttons + save-status indicator. */}
+          <div className="flex items-center gap-2 flex-wrap">
             {(isDirty || saveStatus !== 'idle') && (
               <div className="flex items-center gap-2 pr-3 mr-1 border-r border-outline-variant/15">
                 {isDirty && (
@@ -585,7 +538,6 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
                 )}
               </div>
             )}
-
             <a
               href={getRawVideoUrl(videoId)}
               download={`${downloadBase}.mp4`}
@@ -595,7 +547,6 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
               <span className="material-symbols-outlined text-[16px]">download</span>
               <span>Video</span>
             </a>
-
             {activeLang && (
               <a
                 href={getSrtDownloadUrl(videoId, activeLang, previewVersion)}
@@ -611,7 +562,6 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
                 <span>SRT</span>
               </a>
             )}
-
             <input
               ref={fileInputRef}
               type="file"
@@ -636,7 +586,6 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
               </span>
               <span>{importing ? 'Importing…' : 'Import'}</span>
             </button>
-
             <button
               onClick={handleSave}
               disabled={!isDirty || saving}
@@ -648,7 +597,6 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
               </span>
               <span>{saving ? 'Saving…' : isPreview ? `Save to ${previewVersion}` : 'Save'}</span>
             </button>
-
             <button
               onClick={async () => {
                 if (saving) return;
@@ -667,69 +615,61 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
           </div>
         </div>
 
-        {/* Preview banner */}
-        {isPreview && (
-          <div className="flex items-center gap-2 px-6 py-1.5 bg-amber-500/10 border-b border-amber-400/20 text-[11px] text-amber-300">
-            <span className="material-symbols-outlined text-sm">edit_note</span>
-            Editing <span className="font-mono font-semibold">{previewVersion}</span> — Save will overwrite this version in place.
-            <button
-              type="button"
-              onClick={() => setPreviewVersion('draft')}
-              className="ml-auto underline hover:text-amber-200"
-            >
-              Switch to working draft
-            </button>
-          </div>
-        )}
+            {/* Preview banner — scoped to the left column so it doesn't push
+                the segment list down on the right. */}
+            {isPreview && (
+              <div className="flex items-center gap-2 px-6 py-1.5 bg-amber-500/10 border-b border-amber-400/20 text-[11px] text-amber-300 shrink-0">
+                <span className="material-symbols-outlined text-sm">edit_note</span>
+                Editing <span className="font-mono font-semibold">{previewVersion}</span> — Save will overwrite this version in place.
+                <button
+                  type="button"
+                  onClick={() => setPreviewVersion('draft')}
+                  className="ml-auto underline hover:text-amber-200"
+                >
+                  Switch to working draft
+                </button>
+              </div>
+            )}
 
-        {/* Main content: 2-column layout */}
-        <div className="flex-1 overflow-hidden flex">
-          {/* Left: Video + Timeline (60%) */}
-          <div className="w-[60%] flex flex-col p-4 gap-3 overflow-hidden">
-            <VideoPlayer
-              ref={videoRef}
-              src={videoSrc}
-              state={playerState}
-              controls={playerControls}
-              loading={videoLoading}
-              onLoadingChange={setVideoLoading}
-            >
-              <SubtitleOverlay
+            {/* Video + timeline — fills the remaining height of the left column. */}
+            <div className="flex-1 flex flex-col p-4 gap-3 overflow-hidden">
+              <VideoPlayer
+                ref={videoRef}
+                src={videoSrc}
+                state={playerState}
+                controls={playerControls}
+                loading={videoLoading}
+                onLoadingChange={setVideoLoading}
+              >
+                <SubtitleOverlay
+                  segments={segments}
+                  currentTime={playerState.currentTime}
+                  style={DEFAULT_OVERLAY_STYLE}
+                />
+              </VideoPlayer>
+
+              {/* Hidden synced dub audio. The <video> element is muted whenever a
+                  dub is selected; this element plays/pauses/seeks in lockstep. */}
+              <audio
+                ref={dubAudioRef}
+                src={previewDub && activeLang ? getTTSAudioUrl(videoId, activeLang, previewDub) : undefined}
+                preload="auto"
+                className="hidden"
+              />
+
+              <Timeline
                 segments={segments}
                 currentTime={playerState.currentTime}
-                style={DEFAULT_OVERLAY_STYLE}
+                duration={playerState.duration}
+                onSeek={playerControls.seek}
+                onResizeSegment={handleTimelineResize}
               />
-            </VideoPlayer>
-
-            {/* Hidden synced dub audio. The <video> element is muted whenever a
-                dub is selected; this element plays/pauses/seeks in lockstep. */}
-            <audio
-              ref={dubAudioRef}
-              src={previewDub && activeLang ? getTTSAudioUrl(videoId, activeLang, previewDub) : undefined}
-              preload="auto"
-              className="hidden"
-            />
-
-            <Timeline
-              segments={segments}
-              currentTime={playerState.currentTime}
-              duration={playerState.duration}
-              onSeek={playerControls.seek}
-              onResizeSegment={handleTimelineResize}
-            />
+            </div>
           </div>
 
-          {/* Right: Segments (40%) */}
+          {/* Right: Segments (40%) — the "Segments" header was removed so the
+              list aligns vertically with the version/dub pickers on the left. */}
           <div className="w-[40%] flex flex-col border-l border-outline-variant/10 overflow-hidden">
-            {/* Header */}
-            <div className="flex border-b border-outline-variant/10 px-4 py-2.5 items-center">
-              <span className="text-xs font-medium text-on-surface">Segments</span>
-              <div className="flex-1" />
-              <span className="font-mono text-[9px] text-on-surface-variant">
-                {segments.length} segments
-              </span>
-            </div>
-
             {/* Segment list */}
             <div className="flex-1 overflow-hidden p-4 flex flex-col">
               <SegmentList
@@ -755,6 +695,12 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
                 }}
                 buildDownloadUrl={(id) =>
                   activeLang ? getSrtDownloadUrl(videoId, activeLang, id) : null
+                }
+              />
+              <DubPanel
+                dubs={dubsForLang}
+                buildDownloadUrl={(filename) =>
+                  activeLang ? getTTSAudioUrl(videoId, activeLang, filename) : null
                 }
               />
             </div>
