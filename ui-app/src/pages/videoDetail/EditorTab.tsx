@@ -426,15 +426,25 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-hidden flex flex-col">
-        {/* Header — two rows: preview selects on top, action buttons below.
-            The editable title chip lives in the parent TopBar (see
-            VideoDetail.tsx → EditableTitleChip) so it doesn't eat a row
-            inside the editor body. */}
-        <div className="flex flex-col gap-2 px-6 py-2.5 border-b border-outline-variant/10">
-          {/* Row 1 — Preview selects: language / subtitle version / dub.
-              Video quality lives here too — it tunes what you're previewing,
-              not an action you take. */}
-          <div className="flex items-center gap-2 flex-wrap">
+        {/* Preview banner — sits above the 2-column main area when active. */}
+        {/* (Original preview banner moved below the main flex declaration.) */}
+
+        {/* Main content: 2-column layout. The toolbar lives INSIDE the left
+            column so the right column (segment list) extends up to the same
+            top y-line as the selects row — no wasted space to the right of
+            the selects. */}
+        <div className="flex-1 overflow-hidden flex">
+          {/* Left: toolbar + Video + Timeline (60%) */}
+          <div className="w-[60%] flex flex-col overflow-hidden">
+            {/* Toolbar — two rows: preview selects on top, action buttons below.
+                The editable title chip lives in the parent TopBar (see
+                VideoDetail.tsx → EditableTitleChip) so it doesn't eat a row
+                inside the editor body. */}
+            <div className="flex flex-col gap-2 px-6 py-2.5 border-b border-outline-variant/10 shrink-0">
+              {/* Row 1 — Preview selects: language / subtitle version / dub.
+                  Video quality lives here too — it tunes what you're previewing,
+                  not an action you take. */}
+              <div className="flex items-center gap-2 flex-wrap">
             <select
               value={activeLang}
               onChange={(e) => onActiveLangChange(e.target.value)}
@@ -605,56 +615,56 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
           </div>
         </div>
 
-        {/* Preview banner */}
-        {isPreview && (
-          <div className="flex items-center gap-2 px-6 py-1.5 bg-amber-500/10 border-b border-amber-400/20 text-[11px] text-amber-300">
-            <span className="material-symbols-outlined text-sm">edit_note</span>
-            Editing <span className="font-mono font-semibold">{previewVersion}</span> — Save will overwrite this version in place.
-            <button
-              type="button"
-              onClick={() => setPreviewVersion('draft')}
-              className="ml-auto underline hover:text-amber-200"
-            >
-              Switch to working draft
-            </button>
-          </div>
-        )}
+            {/* Preview banner — scoped to the left column so it doesn't push
+                the segment list down on the right. */}
+            {isPreview && (
+              <div className="flex items-center gap-2 px-6 py-1.5 bg-amber-500/10 border-b border-amber-400/20 text-[11px] text-amber-300 shrink-0">
+                <span className="material-symbols-outlined text-sm">edit_note</span>
+                Editing <span className="font-mono font-semibold">{previewVersion}</span> — Save will overwrite this version in place.
+                <button
+                  type="button"
+                  onClick={() => setPreviewVersion('draft')}
+                  className="ml-auto underline hover:text-amber-200"
+                >
+                  Switch to working draft
+                </button>
+              </div>
+            )}
 
-        {/* Main content: 2-column layout */}
-        <div className="flex-1 overflow-hidden flex">
-          {/* Left: Video + Timeline (60%) */}
-          <div className="w-[60%] flex flex-col p-4 gap-3 overflow-hidden">
-            <VideoPlayer
-              ref={videoRef}
-              src={videoSrc}
-              state={playerState}
-              controls={playerControls}
-              loading={videoLoading}
-              onLoadingChange={setVideoLoading}
-            >
-              <SubtitleOverlay
+            {/* Video + timeline — fills the remaining height of the left column. */}
+            <div className="flex-1 flex flex-col p-4 gap-3 overflow-hidden">
+              <VideoPlayer
+                ref={videoRef}
+                src={videoSrc}
+                state={playerState}
+                controls={playerControls}
+                loading={videoLoading}
+                onLoadingChange={setVideoLoading}
+              >
+                <SubtitleOverlay
+                  segments={segments}
+                  currentTime={playerState.currentTime}
+                  style={DEFAULT_OVERLAY_STYLE}
+                />
+              </VideoPlayer>
+
+              {/* Hidden synced dub audio. The <video> element is muted whenever a
+                  dub is selected; this element plays/pauses/seeks in lockstep. */}
+              <audio
+                ref={dubAudioRef}
+                src={previewDub && activeLang ? getTTSAudioUrl(videoId, activeLang, previewDub) : undefined}
+                preload="auto"
+                className="hidden"
+              />
+
+              <Timeline
                 segments={segments}
                 currentTime={playerState.currentTime}
-                style={DEFAULT_OVERLAY_STYLE}
+                duration={playerState.duration}
+                onSeek={playerControls.seek}
+                onResizeSegment={handleTimelineResize}
               />
-            </VideoPlayer>
-
-            {/* Hidden synced dub audio. The <video> element is muted whenever a
-                dub is selected; this element plays/pauses/seeks in lockstep. */}
-            <audio
-              ref={dubAudioRef}
-              src={previewDub && activeLang ? getTTSAudioUrl(videoId, activeLang, previewDub) : undefined}
-              preload="auto"
-              className="hidden"
-            />
-
-            <Timeline
-              segments={segments}
-              currentTime={playerState.currentTime}
-              duration={playerState.duration}
-              onSeek={playerControls.seek}
-              onResizeSegment={handleTimelineResize}
-            />
+            </div>
           </div>
 
           {/* Right: Segments (40%) — the "Segments" header was removed so the
