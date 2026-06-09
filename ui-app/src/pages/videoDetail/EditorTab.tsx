@@ -753,6 +753,9 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
                     onDeleteVersion(id);
                   }
                 }}
+                buildDownloadUrl={(id) =>
+                  activeLang ? getSrtDownloadUrl(videoId, activeLang, id) : null
+                }
               />
             </div>
           </div>
