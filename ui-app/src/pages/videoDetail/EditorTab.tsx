@@ -25,6 +25,7 @@ import type {
   VersionEntry,
 } from '../../api/types';
 import { VersionPanel } from '../../components/editor/VersionPanel';
+import { DubPanel } from '../../components/editor/DubPanel';
 
 // Plain-text subtitle overlay style. The SubtitleOverlay component supports
 // the deleted styling UI's full ASS-spec style, but the refocused app only
@@ -755,6 +756,12 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
                 }}
                 buildDownloadUrl={(id) =>
                   activeLang ? getSrtDownloadUrl(videoId, activeLang, id) : null
+                }
+              />
+              <DubPanel
+                dubs={dubsForLang}
+                buildDownloadUrl={(filename) =>
+                  activeLang ? getTTSAudioUrl(videoId, activeLang, filename) : null
                 }
               />
             </div>
