@@ -371,7 +371,9 @@ function VideoDetailPage() {
 
   return (
     <div className="flex flex-col h-full bg-surface">
-      <TopBar breadcrumb={videoMeta?.title || 'Video Detail'} />
+      {/* No breadcrumb here — the editable title chip inside EditorTab
+          serves as the canonical title display + rename affordance. */}
+      <TopBar />
 
       <div className="px-6 pt-4">
         <div className="flex gap-1 bg-surface-container-lowest p-1 rounded-md w-fit">
