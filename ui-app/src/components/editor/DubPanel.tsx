@@ -20,7 +20,7 @@ export function DubPanel({ dubs, buildDownloadUrl }: DubPanelProps) {
       <div className="text-[10px] uppercase tracking-wider text-on-surface-variant mb-2">
         Generated dubs
       </div>
-      <div className="flex flex-col gap-1 max-h-56 overflow-y-auto pr-1">
+      <div className="flex flex-col gap-1 max-h-32 overflow-y-auto pr-1">
         {dubs.map((d) => {
           const href = buildDownloadUrl(d.filename);
           return (

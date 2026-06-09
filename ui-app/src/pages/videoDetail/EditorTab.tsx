@@ -499,55 +499,9 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
               ))}
             </select>
 
-            {/* Subtitle version */}
-            <select
-              value={previewVersion}
-              onChange={(e) => setPreviewVersion(e.target.value)}
-              className={toolbarSelectClass(isPreview ? 'amber' : 'neutral')}
-              title={isPreview ? `Editing ${previewVersion} — Save overwrites it` : 'Editing the working draft'}
-              aria-label="Subtitle version"
-            >
-              <option value="draft">Working draft</option>
-              {versions.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.id}{v.name ? ` — ${v.name}` : ''}
-                </option>
-              ))}
-            </select>
-
-            {/* Dub audio + download */}
-            <select
-              value={previewDub}
-              onChange={(e) => setPreviewDub(e.target.value)}
-              className={toolbarSelectClass(previewDub ? 'primary' : 'neutral')}
-              disabled={dubsForLang.length === 0}
-              title={dubsForLang.length === 0 ? 'No dubs available for this language' : 'Play a generated dub instead of source audio'}
-              aria-label="Dub audio"
-            >
-              <option value="">Source audio</option>
-              {dubsForLang.map((d) => (
-                <option key={d.filename} value={d.filename}>
-                  {d.version} · {d.voice}
-                </option>
-              ))}
-            </select>
-            {previewDub && activeLang && (() => {
-              const sel = dubsForLang.find((d) => d.filename === previewDub);
-              const dubName = sel
-                ? `${downloadBase}.${activeLang}.${sel.version}.${sel.voice}.wav`
-                : previewDub;
-              return (
-              <a
-                href={getTTSAudioUrl(videoId, activeLang, previewDub)}
-                download={dubName}
-                className="inline-flex items-center justify-center h-8 w-8 rounded-md text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
-                title={`Download ${dubName}`}
-                aria-label="Download selected dub"
-              >
-                <span className="material-symbols-outlined text-[18px]">download</span>
-              </a>
-              );
-            })()}
+            {/* Version + dub preview pickers moved into the left column above
+                the video (see the "Preview pickers" strip there) so the right
+                column's segment list can rise to the same vertical line. */}
 
             {/* Video quality */}
             <select
@@ -687,6 +641,57 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
         <div className="flex-1 overflow-hidden flex">
           {/* Left: Video + Timeline (60%) */}
           <div className="w-[60%] flex flex-col p-4 gap-3 overflow-hidden">
+            {/* Preview pickers — kept narrow and on the left so the right
+                column's segment list rises to the same vertical level. */}
+            <div className="flex items-center gap-2 flex-wrap shrink-0">
+              <select
+                value={previewVersion}
+                onChange={(e) => setPreviewVersion(e.target.value)}
+                className={`${toolbarSelectClass(isPreview ? 'amber' : 'neutral')} w-36`}
+                title={isPreview ? `Editing ${previewVersion} — Save overwrites it` : 'Editing the working draft'}
+                aria-label="Subtitle version"
+              >
+                <option value="draft">Working draft</option>
+                {versions.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.id}{v.name ? ` — ${v.name}` : ''}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={previewDub}
+                onChange={(e) => setPreviewDub(e.target.value)}
+                className={`${toolbarSelectClass(previewDub ? 'primary' : 'neutral')} w-40`}
+                disabled={dubsForLang.length === 0}
+                title={dubsForLang.length === 0 ? 'No dubs available for this language' : 'Play a generated dub instead of source audio'}
+                aria-label="Dub audio"
+              >
+                <option value="">Source audio</option>
+                {dubsForLang.map((d) => (
+                  <option key={d.filename} value={d.filename}>
+                    {d.version} · {d.voice}
+                  </option>
+                ))}
+              </select>
+              {previewDub && activeLang && (() => {
+                const sel = dubsForLang.find((d) => d.filename === previewDub);
+                const dubName = sel
+                  ? `${downloadBase}.${activeLang}.${sel.version}.${sel.voice}.wav`
+                  : previewDub;
+                return (
+                  <a
+                    href={getTTSAudioUrl(videoId, activeLang, previewDub)}
+                    download={dubName}
+                    className="inline-flex items-center justify-center h-8 w-8 rounded-md text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
+                    title={`Download ${dubName}`}
+                    aria-label="Download selected dub"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">download</span>
+                  </a>
+                );
+              })()}
+            </div>
+
             <VideoPlayer
               ref={videoRef}
               src={videoSrc}
@@ -720,17 +725,9 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
             />
           </div>
 
-          {/* Right: Segments (40%) */}
+          {/* Right: Segments (40%) — the "Segments" header was removed so the
+              list aligns vertically with the version/dub pickers on the left. */}
           <div className="w-[40%] flex flex-col border-l border-outline-variant/10 overflow-hidden">
-            {/* Header */}
-            <div className="flex border-b border-outline-variant/10 px-4 py-2.5 items-center">
-              <span className="text-xs font-medium text-on-surface">Segments</span>
-              <div className="flex-1" />
-              <span className="font-mono text-[9px] text-on-surface-variant">
-                {segments.length} segments
-              </span>
-            </div>
-
             {/* Segment list */}
             <div className="flex-1 overflow-hidden p-4 flex flex-col">
               <SegmentList
