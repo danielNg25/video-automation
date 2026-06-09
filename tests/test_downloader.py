@@ -32,6 +32,20 @@ class TestDouyinDownloader:
         url = dl._extract_url("https://v.douyin.com/abc123/")
         assert url == "https://v.douyin.com/abc123/"
 
+    def test_extract_url_short_link_with_dash(self):
+        """Real Douyin short links can contain hyphens — the regex must
+        include '-' in the ID character class or it truncates at the dash."""
+        dl = DouyinDownloader()
+        url = dl._extract_url("https://v.douyin.com/SeJ-W3i5s5s/")
+        assert url == "https://v.douyin.com/SeJ-W3i5s5s/"
+
+    def test_extract_url_short_link_with_dash_in_share_text(self):
+        dl = DouyinDownloader()
+        url = dl._extract_url(
+            "1.95 复制打开抖音 https://v.douyin.com/SeJ-W3i5s5s/ 看看"
+        )
+        assert url == "https://v.douyin.com/SeJ-W3i5s5s/"
+
     @pytest.mark.asyncio
     async def test_download_success(self, tmp_path):
         dl = DouyinDownloader(api_base="http://test:8080")

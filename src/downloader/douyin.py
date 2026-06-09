@@ -23,9 +23,14 @@ class DouyinDownloader:
         self.timeout = timeout
 
     def _extract_url(self, text: str) -> str:
-        """Extract a Douyin URL from share text that may contain extra content."""
+        """Extract a Douyin URL from share text that may contain extra content.
+
+        Short-link IDs contain ASCII letters/digits/underscores AND dashes
+        (e.g. 'SeJ-W3i5s5s'); the character class has to include '-' or
+        the regex truncates at the first dash.
+        """
         patterns = [
-            r"(https?://v\.douyin\.com/[\w]+/?)",
+            r"(https?://v\.douyin\.com/[\w-]+/?)",
             r"(https?://www\.douyin\.com/video/\d+)",
         ]
         for pattern in patterns:
