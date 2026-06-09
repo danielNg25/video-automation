@@ -5,9 +5,13 @@ interface VersionPanelProps {
   versions: VersionEntry[];
   onRename: (versionId: string, name: string | null) => void;
   onDelete: (versionId: string) => void;
+  /** When set, each row shows a download icon that hrefs to this URL.
+   *  Caller builds the URL (typically via `getSrtDownloadUrl(videoId, lang, versionId)`).
+   *  Returning null/empty skips the button for that row (e.g. no active language). */
+  buildDownloadUrl?: (versionId: string) => string | null;
 }
 
-export function VersionPanel({ versions, onRename, onDelete }: VersionPanelProps) {
+export function VersionPanel({ versions, onRename, onDelete, buildDownloadUrl }: VersionPanelProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
 
   if (versions.length === 0) {
@@ -54,6 +58,21 @@ export function VersionPanel({ versions, onRename, onDelete }: VersionPanelProps
                 {v.name ?? '(no name)'}
               </span>
             )}
+            {buildDownloadUrl && (() => {
+              const href = buildDownloadUrl(v.id);
+              if (!href) return null;
+              return (
+                <a
+                  href={href}
+                  download
+                  title={`Download ${v.name ?? v.id} SRT`}
+                  className="p-1 rounded text-on-surface-variant hover:text-primary hover:bg-primary/10"
+                  aria-label={`Download ${v.id} SRT`}
+                >
+                  <span className="material-symbols-outlined text-[14px]">download</span>
+                </a>
+              );
+            })()}
             <button
               onClick={() => onDelete(v.id)}
               title="Delete version"
