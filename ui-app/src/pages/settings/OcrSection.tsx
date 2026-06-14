@@ -39,7 +39,7 @@ export function OcrSection() {
       if (confMatch) setOcrConfidence(confMatch);
       const simMatch = matchOption(o.similarity_threshold, ['0.7', '0.8', '0.85', '0.9', '0.95']);
       if (simMatch) setOcrSimilarity(simMatch);
-      const minYMatch = matchOption(sr.min_y, ['0.50', '0.55', '0.60', '0.65', '0.70', '0.75']);
+      const minYMatch = matchOption(sr.min_y, ['0.00', '0.50', '0.55', '0.60', '0.65', '0.70', '0.75']);
       if (minYMatch) setOcrMinY(minYMatch);
       const wmMatch = matchOption(sr.max_watermark_frequency, ['0.70', '0.75', '0.80', '0.85', '0.90']);
       if (wmMatch) setOcrWatermarkFreq(wmMatch);
@@ -144,6 +144,7 @@ export function OcrSection() {
             value={ocrMinY}
             onChange={(e) => setOcrMinY(e.target.value)}
           >
+            <option value="0.00">0% (full video — no position filter)</option>
             <option value="0.50">50% (wider — top-half subtitles)</option>
             <option value="0.55">55%</option>
             <option value="0.60">60%</option>
@@ -151,7 +152,7 @@ export function OcrSection() {
             <option value="0.70">70%</option>
             <option value="0.75">75% (bottom only)</option>
           </select>
-          <p className="text-[10px] text-zinc-600">Only text below this % of frame height is considered a subtitle</p>
+          <p className="text-[10px] text-zinc-600">Only text below this % of frame height is considered a subtitle. Pick 0% to OCR the entire frame (combine with Pre-crop Bottom = 0% to keep top text)</p>
         </div>
         <div className="space-y-2">
           <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Watermark Frequency</label>
