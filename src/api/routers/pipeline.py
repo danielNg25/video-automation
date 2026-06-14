@@ -105,6 +105,7 @@ async def start_full_pipeline(request: FullPipelineRequest):
             playback_speed=request.playback_speed,
             underlay_db=request.underlay_db,
             subtitle_style=request.subtitle_style,
+            ocr_crop_bottom_pct=request.ocr_crop_bottom_pct,
         )
     )
     return TaskResponse(task_id=task.task_id, status=task.status)
@@ -131,6 +132,7 @@ async def _run_full_pipeline(
     playback_speed: float | None = None,
     underlay_db: float | None = None,
     subtitle_style: dict | None = None,
+    ocr_crop_bottom_pct: float | None = None,
 ):
     """Execute the full pipeline as a background task with SSE events."""
     from src.pipeline import Pipeline
@@ -172,6 +174,7 @@ async def _run_full_pipeline(
             "playback_speed": playback_speed,
             "underlay_db": underlay_db,
             "subtitle_style": subtitle_style,
+            "ocr_crop_bottom_pct": ocr_crop_bottom_pct,
         }
 
         result = await pipeline.process_single(url, options, emit)
@@ -309,6 +312,7 @@ async def start_batch_pipeline(request: BatchPipelineRequest):
             playback_speed=request.playback_speed,
             underlay_db=request.underlay_db,
             subtitle_style=request.subtitle_style,
+            ocr_crop_bottom_pct=request.ocr_crop_bottom_pct,
         )
     )
 
@@ -341,6 +345,7 @@ async def _run_batch_pipeline(
     playback_speed: float | None = None,
     underlay_db: float | None = None,
     subtitle_style: dict | None = None,
+    ocr_crop_bottom_pct: float | None = None,
 ):
     """Execute batch pipeline with concurrency control."""
     from src.pipeline import Pipeline
@@ -377,6 +382,7 @@ async def _run_batch_pipeline(
                 playback_speed=playback_speed,
                 underlay_db=underlay_db,
                 subtitle_style=subtitle_style,
+                ocr_crop_bottom_pct=ocr_crop_bottom_pct,
             )
             child_task = tm.tasks.get(child_task_id)
             if child_task and child_task.status == "failed":
