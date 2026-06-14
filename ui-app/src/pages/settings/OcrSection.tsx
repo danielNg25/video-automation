@@ -15,7 +15,6 @@ export function OcrSection() {
   const [ocrFps, setOcrFps] = useState('2.0');
   const [ocrConfidence, setOcrConfidence] = useState('0.7');
   const [ocrSimilarity, setOcrSimilarity] = useState('0.85');
-  const [ocrMinY, setOcrMinY] = useState('0.65');
   const [ocrWatermarkFreq, setOcrWatermarkFreq] = useState('0.80');
   const [ocrCropBottom, setOcrCropBottom] = useState('0');
   const [saveMsg, setSaveMsg] = useState('');
@@ -39,8 +38,6 @@ export function OcrSection() {
       if (confMatch) setOcrConfidence(confMatch);
       const simMatch = matchOption(o.similarity_threshold, ['0.7', '0.8', '0.85', '0.9', '0.95']);
       if (simMatch) setOcrSimilarity(simMatch);
-      const minYMatch = matchOption(sr.min_y, ['0.00', '0.50', '0.55', '0.60', '0.65', '0.70', '0.75']);
-      if (minYMatch) setOcrMinY(minYMatch);
       const wmMatch = matchOption(sr.max_watermark_frequency, ['0.70', '0.75', '0.80', '0.85', '0.90']);
       if (wmMatch) setOcrWatermarkFreq(wmMatch);
     }).catch(() => {});
@@ -56,7 +53,6 @@ export function OcrSection() {
           confidence_threshold: Number(ocrConfidence),
           similarity_threshold: Number(ocrSimilarity),
           subtitle_region: {
-            min_y: Number(ocrMinY),
             max_watermark_frequency: Number(ocrWatermarkFreq),
           },
         },
@@ -105,7 +101,7 @@ export function OcrSection() {
             <option value="0.40">40%</option>
             <option value="0.50">50% (bottom half)</option>
           </select>
-          <p className="text-[10px] text-zinc-600">Crop frame to bottom N% before OCR. Speeds up 3-5x by reducing scan area</p>
+          <p className="text-[10px] text-zinc-600">Crop frame to bottom N% before OCR. Speeds up 3-5x by reducing scan area. Pick "Off" to OCR the full frame (e.g. top-of-frame subtitles)</p>
         </div>
         <div className="space-y-2">
           <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Confidence Threshold</label>
@@ -136,23 +132,6 @@ export function OcrSection() {
             <option value="0.95">0.95 (strict)</option>
           </select>
           <p className="text-[10px] text-zinc-600">How similar consecutive frames must be to merge into one subtitle segment</p>
-        </div>
-        <div className="space-y-2">
-          <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Subtitle Region (min Y%)</label>
-          <select
-            className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-3 text-sm font-mono"
-            value={ocrMinY}
-            onChange={(e) => setOcrMinY(e.target.value)}
-          >
-            <option value="0.00">0% (full video — no position filter)</option>
-            <option value="0.50">50% (wider — top-half subtitles)</option>
-            <option value="0.55">55%</option>
-            <option value="0.60">60%</option>
-            <option value="0.65">65% (default)</option>
-            <option value="0.70">70%</option>
-            <option value="0.75">75% (bottom only)</option>
-          </select>
-          <p className="text-[10px] text-zinc-600">Only text below this % of frame height is considered a subtitle. Pick 0% to OCR the entire frame (combine with Pre-crop Bottom = 0% to keep top text)</p>
         </div>
         <div className="space-y-2">
           <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Watermark Frequency</label>
