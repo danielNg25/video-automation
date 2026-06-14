@@ -38,7 +38,7 @@ ocr:
     # with `--gpus all`.
     execution_provider: auto
     subtitle_region:
-        min_y: 0.65                   # Only text below 65% of frame height
+        min_y: 0.65                   # Only text below this fraction of frame height. 0 = full frame.
         max_watermark_frequency: 0.80 # Text in >80% of frames = watermark
         min_text_height: 0.02        # Min text height as fraction of frame
         horizontal_margin: 0.10       # Ignore text in outer 10% left/right
