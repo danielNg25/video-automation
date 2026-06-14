@@ -83,6 +83,10 @@ class FullPipelineRequest(BaseModel):
     # E.g. {"background_color": "&H80000000", "background_opacity": 128} for a
     # semi-transparent black background behind subtitles.
     subtitle_style: dict | None = None
+    # Per-request OCR crop override. When None, the pipeline uses the global
+    # `ocr.crop_bottom_pct` from config.yaml; when set (0.0 = full frame, 0.25
+    # = bottom quarter, etc.), it overrides for this run only.
+    ocr_crop_bottom_pct: float | None = None
 
 
 class BatchPipelineRequest(BaseModel):
@@ -111,6 +115,9 @@ class BatchPipelineRequest(BaseModel):
     # E.g. {"background_color": "&H80000000", "background_opacity": 128} for a
     # semi-transparent black background behind subtitles.
     subtitle_style: dict | None = None
+    # Per-batch OCR crop override (applies to every URL in the batch).
+    # See FullPipelineRequest.ocr_crop_bottom_pct for semantics.
+    ocr_crop_bottom_pct: float | None = None
 
 
 class PipelineHistoryEntry(BaseModel):

@@ -77,6 +77,16 @@ function PipelinePage() {
     const saved = parseFloat(storageGet('tts_underlay_db') || '');
     return Number.isFinite(saved) && saved >= -24 && saved <= 0 ? saved : -18;
   });
+  // Per-pipeline OCR crop override. Empty string = "use Settings default"
+  // (we send null to the backend so it falls back to ocr.crop_bottom_pct
+  // from config.yaml). Any other value (e.g. '0', '0.25') overrides for
+  // this run only.
+  const [ocrCropOverride, setOcrCropOverride] = useState(
+    () => storageGet('pipeline_ocr_crop_override') || ''
+  );
+  useEffect(() => {
+    storageSet('pipeline_ocr_crop_override', ocrCropOverride);
+  }, [ocrCropOverride]);
   const [geminiModel, setGeminiModel] = useState<GeminiTTSModelId>(() => {
     const saved = storageGet(GEMINI_MODEL_STORAGE_KEY);
     return (GEMINI_TTS_MODELS.map((m) => m.id) as string[]).includes(saved)
@@ -289,6 +299,7 @@ function PipelinePage() {
       llm_backend: llmBackend || undefined,
       playback_speed: playbackSpeed,
       underlay_db: underlayDb,
+      ocr_crop_bottom_pct: ocrCropOverride === '' ? null : Number(ocrCropOverride),
     };
 
     // Batch mode
@@ -504,6 +515,33 @@ function PipelinePage() {
               <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">
                 Configuration
               </span>
+            </div>
+
+            {/* OCR override — per-pipeline crop. Default ('') sends null to
+                the backend so it falls back to ocr.crop_bottom_pct from
+                Settings. Useful when one video has subtitles at the top
+                while the global config crops to the bottom. */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] text-zinc-500 uppercase tracking-tighter font-bold block mb-1.5">
+                  OCR Pre-crop Bottom % (this run only)
+                </label>
+                <select
+                  value={ocrCropOverride}
+                  onChange={(e) => setOcrCropOverride(e.target.value)}
+                  className="w-full bg-surface-container border-none text-xs text-on-surface h-10 px-3 rounded-lg focus:ring-1 focus:ring-primary"
+                  title="Override the global ocr.crop_bottom_pct from Settings for this pipeline run only."
+                >
+                  <option value="">Use Settings default</option>
+                  <option value="0">Off (full frame)</option>
+                  <option value="0.20">20% (bottom fifth)</option>
+                  <option value="0.25">25%</option>
+                  <option value="0.30">30%</option>
+                  <option value="0.35">35%</option>
+                  <option value="0.40">40%</option>
+                  <option value="0.50">50% (bottom half)</option>
+                </select>
+              </div>
             </div>
 
             {/* Top row: Translation Profile + LLM Backend */}

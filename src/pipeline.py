@@ -159,6 +159,11 @@ class Pipeline:
                     loop.call_soon_threadsafe(emit, "transcribe", mapped, message)
 
                 ocr_config = self.config.get("ocr", {})
+                # Per-request crop override from the Pipeline page wins over
+                # the global config. None means "use the config default".
+                crop_override = options.get("ocr_crop_bottom_pct")
+                if crop_override is not None:
+                    ocr_config = {**ocr_config, "crop_bottom_pct": float(crop_override)}
                 transcriber = get_transcriber(ocr_config, progress_callback=ocr_progress)
 
                 segments = await asyncio.to_thread(

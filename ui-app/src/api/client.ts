@@ -229,6 +229,9 @@ export function postPipeline(
     llm_backend?: string;
     playback_speed?: number;
     underlay_db?: number;
+    /** Per-run OCR crop override (0 = full frame). Null/undefined → use the
+     *  global ocr.crop_bottom_pct from Settings. */
+    ocr_crop_bottom_pct?: number | null;
   },
 ): Promise<TaskResponse> {
   return request('/pipeline/full', {
@@ -249,6 +252,7 @@ export function postPipeline(
       llm_backend: ttsOverrides?.llm_backend ?? null,
       playback_speed: ttsOverrides?.playback_speed ?? null,
       underlay_db: ttsOverrides?.underlay_db ?? null,
+      ocr_crop_bottom_pct: ttsOverrides?.ocr_crop_bottom_pct ?? null,
     }),
   });
 }
