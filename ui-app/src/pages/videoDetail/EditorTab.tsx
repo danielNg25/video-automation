@@ -25,6 +25,7 @@ import type {
 } from '../../api/types';
 import { VersionPanel } from '../../components/editor/VersionPanel';
 import { DubPanel } from '../../components/editor/DubPanel';
+import { DownloadBundleModal } from '../../components/editor/DownloadBundleModal';
 
 // Plain-text subtitle overlay style. The SubtitleOverlay component supports
 // the deleted styling UI's full ASS-spec style, but the refocused app only
@@ -101,6 +102,7 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
+  const [bundleOpen, setBundleOpen] = useState(false);
 
   const handleImport = useCallback(async (file: File) => {
     setImporting(true);
@@ -538,6 +540,15 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
                 )}
               </div>
             )}
+            <button
+              type="button"
+              onClick={() => setBundleOpen(true)}
+              className={toolbarBtnClass('primary')}
+              title="Download video + SRT + dub as a bundle with a custom base name"
+            >
+              <span className="material-symbols-outlined text-[16px]">download_for_offline</span>
+              <span>Bundle</span>
+            </button>
             <a
               href={getRawVideoUrl(videoId)}
               download={`${downloadBase}.mp4`}
@@ -708,6 +719,18 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
         </div>
 
       </div>
+      {bundleOpen && (
+        <DownloadBundleModal
+          onClose={() => setBundleOpen(false)}
+          videoId={videoId}
+          activeLang={activeLang}
+          videoTitle={video?.title ?? ''}
+          versions={versions}
+          dubs={dubsForLang}
+          currentSrtVersion={previewVersion}
+          currentDubFilename={previewDub}
+        />
+      )}
     </div>
   );
 }
