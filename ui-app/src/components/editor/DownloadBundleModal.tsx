@@ -11,6 +11,14 @@ interface DownloadBundleModalProps {
   videoTitle: string;
   versions: VersionEntry[];
   dubs: TTSAudioEntry[];
+  /** SRT version currently loaded in the editor's preview picker
+   *  ('draft' | 'v1' | 'v2' | ...). Seeds the modal's SRT version select
+   *  so the user gets the version they're already looking at. */
+  currentSrtVersion: string;
+  /** Filename of the dub currently playing in the editor (or '' for
+   *  source audio). When set, the modal pre-selects this dub. When '',
+   *  the dub row is unchecked by default. */
+  currentDubFilename: string;
 }
 
 type Asset = {
@@ -37,6 +45,8 @@ export function DownloadBundleModal({
   videoTitle,
   versions,
   dubs,
+  currentSrtVersion,
+  currentDubFilename,
 }: DownloadBundleModalProps) {
   // Base name seeds from the video's editable title; user can override.
   // Sanitised on input so the FE hint matches what the BE would set via
@@ -48,11 +58,22 @@ export function DownloadBundleModal({
   const [base, setBase] = useState(defaultBase);
   const [includeVideo, setIncludeVideo] = useState(true);
   const [includeSrt, setIncludeSrt] = useState(true);
-  const [includeDub, setIncludeDub] = useState(dubs.length > 0);
-  const [srtVersion, setSrtVersion] = useState('draft');
-  // Defaults to the first dub for the current language (most recent first
-  // per getTTSList's sort order).
-  const [dubFilename, setDubFilename] = useState(dubs[0]?.filename ?? '');
+  // Seed SRT version from whatever the editor is previewing right now —
+  // the user's intent on Bundle-click is usually "give me what I see".
+  const [srtVersion, setSrtVersion] = useState(() =>
+    currentSrtVersion && (currentSrtVersion === 'draft' || versions.some((v) => v.id === currentSrtVersion))
+      ? currentSrtVersion
+      : 'draft',
+  );
+  // Same for the dub: pre-select whatever's playing in the editor. If the
+  // editor has 'Source audio' selected ('' or no match), leave the dub row
+  // unchecked and fall back to the first dub when the user enables it.
+  const editorDubMatches =
+    !!currentDubFilename && dubs.some((d) => d.filename === currentDubFilename);
+  const [includeDub, setIncludeDub] = useState(editorDubMatches);
+  const [dubFilename, setDubFilename] = useState(
+    editorDubMatches ? currentDubFilename : (dubs[0]?.filename ?? ''),
+  );
   const [downloading, setDownloading] = useState(false);
 
   // Esc-to-close.

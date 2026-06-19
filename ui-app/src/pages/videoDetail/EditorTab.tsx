@@ -727,6 +727,8 @@ export function EditorTab({ videoId, initialVideo, versions, onCreateSnapshot, o
           videoTitle={video?.title ?? ''}
           versions={versions}
           dubs={dubsForLang}
+          currentSrtVersion={previewVersion}
+          currentDubFilename={previewDub}
         />
       )}
     </div>
