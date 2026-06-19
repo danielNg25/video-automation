@@ -134,11 +134,18 @@ async def get_srt(
 
 
 @router.get("/api/videos/{video_id}/srt/download")
-async def download_srt(video_id: str, language: str = "zh", version: str = "draft"):
+async def download_srt(
+    video_id: str,
+    language: str = "zh",
+    version: str = "draft",
+    download_as: str | None = None,
+):
     """Download the SRT file as an attachment.
 
     `version='draft'` (default) → the working-draft SRT.
     `version='v1'`, `'v2'`, ... → the corresponding snapshot.
+    `download_as` (optional): override the suggested filename; sanitised
+    server-side.
     """
     srt_path = _resolve_srt_path(video_id, language, version)
     if not srt_path.exists():
@@ -150,11 +157,15 @@ async def download_srt(video_id: str, language: str = "zh", version: str = "draf
     # Suggested download name: "<edited title>.<lang>[.<version>].srt".
     # Falls back to video_id when the title is missing/empty. The version
     # suffix is only added for snapshots so a draft download stays clean.
+    # `download_as` from the FE wins when present.
     tm = get_task_manager()
     video = tm.video_index.get(video_id)
-    base = safe_filename(video.title if video else None, video_id)
-    suffix = "" if version == "draft" else f".{version}"
-    download_name = f"{base}.{language}{suffix}.srt"
+    if download_as:
+        download_name = safe_filename(download_as, f"{video_id}_{language}.srt")
+    else:
+        base = safe_filename(video.title if video else None, video_id)
+        suffix = "" if version == "draft" else f".{version}"
+        download_name = f"{base}.{language}{suffix}.srt"
     return FileResponse(
         path=str(srt_path),
         media_type="text/plain",

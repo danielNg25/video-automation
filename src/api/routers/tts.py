@@ -161,8 +161,17 @@ async def delete_tts_audio(video_id: str, filename: str):
 
 
 @router.get("/api/videos/{video_id}/tts/{language}")
-async def get_tts_audio(video_id: str, language: str, file: str | None = None):
-    """Stream generated TTS audio file. Optionally specify exact filename."""
+async def get_tts_audio(
+    video_id: str,
+    language: str,
+    file: str | None = None,
+    download_as: str | None = None,
+):
+    """Stream generated TTS audio file. Optionally specify exact filename.
+
+    `download_as` (optional): override the suggested filename; sanitised
+    server-side.
+    """
     data_dir = get_data_dir()
     tts_dir = data_dir / "tts"
 
@@ -186,16 +195,20 @@ async def get_tts_audio(video_id: str, language: str, file: str | None = None):
         )
     # Suggested download name uses the video's edited title; version/voice
     # are kept as a suffix so multiple dubs for the same video don't collide
-    # in the user's Downloads folder.
+    # in the user's Downloads folder. `download_as` from the FE wins when
+    # present.
     tm = get_task_manager()
     video = tm.video_index.get(video_id)
-    base = safe_filename(video.title if video else None, video_id)
-    parsed = _parse_dub_filename(audio_path.name)
-    if parsed:
-        suffix = f".{parsed['version']}.{parsed['voice']}"
+    if download_as:
+        download_name = safe_filename(download_as, audio_path.name)
     else:
-        suffix = ""
-    download_name = f"{base}.{language}{suffix}.wav"
+        base = safe_filename(video.title if video else None, video_id)
+        parsed = _parse_dub_filename(audio_path.name)
+        if parsed:
+            suffix = f".{parsed['version']}.{parsed['voice']}"
+        else:
+            suffix = ""
+        download_name = f"{base}.{language}{suffix}.wav"
     return FileResponse(
         path=str(audio_path),
         media_type="audio/wav",

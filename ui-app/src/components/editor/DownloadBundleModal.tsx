@@ -87,28 +87,49 @@ export function DownloadBundleModal({
 
   const safeBase = safeFilename(base, videoId);
 
+  // Each BE download route accepts a `download_as` query param that wins
+  // over the server's title-based Content-Disposition. We MUST send it,
+  // because most browsers honour Content-Disposition over the <a download>
+  // attribute even on same-origin links — without download_as the file
+  // arrives with the title-based name regardless of what `download="..."`
+  // says on the anchor.
+  const withDownloadAs = (baseUrl: string, name: string): string => {
+    const sep = baseUrl.includes('?') ? '&' : '?';
+    return `${baseUrl}${sep}download_as=${encodeURIComponent(name)}`;
+  };
+
   // Compute filenames. Suffixes encode just enough to disambiguate when the
   // user downloads multiple snapshots / dubs to the same Downloads folder.
   const selectedDub = dubs.find((d) => d.filename === dubFilename);
+
+  const videoName = `${safeBase}.mp4`;
+  const srtName =
+    srtVersion === 'draft'
+      ? `${safeBase}.${activeLang}.srt`
+      : `${safeBase}.${activeLang}.${srtVersion}.srt`;
+  const dubName = selectedDub
+    ? `${safeBase}.${activeLang}.${selectedDub.version}.${selectedDub.voice}.wav`
+    : '';
+
   const videoAsset: Asset = {
     enabled: includeVideo,
-    href: getRawVideoUrl(videoId),
-    filename: `${safeBase}.mp4`,
+    href: withDownloadAs(getRawVideoUrl(videoId), videoName),
+    filename: videoName,
   };
   const srtAsset: Asset = {
     enabled: includeSrt && !!activeLang,
-    href: activeLang ? getSrtDownloadUrl(videoId, activeLang, srtVersion) : '',
-    filename:
-      srtVersion === 'draft'
-        ? `${safeBase}.${activeLang}.srt`
-        : `${safeBase}.${activeLang}.${srtVersion}.srt`,
+    href: activeLang
+      ? withDownloadAs(getSrtDownloadUrl(videoId, activeLang, srtVersion), srtName)
+      : '',
+    filename: srtName,
   };
   const dubAsset: Asset = {
     enabled: includeDub && !!selectedDub && !!activeLang,
-    href: selectedDub && activeLang ? getTTSAudioUrl(videoId, activeLang, selectedDub.filename) : '',
-    filename: selectedDub
-      ? `${safeBase}.${activeLang}.${selectedDub.version}.${selectedDub.voice}.wav`
-      : '',
+    href:
+      selectedDub && activeLang
+        ? withDownloadAs(getTTSAudioUrl(videoId, activeLang, selectedDub.filename), dubName)
+        : '',
+    filename: dubName,
   };
 
   const handleDownloadAll = async () => {

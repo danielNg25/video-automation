@@ -24,8 +24,14 @@ router = APIRouter()
 
 
 @router.get("/api/videos/{video_id}/raw")
-async def serve_raw_video(video_id: str):
-    """Serve the full-resolution raw video file."""
+async def serve_raw_video(video_id: str, download_as: str | None = None):
+    """Serve the full-resolution raw video file.
+
+    `download_as` (optional): override the suggested download filename
+    (used by the editor's Download Bundle modal so users can pick a base
+    name). Sanitised server-side to strip path-traversal and unsafe
+    chars before it's echoed into Content-Disposition.
+    """
     tm = get_task_manager()
     video = tm.video_index.get(video_id)
     if not video:
@@ -35,7 +41,10 @@ async def serve_raw_video(video_id: str):
     if not video_path.exists():
         raise HTTPException(status_code=404, detail="Video file not found on disk")
 
-    download_name = f"{safe_filename(video.title, video_id)}.mp4"
+    if download_as:
+        download_name = safe_filename(download_as, f"{video_id}.mp4")
+    else:
+        download_name = f"{safe_filename(video.title, video_id)}.mp4"
     return FileResponse(
         path=str(video_path),
         media_type="video/mp4",
