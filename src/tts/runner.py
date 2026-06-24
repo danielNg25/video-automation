@@ -209,12 +209,7 @@ async def run_tts_track(
     effective_config = config
     if api_key_override:
         tts_section = dict(config.get("tts", {}))
-        if provider_name == "elevenlabs":
-            tts_section["elevenlabs_api_key"] = api_key_override
-        elif provider_name == "openai":
-            tts_section["openai_api_key"] = api_key_override
-        elif provider_name == "google":
-            tts_section["google_api_key"] = api_key_override
+        tts_section[f"{provider_name}_api_key"] = api_key_override
         effective_config = {**config, "tts": tts_section}
     tts_provider = get_tts_provider(effective_config, provider=provider_name)
 
