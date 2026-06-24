@@ -330,6 +330,7 @@ function VideoDetailPage() {
         setTtsError('Pick a voice first.');
         return;
       }
+      const apiKeys = loadApiKeys();
       const { task_id } = await postTTS(
         videoMeta.video_id,
         ttsLanguage,
@@ -337,12 +338,14 @@ function VideoDetailPage() {
         voiceForRequest,
         selectedVersion,
         enableShortening,
+        selectedTtsProvider === 'vbee' ? apiKeys.vbee :
         ttsApiKey || undefined,
         llmApiKey || undefined,
         llmBackend || undefined,
         playbackSpeed,
         underlayDb,
         selectedTtsProvider === 'gemini' ? geminiModel : undefined,
+        selectedTtsProvider === 'vbee' ? apiKeys.vbee_app_id : undefined,
       );
       setTtsTaskId(task_id);
       const es = subscribeSSE(task_id, (eventType, data) => {

@@ -85,6 +85,7 @@ export function DubStudioPage() {
       ? (saved as GeminiTTSModelId)
       : DEFAULT_GEMINI_TTS_MODEL;
   });
+  const [vbeeCustomVoice, setVbeeCustomVoice] = useState('');
 
   // ── provider / voice lists ─────────────────────────────────────────────────
   const [providers, setProviders] = useState<TTSProviderInfo[]>([]);
@@ -239,12 +240,13 @@ export function DubStudioPage() {
       const apiKeys = loadApiKeys();
       const llmPrefs = loadLLMPrefs();
       const effectiveApiKey =
+        provider === 'vbee' ? apiKeys.vbee :
         apiKeys[provider as keyof typeof apiKeys] || undefined;
 
       const resp = await postStandaloneDub({
         file: srtFile,
         provider,
-        voice: voiceId,
+        voice: provider === 'vbee' && vbeeCustomVoice.trim() ? vbeeCustomVoice.trim() : voiceId,
         language,
         playbackSpeed,
         enableShortening,
@@ -252,6 +254,7 @@ export function DubStudioPage() {
         llmApiKey: llmPrefs.backend !== '' ? (apiKeys[llmPrefs.backend as keyof typeof apiKeys] || undefined) : undefined,
         llmBackend: llmPrefs.backend || undefined,
         model: provider === 'gemini' ? geminiModel : undefined,
+        appId: provider === 'vbee' ? apiKeys.vbee_app_id : undefined,
       });
       setActiveTaskId(resp.task_id);
 
@@ -470,6 +473,15 @@ export function DubStudioPage() {
                 setFavorites(renameFavorite(fav, nickname));
               }}
             />
+            {provider === 'vbee' && (
+              <input
+                type="text"
+                value={vbeeCustomVoice}
+                onChange={(e) => setVbeeCustomVoice(e.target.value)}
+                placeholder="Custom voiceCode (optional, overrides dropdown)"
+                className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-2 text-xs font-mono mt-2"
+              />
+            )}
           </div>
 
           {/* Missing-key warning — when the selected provider needs a key and

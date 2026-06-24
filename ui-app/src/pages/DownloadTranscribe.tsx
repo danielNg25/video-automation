@@ -93,6 +93,7 @@ function PipelinePage() {
       ? (saved as GeminiTTSModelId)
       : DEFAULT_GEMINI_TTS_MODEL;
   });
+  const [vbeeCustomVoice, setVbeeCustomVoice] = useState('');
   const [defaultsSaved, setDefaultsSaved] = useState(false);
 
   const handleSaveDefaults = () => {
@@ -282,6 +283,7 @@ function PipelinePage() {
       ttsProviderName === 'elevenlabs' ? apiKeys.elevenlabs :
       ttsProviderName === 'openai' ? apiKeys.openai :
       ttsProviderName === 'gemini' ? apiKeys.gemini :
+      ttsProviderName === 'vbee' ? apiKeys.vbee :
       ttsProviderName === 'google' ? apiKeys.google : '';
     // All providers now forward a voice override — use the per-provider key,
     // falling back to the in-memory selection if localStorage is empty.
@@ -291,10 +293,11 @@ function PipelinePage() {
     const targetLang = targetTtsLanguage;
     const ttsOverrides = {
       tts_provider: ttsProviderName || undefined,
-      tts_voice: ttsVoiceId || undefined,
+      tts_voice: selectedTtsProvider === 'vbee' && vbeeCustomVoice.trim() ? vbeeCustomVoice.trim() : (ttsVoiceId || undefined),
       tts_language: targetLang,
       tts_api_key: ttsApiKeyVal || undefined,
       ...(ttsProviderName === 'gemini' ? { tts_model: geminiModel } : {}),
+      ...(selectedTtsProvider === 'vbee' ? { tts_app_id: apiKeys.vbee_app_id } : {}),
       llm_api_key: llmApiKey || undefined,
       llm_backend: llmBackend || undefined,
       playback_speed: playbackSpeed,
@@ -712,6 +715,15 @@ function PipelinePage() {
                     onRename={(fav, nickname) => {
                       setFavorites(renameFavorite(fav, nickname));
                     }}
+                  />
+                )}
+                {selectedTtsProvider === 'vbee' && (
+                  <input
+                    type="text"
+                    value={vbeeCustomVoice}
+                    onChange={(e) => setVbeeCustomVoice(e.target.value)}
+                    placeholder="Custom voiceCode (optional, overrides dropdown)"
+                    className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-2 text-xs font-mono mt-2"
                   />
                 )}
               </div>
