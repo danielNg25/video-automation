@@ -13,7 +13,7 @@ def get_tts_provider(config: dict, provider: str | None = None) -> BaseTTSProvid
 
     Args:
         config: Full config dict (may contain 'tts' section).
-        provider: Override provider name ("google", "openai", "elevenlabs", "gemini").
+        provider: Override provider name ("google", "openai", "elevenlabs", "gemini", "vbee").
             If None, reads from config or defaults to "google".
 
     Returns:
@@ -50,6 +50,12 @@ def get_tts_provider(config: dict, provider: str | None = None) -> BaseTTSProvid
         model = tts_config.get("gemini_model", GeminiTTSProvider.DEFAULT_MODEL)
         logger.info(f"Using Gemini TTS provider (model={model})")
         return GeminiTTSProvider(config=tts_config)
+
+    elif provider_name == "vbee":
+        from src.tts.vbee_tts import VbeeTTSProvider
+
+        logger.info("Using Vbee TTS provider")
+        return VbeeTTSProvider(config=tts_config)
 
     else:
         raise ValueError(f"Unknown TTS provider: {provider_name}")
