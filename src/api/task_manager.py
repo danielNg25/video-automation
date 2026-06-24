@@ -745,6 +745,7 @@ class TaskManager:
         llm_api_key: str | None = None,
         llm_backend: str | None = None,
         model: str | None = None,
+        app_id: str | None = None,
     ):
         """Generate a dub WAV from uploaded SRT bytes alone.
 
@@ -804,6 +805,12 @@ class TaskManager:
             if provider == "gemini" and model:
                 tts_cfg = dict(effective_config.get("tts", {}))
                 tts_cfg["gemini_model"] = model
+                effective_config = {**effective_config, "tts": tts_cfg}
+
+            # Inject Vbee App-Id when the provider is vbee.
+            if provider == "vbee" and app_id:
+                tts_cfg = dict(effective_config.get("tts", {}))
+                tts_cfg["vbee_app_id"] = app_id
                 effective_config = {**effective_config, "tts": tts_cfg}
 
             # 5. Build provider + translator (translator may be None if

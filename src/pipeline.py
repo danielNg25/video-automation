@@ -255,6 +255,13 @@ class Pipeline:
                     tts_section["gemini_model"] = tts_model
                     tts_config = {**tts_config, "tts": tts_section}
 
+                # Inject Vbee App-Id when the provider is vbee.
+                tts_app_id = options.get("tts_app_id")
+                if tts_provider == "vbee" and tts_app_id:
+                    tts_section = dict(tts_config.get("tts", {}))
+                    tts_section["vbee_app_id"] = tts_app_id
+                    tts_config = {**tts_config, "tts": tts_section}
+
                 tts_result = await run_tts_track(
                     video_id=video_id,
                     video_path=video_path,
