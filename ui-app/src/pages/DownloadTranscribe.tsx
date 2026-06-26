@@ -129,23 +129,6 @@ function PipelinePage() {
     }
   };
 
-  // Voice dropdown options: curated/API list plus user-added custom vbee codes.
-  const displayVoices: VoiceInfo[] =
-    selectedTtsProvider === 'vbee'
-      ? [
-          ...ttsVoices,
-          ...customVbeeVoices
-            .filter((c) => !ttsVoices.some((v) => v.name === c))
-            .map((c) => ({
-              name: c,
-              friendly_name: c,
-              gender: 'custom',
-              language: targetTtsLanguage,
-              provider: 'vbee',
-            })),
-        ]
-      : ttsVoices;
-
   const [savedPrefs] = useState(loadLLMPrefs);
   const [llmBackend, setLlmBackend] = useState(savedPrefs.backend);
   const [llmModel, setLlmModel] = useState(savedPrefs.model);
@@ -168,6 +151,25 @@ function PipelinePage() {
   // override (set via the Language dropdown) wins when non-empty.
   const profileLang = profiles.find((p) => p.name === selectedProfile)?.target_language ?? 'vi';
   const targetTtsLanguage = ttsLanguageOverride || profileLang;
+
+  // Voice dropdown options: curated/API list plus user-added custom vbee codes.
+  // (Declared after targetTtsLanguage — it references it inside the map, which
+  // runs eagerly during render, so it must come after the declaration.)
+  const displayVoices: VoiceInfo[] =
+    selectedTtsProvider === 'vbee'
+      ? [
+          ...ttsVoices,
+          ...customVbeeVoices
+            .filter((c) => !ttsVoices.some((v) => v.name === c))
+            .map((c) => ({
+              name: c,
+              friendly_name: c,
+              gender: 'custom',
+              language: targetTtsLanguage,
+              provider: 'vbee',
+            })),
+        ]
+      : ttsVoices;
 
   // Favorites state — same shape as DubTab / DubStudio. Scoped to the
   // current (provider, language) at render time.
