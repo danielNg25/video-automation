@@ -84,6 +84,10 @@ async def test_happy_path_returns_audio_bytes():
     with _patch_client(fake):
         out = await _provider().synthesize("xin chao", "hn_female_ngochuyen_full_48k-fhg")
     assert out == b"ID3audio"
+    # The audioLink download MUST follow redirects — vbee's link 302-redirects
+    # to a presigned S3 URL; without this httpx returns the 302 and errors.
+    _, audio_kw = fake.get_calls[-1]
+    assert audio_kw.get("follow_redirects") is True
 
 
 @pytest.mark.asyncio

@@ -102,7 +102,11 @@ class VbeeTTSProvider(BaseTTSProvider):
         async with httpx.AsyncClient(timeout=60.0) as client:
             request_id = await self._submit(client, body)
             audio_link = await self._poll(client, request_id)
-            audio = await client.get(audio_link)
+            # The audioLink (vbee.vn/s/...) 302-redirects to a presigned S3
+            # URL — must follow it, or httpx returns the 302 and
+            # raise_for_status() errors. The redirect target is presigned, so
+            # no auth header is needed (and httpx strips it across hosts anyway).
+            audio = await client.get(audio_link, follow_redirects=True)
             audio.raise_for_status()
             return audio.content
 
