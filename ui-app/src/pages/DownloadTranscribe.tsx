@@ -19,6 +19,11 @@ import { FavoriteVoiceStrip } from '../components/FavoriteVoiceStrip';
 import { FavoriteVoiceToggle } from '../components/FavoriteVoiceToggle';
 import { loadFavorites, renameFavorite, toggleFavorite } from '../utils/favoriteVoices';
 import type { FavoriteVoice } from '../utils/favoriteVoices';
+import {
+  loadCustomVbeeVoices,
+  addCustomVbeeVoice,
+  removeCustomVbeeVoice,
+} from '../utils/vbeeCustomVoices';
 
 function PipelinePage() {
   const navigate = useNavigate();
@@ -94,6 +99,7 @@ function PipelinePage() {
       : DEFAULT_GEMINI_TTS_MODEL;
   });
   const [vbeeCustomVoice, setVbeeCustomVoice] = useState('');
+  const [customVbeeVoices, setCustomVbeeVoices] = useState<string[]>(() => loadCustomVbeeVoices());
   const [defaultsSaved, setDefaultsSaved] = useState(false);
 
   const handleSaveDefaults = () => {
@@ -101,6 +107,44 @@ function PipelinePage() {
     setDefaultsSaved(true);
     setTimeout(() => setDefaultsSaved(false), 2000);
   };
+
+  // Custom vbee voiceCode management — add the typed code into the dropdown
+  // (persisted), select it, clear the input.
+  const handleAddCustomVoice = () => {
+    const code = vbeeCustomVoice.trim();
+    if (!code) return;
+    setCustomVbeeVoices(addCustomVbeeVoice(code));
+    setSelectedVoiceId(code);
+    storageSet(`tts_voice_id_${selectedTtsProvider}`, code);
+    setVbeeCustomVoice('');
+  };
+
+  const handleRemoveCustomVoice = (code: string) => {
+    const next = removeCustomVbeeVoice(code);
+    setCustomVbeeVoices(next);
+    if (selectedVoiceId === code) {
+      const fallback = ttsVoices[0]?.name ?? next[0] ?? '';
+      setSelectedVoiceId(fallback);
+      storageSet(`tts_voice_id_${selectedTtsProvider}`, fallback);
+    }
+  };
+
+  // Voice dropdown options: curated/API list plus user-added custom vbee codes.
+  const displayVoices: VoiceInfo[] =
+    selectedTtsProvider === 'vbee'
+      ? [
+          ...ttsVoices,
+          ...customVbeeVoices
+            .filter((c) => !ttsVoices.some((v) => v.name === c))
+            .map((c) => ({
+              name: c,
+              friendly_name: c,
+              gender: 'custom',
+              language: targetTtsLanguage,
+              provider: 'vbee',
+            })),
+        ]
+      : ttsVoices;
 
   const [savedPrefs] = useState(loadLLMPrefs);
   const [llmBackend, setLlmBackend] = useState(savedPrefs.backend);
@@ -152,7 +196,10 @@ function PipelinePage() {
         const voices = await getTTSVoices(targetTtsLanguage, selectedTtsProvider, key);
         setTtsVoices(voices);
         const saved = storageGet(`tts_voice_id_${selectedTtsProvider}`) || '';
-        const isValid = !!saved && voices.some(v => v.name === saved);
+        // A saved custom vbee voiceCode won't be in the fetched list but is
+        // still valid — don't clear it.
+        const isCustom = selectedTtsProvider === 'vbee' && loadCustomVbeeVoices().includes(saved);
+        const isValid = !!saved && (voices.some(v => v.name === saved) || isCustom);
         const picked = isValid ? saved : (voices[0]?.name || '');
         setSelectedVoiceId(picked);
         if (!isValid && saved) {
@@ -293,7 +340,7 @@ function PipelinePage() {
     const targetLang = targetTtsLanguage;
     const ttsOverrides = {
       tts_provider: ttsProviderName || undefined,
-      tts_voice: selectedTtsProvider === 'vbee' && vbeeCustomVoice.trim() ? vbeeCustomVoice.trim() : (ttsVoiceId || undefined),
+      tts_voice: ttsVoiceId || undefined,
       tts_language: targetLang,
       tts_api_key: ttsApiKeyVal || undefined,
       ...(ttsProviderName === 'gemini' ? { tts_model: geminiModel } : {}),
@@ -685,8 +732,8 @@ function PipelinePage() {
                       }}
                       className="w-full bg-surface-container border-none text-xs text-on-surface h-10 px-3 rounded-lg focus:ring-1 focus:ring-primary"
                     >
-                      {ttsVoices.length === 0 && <option value="">No voices loaded (check API key)</option>}
-                      {ttsVoices.map((v) => (
+                      {displayVoices.length === 0 && <option value="">No voices loaded (check API key)</option>}
+                      {displayVoices.map((v) => (
                         <option key={v.name} value={v.name}>
                           {v.friendly_name || v.name} ({v.gender}) — {v.language}
                         </option>
@@ -718,13 +765,46 @@ function PipelinePage() {
                   />
                 )}
                 {selectedTtsProvider === 'vbee' && (
-                  <input
-                    type="text"
-                    value={vbeeCustomVoice}
-                    onChange={(e) => setVbeeCustomVoice(e.target.value)}
-                    placeholder="Custom voiceCode (optional, overrides dropdown)"
-                    className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-2 text-xs font-mono mt-2"
-                  />
+                  <div className="mt-2 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={vbeeCustomVoice}
+                        onChange={(e) => setVbeeCustomVoice(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddCustomVoice(); } }}
+                        placeholder="Paste a custom voiceCode + Add"
+                        className="flex-1 bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-2 text-xs font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddCustomVoice}
+                        disabled={!vbeeCustomVoice.trim()}
+                        className="px-3 py-2 text-xs font-bold uppercase tracking-wider rounded bg-primary text-on-primary-fixed hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Add
+                      </button>
+                    </div>
+                    {customVbeeVoices.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {customVbeeVoices.map((c) => (
+                          <span
+                            key={c}
+                            className="inline-flex items-center gap-1 bg-surface-container-high text-on-surface text-[10px] font-mono px-2 py-0.5 rounded"
+                          >
+                            {c}
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveCustomVoice(c)}
+                              title="Remove custom voice"
+                              className="text-on-surface-variant hover:text-red-400"
+                            >
+                              <span className="material-symbols-outlined text-[12px] leading-none">close</span>
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>

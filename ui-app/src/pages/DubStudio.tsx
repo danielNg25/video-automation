@@ -24,6 +24,11 @@ import {
   toggleFavorite,
 } from '../utils/favoriteVoices';
 import type { FavoriteVoice } from '../utils/favoriteVoices';
+import {
+  loadCustomVbeeVoices,
+  addCustomVbeeVoice,
+  removeCustomVbeeVoice,
+} from '../utils/vbeeCustomVoices';
 
 // ── localStorage keys (isolated from video-flow keys) ────────────────────────
 
@@ -86,6 +91,7 @@ export function DubStudioPage() {
       : DEFAULT_GEMINI_TTS_MODEL;
   });
   const [vbeeCustomVoice, setVbeeCustomVoice] = useState('');
+  const [customVbeeVoices, setCustomVbeeVoices] = useState<string[]>(() => loadCustomVbeeVoices());
 
   // ── provider / voice lists ─────────────────────────────────────────────────
   const [providers, setProviders] = useState<TTSProviderInfo[]>([]);
@@ -159,7 +165,10 @@ export function DubStudioPage() {
         setVoices(v);
         // restore persisted voice for this provider
         const saved = storageGet(SK.voiceId(provider));
-        if (saved && v.some((vi) => vi.name === saved)) {
+        // A saved code may be a user-added custom vbee voice not present in
+        // the fetched list — honour it too.
+        const isCustom = provider === 'vbee' && loadCustomVbeeVoices().includes(saved);
+        if (saved && (v.some((vi) => vi.name === saved) || isCustom)) {
           setVoiceId(saved);
         } else if (v.length > 0) {
           setVoiceId(v[0].name);
@@ -225,6 +234,42 @@ export function DubStudioPage() {
     storageSet(SK.voiceId(provider), v);
   };
 
+  // Add the typed custom voiceCode into the dropdown (persisted), select it,
+  // and clear the input. Only meaningful for vbee.
+  const handleAddCustomVoice = () => {
+    const code = vbeeCustomVoice.trim();
+    if (!code) return;
+    setCustomVbeeVoices(addCustomVbeeVoice(code));
+    handleSetVoiceId(code);
+    setVbeeCustomVoice('');
+  };
+
+  const handleRemoveCustomVoice = (code: string) => {
+    const next = removeCustomVbeeVoice(code);
+    setCustomVbeeVoices(next);
+    if (voiceId === code) {
+      handleSetVoiceId(voices[0]?.name ?? next[0] ?? '');
+    }
+  };
+
+  // Voice options shown in the dropdown: the curated/API list plus any
+  // user-added custom vbee codes that aren't already present.
+  const displayVoices: VoiceInfo[] =
+    provider === 'vbee'
+      ? [
+          ...voices,
+          ...customVbeeVoices
+            .filter((c) => !voices.some((v) => v.name === c))
+            .map((c) => ({
+              name: c,
+              friendly_name: c,
+              gender: 'custom',
+              language,
+              provider: 'vbee',
+            })),
+        ]
+      : voices;
+
   // ── generate ───────────────────────────────────────────────────────────────
   const handleGenerate = async () => {
     if (!srtFile) return;
@@ -246,7 +291,7 @@ export function DubStudioPage() {
       const resp = await postStandaloneDub({
         file: srtFile,
         provider,
-        voice: provider === 'vbee' && vbeeCustomVoice.trim() ? vbeeCustomVoice.trim() : voiceId,
+        voice: voiceId,
         language,
         playbackSpeed,
         enableShortening,
@@ -444,10 +489,10 @@ export function DubStudioPage() {
                   className={selectClass}
                   value={voiceId}
                   onChange={(e) => handleSetVoiceId(e.target.value)}
-                  disabled={voices.length === 0}
+                  disabled={displayVoices.length === 0}
                 >
-                  {voices.length === 0 && <option value="">— no voices available —</option>}
-                  {voices.map((v) => (
+                  {displayVoices.length === 0 && <option value="">— no voices available —</option>}
+                  {displayVoices.map((v) => (
                     <option key={v.name} value={v.name}>
                       {v.friendly_name} ({v.gender})
                     </option>
@@ -474,13 +519,46 @@ export function DubStudioPage() {
               }}
             />
             {provider === 'vbee' && (
-              <input
-                type="text"
-                value={vbeeCustomVoice}
-                onChange={(e) => setVbeeCustomVoice(e.target.value)}
-                placeholder="Custom voiceCode (optional, overrides dropdown)"
-                className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-2 text-xs font-mono mt-2"
-              />
+              <div className="mt-2 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={vbeeCustomVoice}
+                    onChange={(e) => setVbeeCustomVoice(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddCustomVoice(); } }}
+                    placeholder="Paste a custom voiceCode + Add"
+                    className="flex-1 bg-surface-container-lowest border border-outline-variant/20 focus:border-primary/50 focus:ring-0 rounded p-2 text-xs font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddCustomVoice}
+                    disabled={!vbeeCustomVoice.trim()}
+                    className="px-3 py-2 text-xs font-bold uppercase tracking-wider rounded bg-primary text-on-primary-fixed hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Add
+                  </button>
+                </div>
+                {customVbeeVoices.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {customVbeeVoices.map((c) => (
+                      <span
+                        key={c}
+                        className="inline-flex items-center gap-1 bg-surface-container-high text-on-surface text-[10px] font-mono px-2 py-0.5 rounded"
+                      >
+                        {c}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveCustomVoice(c)}
+                          title="Remove custom voice"
+                          className="text-on-surface-variant hover:text-red-400"
+                        >
+                          <span className="material-symbols-outlined text-[12px] leading-none">close</span>
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
