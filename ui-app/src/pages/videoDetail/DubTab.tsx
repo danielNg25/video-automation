@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { storageSet } from '../../utils/storage';
+import { storageSet, loadApiKeys } from '../../utils/storage';
 import { TTSPreview } from '../../components/TTSPreview';
 import { deleteTTSAudio, getTTSAudioUrl } from '../../api/client';
 import type { TTSAudioEntry } from '../../api/client';
@@ -343,6 +343,7 @@ export function DubTab(props: Props) {
             speed="+0%"
             pitch="+0Hz"
             apiKey={ttsApiKey || undefined}
+            appId={selectedTtsProvider === 'vbee' ? loadApiKeys().vbee_app_id : undefined}
             playbackSpeed={playbackSpeed}
             underlayDb={underlayDb}
             sampleText={

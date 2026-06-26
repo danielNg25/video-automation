@@ -740,6 +740,7 @@ function PipelinePage() {
                   apiKey={ttsApiKey || undefined}
                   playbackSpeed={playbackSpeed}
                   model={selectedTtsProvider === 'gemini' ? geminiModel : undefined}
+                  appId={selectedTtsProvider === 'vbee' ? loadApiKeys().vbee_app_id : undefined}
                   sampleText={
                     targetTtsLanguage === 'en'
                       ? 'Hello everyone, today we will talk about a very interesting topic.'
