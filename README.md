@@ -689,6 +689,16 @@ douyin-automation/
 
 ---
 
+### Subtitle plain-text export (2026-06-27)
+
+> A "TXT" button in the editor toolbar downloads the active subtitle as plain text (one line per subtitle, no timestamps) for reusing the content in a new video.
+
+- [x] `src/processor/subtitle.py::srt_segments_to_text` — pure helper joining parsed SRT segments one-per-line, collapsing internal whitespace, skipping empties. 6 unit tests.
+- [x] `/api/videos/{id}/srt/download?fmt=txt` — parses the SRT and returns `text/plain` as `{title}.{lang}[.version].txt`; `fmt=srt` (default) unchanged. 2 router tests.
+- [x] FE: `getSrtDownloadUrl` gains a `fmt` arg; editor toolbar gets a TXT `<a download>` next to SRT, respecting the selected version.
+
+---
+
 ### Vbee TTS provider — Vietnamese (2026-06-20)
 
 > Adds vbee.vn / AIVoice as a TTS provider, hiding its async submit→poll→download API behind the synchronous `synthesize()` contract. See [`docs/superpowers/specs/2026-06-20-vbee-tts-provider-design.md`](docs/superpowers/specs/2026-06-20-vbee-tts-provider-design.md) and [`docs/superpowers/plans/2026-06-20-vbee-tts-provider.md`](docs/superpowers/plans/2026-06-20-vbee-tts-provider.md).
