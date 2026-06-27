@@ -45,6 +45,21 @@ def parse_srt(srt_path: Path) -> list[dict]:
     return segments
 
 
+def srt_segments_to_text(segments: list[dict]) -> str:
+    """Render parsed SRT segments as plain text — one subtitle per line.
+
+    Drops indices and timestamps. Within a segment, internal line breaks and
+    repeated whitespace collapse to single spaces; empty segments are skipped.
+    Lines are joined with '\\n' (no trailing newline).
+    """
+    lines: list[str] = []
+    for seg in segments:
+        text = " ".join(str(seg.get("text", "")).split())
+        if text:
+            lines.append(text)
+    return "\n".join(lines)
+
+
 def _timestamp_to_seconds(ts: str) -> float:
     """Convert SRT timestamp (HH:MM:SS,mmm) to seconds."""
     h, m, rest = ts.split(":")

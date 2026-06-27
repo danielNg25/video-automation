@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from starlette.responses import FileResponse
+from starlette.responses import FileResponse, Response
 
 from src.api.deps import get_config, get_task_manager
 from src.api.models import SrtResponse, SubtitleSegment, TaskResponse, TranscribeRequest
@@ -134,11 +134,16 @@ async def get_srt(
 
 
 @router.get("/api/videos/{video_id}/srt/download")
-async def download_srt(video_id: str, language: str = "zh", version: str = "draft"):
-    """Download the SRT file as an attachment.
+async def download_srt(
+    video_id: str, language: str = "zh", version: str = "draft", fmt: str = "srt"
+):
+    """Download the subtitle as an attachment.
 
     `version='draft'` (default) → the working-draft SRT.
     `version='v1'`, `'v2'`, ... → the corresponding snapshot.
+    `fmt='srt'` (default) → the raw SRT file.
+    `fmt='txt'` → plain text, one subtitle per line (no indices/timestamps),
+        for reusing the spoken content elsewhere.
     """
     srt_path = _resolve_srt_path(video_id, language, version)
     if not srt_path.exists():
@@ -147,13 +152,25 @@ async def download_srt(video_id: str, language: str = "zh", version: str = "draf
             detail=f"SRT file not found for {video_id} ({language}, version={version})",
         )
 
-    # Suggested download name: "<edited title>.<lang>[.<version>].srt".
+    # Suggested download name: "<edited title>.<lang>[.<version>].<ext>".
     # Falls back to video_id when the title is missing/empty. The version
     # suffix is only added for snapshots so a draft download stays clean.
     tm = get_task_manager()
     video = tm.video_index.get(video_id)
     base = safe_filename(video.title if video else None, video_id)
     suffix = "" if version == "draft" else f".{version}"
+
+    if fmt == "txt":
+        from src.processor.subtitle import srt_segments_to_text
+
+        text = srt_segments_to_text(parse_srt(srt_path))
+        download_name = f"{base}.{language}{suffix}.txt"
+        return Response(
+            content=text,
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{download_name}"'},
+        )
+
     download_name = f"{base}.{language}{suffix}.srt"
     return FileResponse(
         path=str(srt_path),
