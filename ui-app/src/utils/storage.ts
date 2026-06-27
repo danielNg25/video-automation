@@ -37,6 +37,8 @@ export interface LLMApiKeys {
   elevenlabs: string;
   google: string;
   gemini: string;
+  vbee: string;
+  vbee_app_id: string;
   [key: string]: string;
 }
 
@@ -48,6 +50,8 @@ export function loadApiKeys(): LLMApiKeys {
     elevenlabs: storageGet('api_key_elevenlabs'),
     google: storageGet('api_key_google'),
     gemini: storageGet('api_key_gemini'),
+    vbee: storageGet('api_key_vbee'),
+    vbee_app_id: storageGet('api_key_vbee_app_id'),
   };
 }
 

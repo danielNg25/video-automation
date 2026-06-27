@@ -689,6 +689,21 @@ douyin-automation/
 
 ---
 
+### Vbee TTS provider — Vietnamese (2026-06-20)
+
+> Adds vbee.vn / AIVoice as a TTS provider, hiding its async submit→poll→download API behind the synchronous `synthesize()` contract. See [`docs/superpowers/specs/2026-06-20-vbee-tts-provider-design.md`](docs/superpowers/specs/2026-06-20-vbee-tts-provider-design.md) and [`docs/superpowers/plans/2026-06-20-vbee-tts-provider.md`](docs/superpowers/plans/2026-06-20-vbee-tts-provider.md).
+
+- [x] **Task 1** — `src/tts/vbee_tts.py::VbeeTTSProvider`: async submit/poll/download behind `synthesize()`; curated Vietnamese voices; speed clamp; 11 unit tests.
+- [x] **Task 2** — Factory branch in `src/tts/__init__.py`. 1 test.
+- [x] **Task 3** — `app_id` on TTSRequest/TTSPreviewRequest; `/api/tts/providers` lists vbee; start_tts/preview_tts inject `vbee_app_id`; `run_tts_track` token injection generalised. 3 router tests.
+- [x] **Task 4** — `tts_app_id` threaded through pipeline (full + batch) + standalone dub.
+- [x] **Task 5** — `config.example.yaml` documents `vbee_app_id` / `vbee_default_voice`.
+- [x] **Task 6** — Settings "Vbee Token" + "Vbee App ID" fields.
+- [x] **Task 7** — FE wiring: api-key arm, app_id, custom voiceCode on DubTab / DubStudio / Pipeline.
+- [x] **Task 8** — CHANGELOG + README rollup.
+
+---
+
 ### One-Time Setup Checklist
 
 - [ ] Docker installed, Douyin API container running

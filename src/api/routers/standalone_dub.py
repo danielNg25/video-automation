@@ -30,6 +30,7 @@ async def start_standalone_dub(
     llm_api_key: str | None = Form(None),
     llm_backend: str | None = Form(None),
     model: str | None = Form(None),
+    app_id: str | None = Form(None),
 ):
     """Generate a dub from an uploaded SRT. Returns task_id; subscribe
     to the existing /api/tasks/{task_id} SSE for progress."""
@@ -53,6 +54,7 @@ async def start_standalone_dub(
             llm_api_key=llm_api_key,
             llm_backend=llm_backend,
             model=model,
+            app_id=app_id,
         )
     )
     return TaskResponse(task_id=task.task_id, status=task.status)

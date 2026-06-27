@@ -44,6 +44,12 @@ async def start_tts(request: TTSRequest):
         tts_section["gemini_model"] = request.model
         config = {**config, "tts": tts_section}
 
+    # Inject per-request Vbee App-Id so run_tts's factory call sees it.
+    if request.provider == "vbee" and request.app_id:
+        tts_section = dict(config.get("tts", {}))
+        tts_section["vbee_app_id"] = request.app_id
+        config = {**config, "tts": tts_section}
+
     video = tm.video_index.get(request.video_id)
     if not video:
         raise HTTPException(status_code=404, detail=f"Video {request.video_id} not found")
@@ -93,6 +99,7 @@ async def list_providers():
         {"id": "gemini", "name": "Gemini TTS", "free": False, "requires_key": True},
         {"id": "elevenlabs", "name": "ElevenLabs", "free": False, "requires_key": True},
         {"id": "openai", "name": "OpenAI TTS", "free": False, "requires_key": True},
+        {"id": "vbee", "name": "Vbee (Vietnamese)", "free": False, "requires_key": True},
     ]
 
 
@@ -219,6 +226,12 @@ async def preview_tts(request: TTSPreviewRequest):
     if request.provider == "gemini" and request.model:
         tts_section = dict(effective_config.get("tts", {}))
         tts_section["gemini_model"] = request.model
+        effective_config = {**effective_config, "tts": tts_section}
+
+    # Inject per-request Vbee App-Id so the factory passes it to VbeeTTSProvider.
+    if request.provider == "vbee" and request.app_id:
+        tts_section = dict(effective_config.get("tts", {}))
+        tts_section["vbee_app_id"] = request.app_id
         effective_config = {**effective_config, "tts": tts_section}
 
     tts = get_tts_provider(effective_config, provider=request.provider)

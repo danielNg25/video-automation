@@ -46,7 +46,7 @@ ocr:
 # TTS Dubbing
 tts:
     enabled: true
-    default_provider: google            # "google", "gemini", "openai", "elevenlabs"
+    default_provider: google            # "google", "gemini", "openai", "elevenlabs", "vbee"
     # Underlay level (dB) for the original-language audio mixed under the dub.
     # 0 disables the underlay entirely. Default: -12 (audible undertone).
     # Request bodies / UI settings override this value.
@@ -56,6 +56,15 @@ tts:
     # API in your AI Studio project, NOT the same key as Google Cloud TTS.
     # API keys are typically supplied per-request via the UI/Settings instead.
     gemini_model: 'gemini-2.5-flash-preview-tts'
+    # Vbee (vbee.vn / AIVoice) — Vietnamese TTS. Token + App-Id are entered
+    # in the UI (Settings → API Keys); the per-request values override these.
+    # app_id here is just an optional fallback default.
+    vbee_app_id: ''
+    vbee_default_voice: 'hn_female_ngochuyen_full_48k-fhg'
+    # Optional output tuning (sane defaults baked into the provider):
+    # vbee_bitrate: 128            # 8 | 16 | 32 | 64 | 128
+    # vbee_sample_rate: 48000      # 8000..48000; omit to use the voice default
+    # vbee_webhook_url: 'https://example.com/vbee-callback'  # required by API; we poll
 
 # Pipeline
 pipeline:

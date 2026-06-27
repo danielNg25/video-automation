@@ -72,6 +72,7 @@ class FullPipelineRequest(BaseModel):
     tts_language: str = "vi"
     tts_api_key: str | None = None  # ElevenLabs/OpenAI/Google API key
     tts_model: str | None = None  # Gemini model ID; ignored by other providers
+    tts_app_id: str | None = None  # Vbee App-Id; ignored by other providers
     llm_api_key: str | None = None  # for the TTS-shortening LLM
     llm_backend: str | None = None  # deepseek, openai, anthropic
     playback_speed: float | None = None  # fixed dub playback speed
@@ -104,6 +105,7 @@ class BatchPipelineRequest(BaseModel):
     tts_language: str = "vi"
     tts_api_key: str | None = None
     tts_model: str | None = None  # Gemini model ID; ignored by other providers
+    tts_app_id: str | None = None  # Vbee App-Id; ignored by other providers
     llm_api_key: str | None = None
     llm_backend: str | None = None
     playback_speed: float | None = None
@@ -249,6 +251,7 @@ class TTSRequest(BaseModel):
     language: str = "vi"
     provider: str = "google"  # google | elevenlabs | openai | gemini (FE picks)
     model: str | None = None  # Gemini model ID; ignored by other providers
+    app_id: str | None = None  # Vbee App-Id; ignored by other providers
     voice: str                # provider's voice ID (e.g. "vi-VN-Wavenet-A"); required
     api_key: str | None = None  # per-request API key for paid providers
     llm_api_key: str | None = None  # API key for LLM text shortening
@@ -267,6 +270,7 @@ class TTSPreviewRequest(BaseModel):
     voice: str = "vi-VN-HoaiMyNeural"
     provider: str = "google"
     model: str | None = None  # Gemini model ID; ignored by other providers
+    app_id: str | None = None  # Vbee App-Id; ignored by other providers
     # Apply atempo at this speed to the previewed sample so the user can
     # hear what the dub will sound like at their chosen playback speed.
     playback_speed: float = 1.0
