@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar';
 import { TTSPreview } from '../components/TTSPreview';
-import { postDownload, postDownloadBatch, getVideos, subscribeSSE, deleteVideo, getProfiles, postPipeline, getTTSProviders, getTTSVoices } from '../api/client';
+import { postDownload, postDownloadBatch, getVideos, subscribeSSE, deleteVideo, getProfiles, postPipeline, getTTSProviders, getTTSVoices, getConfig } from '../api/client';
 import type { VideoMetadata, TranslationProfileSummary, TTSProviderInfo, VoiceInfo } from '../api/types';
 import { loadApiKeys, loadLLMPrefs, saveLLMPrefs, storageGet, storageSet } from '../utils/storage';
 import {
@@ -92,6 +92,19 @@ function PipelinePage() {
   useEffect(() => {
     storageSet('pipeline_ocr_crop_override', ocrCropOverride);
   }, [ocrCropOverride]);
+  // The global ocr.crop_bottom_pct from Settings — shown in the "Use Settings
+  // default" option so the user sees the actual percent that applies when they
+  // don't override. null until fetched.
+  const [settingsCropPct, setSettingsCropPct] = useState<number | null>(null);
+  useEffect(() => {
+    getConfig()
+      .then((cfg) => {
+        const ocr = (cfg.ocr ?? {}) as Record<string, unknown>;
+        const v = Number(ocr.crop_bottom_pct);
+        setSettingsCropPct(Number.isFinite(v) ? v : null);
+      })
+      .catch(() => {});
+  }, []);
   const [geminiModel, setGeminiModel] = useState<GeminiTTSModelId>(() => {
     const saved = storageGet(GEMINI_MODEL_STORAGE_KEY);
     return (GEMINI_TTS_MODELS.map((m) => m.id) as string[]).includes(saved)
@@ -584,7 +597,11 @@ function PipelinePage() {
                   className="w-full bg-surface-container border-none text-xs text-on-surface h-10 px-3 rounded-lg focus:ring-1 focus:ring-primary"
                   title="Override the global ocr.crop_bottom_pct from Settings for this pipeline run only."
                 >
-                  <option value="">Use Settings default</option>
+                  <option value="">
+                    {settingsCropPct === null
+                      ? 'Use Settings default'
+                      : `Use Settings default (${settingsCropPct === 0 ? 'Off — full frame' : `${Math.round(settingsCropPct * 100)}%`})`}
+                  </option>
                   <option value="0">Off (full frame)</option>
                   <option value="0.20">20% (bottom fifth)</option>
                   <option value="0.25">25%</option>
