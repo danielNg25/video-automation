@@ -1,4 +1,6 @@
+import os
 import re
+import uuid
 from pathlib import Path
 
 import httpx
@@ -7,6 +9,57 @@ from src.utils.logger import setup_logger
 from src.utils.metadata import VideoMetadata
 
 logger = setup_logger(__name__)
+
+# Byte markers that mean the "video" body is really an HTML/JSON/text error
+# or anti-scrape challenge page served with HTTP 200.
+_ERROR_MARKERS = (
+    b"<!doctype",
+    b"<html",
+    b"forbidden",
+    b"not found",
+    b"access denied",
+    b"rate limit",
+    b"blocked",
+)
+
+
+def _looks_textual(b: bytes) -> bool:
+    """True only if every byte is printable ASCII or common whitespace.
+
+    Binary media (an MP4 begins with NUL box-size bytes) is not textual, so the
+    plaintext error-marker scan below never runs against it — a real video that
+    happens to contain the bytes ``blocked`` in a binary box isn't rejected.
+    """
+    return bool(b) and all(c in b"\t\n\r\x0b\x0c " or 0x20 <= c <= 0x7E for c in b)
+
+
+def _validate_download(prefix: bytes, size: int, content_type: str) -> None:
+    """Raise ValueError if the downloaded bytes don't look like a real video.
+
+    Deliberately a *negative* check (reject known error shapes) rather than a
+    positive MP4 recognizer: box-size prefixes make ``ftyp`` sniffing
+    unreliable, and legitimate bodies may arrive as ``application/octet-stream``.
+    It does not guarantee every accepted body is a valid video — only that
+    obvious HTML/JSON/text error pages are turned away so the fallback runs.
+    """
+    if size == 0:
+        raise ValueError("Downloaded video is empty")
+    ct = content_type.lower()
+    if "text/html" in ct or "application/json" in ct:
+        raise ValueError(f"Download has a non-video content type: {content_type}")
+    p = prefix
+    if p.startswith(b"\xef\xbb\xbf"):  # strip UTF-8 BOM (lstrip won't)
+        p = p[3:]
+    p = p.lstrip()
+    if not p:
+        raise ValueError("Download body is empty/whitespace, not a video")
+    if p[:1] in (b"<", b"{", b"["):
+        raise ValueError("Download looks like an error/challenge page, not a video")
+    head = p[:64]
+    # Only match error words in a prefix that is actually text; binary video
+    # data must never be rejected on an incidental substring.
+    if _looks_textual(head) and any(marker in head.lower() for marker in _ERROR_MARKERS):
+        raise ValueError("Download looks like an error response, not a video")
 
 
 class DouyinDownloader:
@@ -70,7 +123,9 @@ class DouyinDownloader:
         if cookie:
             headers["Cookie"] = cookie
 
-        async with httpx.AsyncClient(timeout=self.timeout, headers=headers) as client:
+        async with httpx.AsyncClient(
+            timeout=self.timeout, headers=headers, follow_redirects=True
+        ) as client:
             # Fetch video data from API
             logger.info(f"Fetching video data from Douyin API: {url}")
             api_url = f"{self.api_base}/api/hybrid/video_data"
@@ -103,14 +158,38 @@ class DouyinDownloader:
             if not video_url:
                 raise ValueError("No video download URL found (may be a slideshow)")
 
-            # Stream download
+            # Stream download to a unique temp file, validate, then atomically
+            # publish. A mid-stream failure leaves only the .part file (cleaned
+            # up below), never a truncated {video_id}.mp4 that the yt-dlp
+            # fallback would mistake for a finished download.
             output_path = output_dir / f"{video_id}.mp4"
+            tmp_path = output_dir / f".{video_id}.{uuid.uuid4().hex}.part"
             logger.info(f"Downloading video {video_id} to {output_path}")
-            async with client.stream("GET", video_url) as stream:
-                stream.raise_for_status()
-                with open(output_path, "wb") as f:
-                    async for chunk in stream.aiter_bytes(chunk_size=8192):
-                        f.write(chunk)
+            bytes_written = 0
+            sniff = bytearray()  # first 512 bytes, for post-download validation
+            try:
+                content_type = ""
+                async with client.stream("GET", video_url) as stream:
+                    stream.raise_for_status()
+                    try:
+                        content_type = str(stream.headers.get("content-type", "") or "")
+                    except Exception:
+                        content_type = ""
+                    with open(tmp_path, "wb") as f:
+                        async for chunk in stream.aiter_bytes(chunk_size=8192):
+                            if not chunk:
+                                continue
+                            if len(sniff) < 512:
+                                sniff.extend(chunk[: 512 - len(sniff)])
+                            f.write(chunk)
+                            bytes_written += len(chunk)
+                # Validate the buffered prefix (BOM/whitespace/HTML/JSON/text
+                # errors) across chunk boundaries, then publish atomically.
+                _validate_download(bytes(sniff), bytes_written, content_type)
+                os.replace(tmp_path, output_path)
+            except BaseException:
+                Path(tmp_path).unlink(missing_ok=True)
+                raise
 
             # Extract metadata
             desc = video_data.get("desc", "")
