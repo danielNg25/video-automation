@@ -257,12 +257,20 @@ def status(video_id):
 @main.command()
 def server():
     """Start the web UI server."""
+    import os
+
     import uvicorn
 
     from src.api import create_app
 
     app = create_app()
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Default to loopback so the API isn't exposed on all interfaces. Set
+    # HOST=0.0.0.0 explicitly (behind a trusted proxy / auth) for remote use.
+    uvicorn.run(
+        app,
+        host=os.environ.get("HOST", "127.0.0.1"),
+        port=int(os.environ.get("PORT", "8000")),
+    )
 
 
 def _status_color(status: str) -> str:

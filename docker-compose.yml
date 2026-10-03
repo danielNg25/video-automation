@@ -2,8 +2,10 @@ services:
   douyin-api:
     image: evil0ctal/douyin_tiktok_download_api:latest
     container_name: douyin-api
+    # Loopback-only publication. The helper API has no auth; do not expose it
+    # on all interfaces. Override the bind host deliberately for remote use.
     ports:
-      - "8081:80"
+      - "127.0.0.1:8081:80"
     restart: unless-stopped
     volumes:
       - ./config/douyin_web_config.yaml:/app/crawlers/douyin/web/config.yaml:ro
@@ -15,8 +17,10 @@ services:
     # Apple Silicon: comment the line below to try native arm64. Onnxruntime
     # ships aarch64 wheels but Rosetta amd64 is the well-tested path.
     platform: linux/amd64
+    # Loopback-only publication — the API has no authentication. The container
+    # still binds 0.0.0.0 internally; compose contains it to the host only.
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       DOUYIN_API_BASE: http://douyin-api:80
     depends_on:

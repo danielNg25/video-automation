@@ -86,9 +86,12 @@ docker-build-nocache:
 docker-logs:
 	docker compose logs -f app
 
-# API server
+# API server. Binds loopback by default; override with `make api HOST=0.0.0.0`
+# only behind a trusted proxy / auth.
+HOST ?= 127.0.0.1
+PORT ?= 8000
 api:
-	. .venv/bin/activate && uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000
+	. .venv/bin/activate && uvicorn src.api.main:app --reload --host $(HOST) --port $(PORT)
 
 # UI dev server
 ui:

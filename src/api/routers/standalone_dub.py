@@ -10,6 +10,7 @@ from starlette.responses import FileResponse
 from src.api import standalone_dub as standalone_mod
 from src.api.deps import get_config, get_task_manager
 from src.api.models import TaskResponse
+from src.api.validation import validate_language, validate_uuid
 
 router = APIRouter()
 
@@ -34,6 +35,7 @@ async def start_standalone_dub(
 ):
     """Generate a dub from an uploaded SRT. Returns task_id; subscribe
     to the existing /api/tasks/{task_id} SSE for progress."""
+    validate_language(language)
     tm = get_task_manager()
     config = get_config()
 
@@ -72,6 +74,7 @@ async def list_standalone_dubs():
 @router.delete("/api/standalone-dub/{dub_uuid}", status_code=204)
 async def delete_standalone_dub(dub_uuid: str):
     """Remove the WAV + metadata sidecar."""
+    validate_uuid(dub_uuid)
     ok = standalone_mod.delete_dub(dub_uuid)
     if not ok:
         raise HTTPException(status_code=404, detail=f"Dub {dub_uuid} not found")
@@ -81,6 +84,7 @@ async def delete_standalone_dub(dub_uuid: str):
 @router.get("/api/standalone-dub/{dub_uuid}.wav")
 async def download_standalone_dub(dub_uuid: str):
     """Serve the WAV with Content-Disposition: attachment for download."""
+    validate_uuid(dub_uuid)
     wav = standalone_mod.wav_path(dub_uuid)
     if not wav.exists():
         raise HTTPException(status_code=404, detail=f"Dub {dub_uuid} not found")

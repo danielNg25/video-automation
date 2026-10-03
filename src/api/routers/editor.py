@@ -14,6 +14,7 @@ from src.api.models import (
     SrtResponse,
 )
 from src.api.routers.transcribe import _resolve_srt_path
+from src.api.validation import validate_language, validate_version, validate_video_id
 from src.processor.subtitle import (
     _timestamp_to_seconds,
     write_srt,
@@ -26,6 +27,7 @@ router = APIRouter()
 @router.get("/api/videos/{video_id}/raw")
 async def serve_raw_video(video_id: str):
     """Serve the full-resolution raw video file."""
+    validate_video_id(video_id)
     tm = get_task_manager()
     video = tm.video_index.get(video_id)
     if not video:
@@ -46,6 +48,7 @@ async def serve_raw_video(video_id: str):
 @router.get("/api/videos/{video_id}/proxy")
 async def serve_proxy_video(video_id: str):
     """Serve a cached 480p proxy video, generating on first request."""
+    validate_video_id(video_id)
     tm = get_task_manager()
     video = tm.video_index.get(video_id)
     if not video:
@@ -84,6 +87,11 @@ async def save_srt(video_id: str, request: SaveSrtRequest):
     can't silently mint a new version through this endpoint.
     """
     from src.api.versions import ensure_migrated
+
+    # Validate before ensure_migrated — it builds paths from these too.
+    validate_video_id(video_id)
+    validate_language(request.language)
+    validate_version(request.version)
 
     tm = get_task_manager()
     video = tm.video_index.get(video_id)

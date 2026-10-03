@@ -94,9 +94,13 @@ def tts_output_path(
     provider_name: str,
     voice_id: str,
 ) -> Path:
-    """Canonical output filename used by both flows."""
-    safe_voice = voice_id.replace("/", "-").replace(" ", "-")
-    return tts_dir / f"{video_id}_{language}_{provider_name}_{safe_voice}.wav"
+    """Canonical output filename used by both flows.
+
+    Every interpolated component is filename-sanitised so a crafted value
+    (e.g. a voice/id containing '/') cannot escape ``tts_dir``.
+    """
+    s = lambda v: _FILENAME_SAFE.sub("-", str(v))  # noqa: E731
+    return tts_dir / f"{s(video_id)}_{s(language)}_{s(provider_name)}_{s(voice_id)}.wav"
 
 
 def dub_output_filename(
@@ -110,13 +114,13 @@ def dub_output_filename(
 
     Layout: data/tts/{video_id}_{language}_{version}_{provider}_{voice}.wav.
 
-    `voice` may contain characters that aren't safe in a filename (Google
-    voice ids historically include '/'); they are replaced with '-'.
+    Every interpolated component (not just `voice`/`provider`) is
+    filename-sanitised — `voice` historically includes '/', and a crafted
+    `version` must not be able to escape ``data/tts`` either.
     """
-    safe_voice = _FILENAME_SAFE.sub("-", voice)
-    safe_provider = _FILENAME_SAFE.sub("-", provider)
+    s = lambda v: _FILENAME_SAFE.sub("-", str(v))  # noqa: E731
     return Path(
-        f"data/tts/{video_id}_{language}_{version}_{safe_provider}_{safe_voice}.wav"
+        f"data/tts/{s(video_id)}_{s(language)}_{s(version)}_{s(provider)}_{s(voice)}.wav"
     )
 
 

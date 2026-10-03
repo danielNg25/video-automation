@@ -14,6 +14,11 @@ from src.api.models import (
     TranslationProfileResponse,
     TranslationProfileSummary,
 )
+from src.api.validation import (
+    validate_language,
+    validate_profile_name,
+    validate_video_id,
+)
 from src.translator.profiles import (
     TranslationProfile,
     delete_profile,
@@ -32,6 +37,10 @@ router = APIRouter()
 async def start_translate(request: TranslateRequest):
     tm = get_task_manager()
     config = get_config()
+
+    validate_video_id(request.video_id)
+    validate_language(request.source_language)
+    validate_profile_name(request.profile_name)
 
     if request.video_id not in tm.video_index:
         raise HTTPException(status_code=404, detail=f"Video {request.video_id} not found")
@@ -95,6 +104,7 @@ async def get_profiles():
 
 @router.get("/api/profiles/{name}", response_model=TranslationProfileResponse)
 async def get_profile(name: str):
+    validate_profile_name(name)
     try:
         p = load_profile(name)
     except FileNotFoundError:
@@ -112,6 +122,10 @@ async def get_profile(name: str):
 
 @router.post("/api/profiles", response_model=TranslationProfileResponse, status_code=201)
 async def create_profile(req: TranslationProfileCreate):
+    validate_profile_name(req.name)
+    # target_language is interpolated into the translated SRT's filename.
+    validate_language(req.target_language)
+    validate_language(req.source_language)
     # Check for existing
     if req.name in list_profiles():
         raise HTTPException(status_code=409, detail=f"Profile '{req.name}' already exists")
@@ -138,6 +152,10 @@ async def create_profile(req: TranslationProfileCreate):
 
 @router.put("/api/profiles/{name}", response_model=TranslationProfileResponse)
 async def update_profile(name: str, req: TranslationProfileCreate):
+    validate_profile_name(name)
+    validate_profile_name(req.name)
+    validate_language(req.target_language)
+    validate_language(req.source_language)
     if name not in list_profiles():
         raise HTTPException(status_code=404, detail=f"Profile '{name}' not found")
 
@@ -170,6 +188,7 @@ async def update_profile(name: str, req: TranslationProfileCreate):
 
 @router.delete("/api/profiles/{name}", status_code=204)
 async def remove_profile(name: str):
+    validate_profile_name(name)
     try:
         delete_profile(name)
     except FileNotFoundError:

@@ -714,6 +714,22 @@ douyin-automation/
 
 ---
 
+### API Hardening — Path Validation + Loopback Binding (2026-10-03)
+
+> Step 1 of 6 in the agreed backend-hardening pass (review: download / OCR / pipeline paths). Contains the API surface before the deeper lifecycle fixes.
+
+- [x] **Task 1** — `src/api/validation.py`: `fullmatch` allow-list validators (`video_id` / `language` / `version` / profile-name / UUID) + `ensure_within()` path-containment check.
+- [x] **Task 2** — Wire validation into every SRT-path endpoint (transcribe get/download, editor save, start-transcribe, sample-frame, raw/proxy serve) *before* `ensure_migrated`.
+- [x] **Task 3** — Validate across all five `/api/videos/{id}/versions` routes, the TTS routes, translate + profile CRUD (name + `target_language`/`source_language`), the three pipeline routes, and standalone-dub.
+- [x] **Task 4** — Filename-sanitise every component in the TTS output-path builders; guard `translate_with_profile` against an escaping `target_language`; contain the SPA catch-all within the UI dir; constrain the cookie-write path to `config/`/`data/`.
+- [x] **Task 5** — Loopback-only default bind for `main.py`, CLI `server`, and `make api` (with `HOST`/`PORT` override); Compose publishes `8000` + `8081` on `127.0.0.1`.
+- [x] **Task 6** — Tests: `tests/test_api_validation.py` (validators, `ensure_within`, endpoint 422s, SPA containment) — 86 cases; adversarially cross-reviewed with Codex (3 rounds).
+- [x] **Task 7** — CHANGELOG + README updates.
+
+**Not in this step:** authentication (deferred as a deployment decision) and steps 2–6 (download integrity, cancellation, state/recovery, OCR correctness, pipeline consolidation).
+
+---
+
 ### One-Time Setup Checklist
 
 - [ ] Docker installed, Douyin API container running

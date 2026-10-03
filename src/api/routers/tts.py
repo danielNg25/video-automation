@@ -16,6 +16,7 @@ from src.api.models import (
     TTSRequest,
     VoiceInfo,
 )
+from src.api.validation import validate_language, validate_version, validate_video_id
 from src.tts import get_tts_provider
 from src.utils.filename import safe_filename
 
@@ -34,6 +35,9 @@ router = APIRouter()
 @router.post("/api/tts", response_model=TaskResponse)
 async def start_tts(request: TTSRequest):
     """Generate TTS audio track for a video."""
+    validate_video_id(request.video_id)
+    validate_language(request.language)
+    validate_version(request.version)
     tm = get_task_manager()
     config = get_config()
 
@@ -108,6 +112,7 @@ async def list_tts_audio(video_id: str):
     """List all generated TTS audio files for a video."""
     import os
 
+    validate_video_id(video_id)
     data_dir = get_data_dir()
     tts_dir = data_dir / "tts"
     if not tts_dir.exists():
@@ -151,6 +156,7 @@ async def list_tts_audio(video_id: str):
 @router.delete("/api/videos/{video_id}/tts/{filename}")
 async def delete_tts_audio(video_id: str, filename: str):
     """Delete a specific TTS audio file."""
+    validate_video_id(video_id)
     data_dir = get_data_dir()
     # Prevent path traversal
     safe_name = Path(filename).name
@@ -170,6 +176,8 @@ async def delete_tts_audio(video_id: str, filename: str):
 @router.get("/api/videos/{video_id}/tts/{language}")
 async def get_tts_audio(video_id: str, language: str, file: str | None = None):
     """Stream generated TTS audio file. Optionally specify exact filename."""
+    validate_video_id(video_id)
+    validate_language(language)
     data_dir = get_data_dir()
     tts_dir = data_dir / "tts"
 

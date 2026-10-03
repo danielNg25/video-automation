@@ -47,6 +47,21 @@ def _cookie_path() -> Path:
     return Path(config.get("douyin", {}).get("cookie_file", "config/douyin_cookie.txt"))
 
 
+def _assert_cookie_path_allowed(path: Path) -> None:
+    """Reject a cookie_file that resolves outside config/ or data/.
+
+    ``douyin.cookie_file`` is operator-configurable, so without this a crafted
+    value plus the cookie-write endpoint would be a write-anywhere primitive.
+    """
+    resolved = path.resolve()
+    allowed = [Path("config").resolve(), Path("data").resolve()]
+    if not any(resolved == base or base in resolved.parents for base in allowed):
+        raise HTTPException(
+            status_code=400,
+            detail="cookie_file must resolve within config/ or data/",
+        )
+
+
 def _helper_config_path() -> Path:
     """Path to the evil0ctal douyin-api container's bind-mounted config."""
     return Path("config/douyin_web_config.yaml")
@@ -135,6 +150,7 @@ async def update_cookie(body: CookieUpdate):
     if not cookie:
         raise HTTPException(status_code=400, detail="Cookie string cannot be empty")
     path = _cookie_path()
+    _assert_cookie_path_allowed(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(cookie + "\n")
     helper_synced = _splice_cookie_into_helper_config(cookie)

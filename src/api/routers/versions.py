@@ -6,6 +6,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from src.api import versions as versions_mod
+from src.api.validation import validate_language, validate_version, validate_video_id
 
 router = APIRouter()
 
@@ -23,6 +24,8 @@ class RenameVersionRequest(BaseModel):
     response_model=list[versions_mod.VersionEntry],
 )
 async def list_versions(video_id: str, language: str):
+    validate_video_id(video_id)
+    validate_language(language)
     versions_mod.ensure_migrated(video_id, language)
     return versions_mod.load_versions(video_id, language)
 
@@ -35,6 +38,8 @@ async def list_versions(video_id: str, language: str):
 async def create_version(
     video_id: str, language: str, request: CreateVersionRequest
 ):
+    validate_video_id(video_id)
+    validate_language(language)
     versions_mod.ensure_migrated(video_id, language)
     try:
         return versions_mod.snapshot_working_draft(
@@ -54,6 +59,9 @@ async def rename_version(
     version_id: str,
     request: RenameVersionRequest,
 ):
+    validate_video_id(video_id)
+    validate_language(language)
+    validate_version(version_id)
     versions_mod.ensure_migrated(video_id, language)
     entries = versions_mod.load_versions(video_id, language)
     found = next((e for e in entries if e.id == version_id), None)
@@ -74,6 +82,9 @@ async def rename_version(
 async def delete_version(
     video_id: str, language: str, version_id: str
 ):
+    validate_video_id(video_id)
+    validate_language(language)
+    validate_version(version_id)
     versions_mod.ensure_migrated(video_id, language)
     deleted = versions_mod.delete_version(video_id, language, version_id)
     if not deleted:
@@ -101,6 +112,8 @@ async def import_version(
     {video_id}_{language}.v{N+1}.srt. Rejects parse-failed or empty SRTs
     with 400.
     """
+    validate_video_id(video_id)
+    validate_language(language)
     versions_mod.ensure_migrated(video_id, language)
     content = await file.read()
     try:

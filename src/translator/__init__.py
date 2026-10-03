@@ -41,6 +41,14 @@ async def translate_with_profile(
 
     video_stem = srt_path.stem.rsplit("_", 1)[0]  # e.g., "abc123_zh" -> "abc123"
     output_path = output_dir / f"{video_stem}_{profile.target_language}.srt"
+    # Containment: a crafted profile target_language (e.g. "x/../../outside")
+    # must not move the output outside output_dir. Legitimate tags like "vi"
+    # or "vi-VN" keep the parent unchanged; an escape changes it.
+    if output_path.parent.resolve() != output_dir.resolve():
+        raise ValueError(
+            f"Unsafe target_language in profile {profile_name!r}: "
+            f"{profile.target_language!r}"
+        )
 
     return await translator.translate_srt(
         srt_path, profile, output_path, progress_callback=progress_callback

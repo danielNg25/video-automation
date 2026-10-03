@@ -17,10 +17,29 @@ from src.api.models import (
     PipelineRequest,
     TaskResponse,
 )
+from src.api.validation import validate_language, validate_profile_name
 from src.pipeline import STAGE_RANGES
 from src.utils.state import PipelineState, get_all_states, create_pipeline_run, update_pipeline_run, get_pipeline_runs
 
 router = APIRouter()
+
+
+def _validate_pipeline_inputs(
+    source_language: str,
+    tts_language: str | None = None,
+    translate_profile: str | None = None,
+) -> None:
+    """Validate the path-bearing fields shared by the pipeline endpoints.
+
+    ``source_language``/``tts_language`` become SRT/TTS filenames and
+    ``translate_profile`` becomes a YAML path, so all three must pass the
+    allow-list before any worker builds a path from them.
+    """
+    validate_language(source_language)
+    if tts_language:
+        validate_language(tts_language)
+    if translate_profile:
+        validate_profile_name(translate_profile)
 
 
 def _stage_progress(current_stage: str, overall_progress: float) -> float:
@@ -48,6 +67,7 @@ def _stage_progress(current_stage: str, overall_progress: float) -> float:
 @router.post("/api/pipeline", response_model=TaskResponse)
 async def start_pipeline(request: PipelineRequest):
     """Run download → transcribe → translate pipeline (existing behavior)."""
+    _validate_pipeline_inputs(request.source_language, translate_profile=request.translate_profile)
     tm = get_task_manager()
     config = get_config()
 
@@ -70,6 +90,9 @@ async def start_pipeline(request: PipelineRequest):
 @router.post("/api/pipeline/full", response_model=TaskResponse)
 async def start_full_pipeline(request: FullPipelineRequest):
     """Run the full pipeline including process and upload stages."""
+    _validate_pipeline_inputs(
+        request.source_language, request.tts_language, request.translate_profile
+    )
     tm = get_task_manager()
     config = get_config()
 
@@ -268,6 +291,9 @@ async def _run_full_pipeline(
 @router.post("/api/pipeline/batch")
 async def start_batch_pipeline(request: BatchPipelineRequest):
     """Start batch processing of multiple URLs."""
+    _validate_pipeline_inputs(
+        request.source_language, request.tts_language, request.translate_profile
+    )
     tm = get_task_manager()
     config = get_config()
 

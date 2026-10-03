@@ -10,6 +10,12 @@ from starlette.responses import FileResponse, Response
 
 from src.api.deps import get_config, get_task_manager
 from src.api.models import SrtResponse, SubtitleSegment, TaskResponse, TranscribeRequest
+from src.api.validation import (
+    ensure_within,
+    validate_language,
+    validate_version,
+    validate_video_id,
+)
 from src.processor.subtitle import parse_srt
 from src.transcriber.base import BaseTranscriber
 from src.utils.filename import safe_filename
@@ -31,15 +37,24 @@ def _resolve_srt_path(
     """
     from src.api.versions import SRT_DIR
 
+    validate_video_id(video_id)
+    validate_language(language)
+    validate_version(version)
+
     if version == "draft":
-        return SRT_DIR / f"{video_id}_{language}.srt"
-    return SRT_DIR / f"{video_id}_{language}.{version}.srt"
+        candidate = SRT_DIR / f"{video_id}_{language}.srt"
+    else:
+        candidate = SRT_DIR / f"{video_id}_{language}.{version}.srt"
+    return ensure_within(SRT_DIR, candidate)
 
 
 @router.post("/api/transcribe", response_model=TaskResponse)
 async def start_transcribe(request: TranscribeRequest):
     tm = get_task_manager()
     config = get_config()
+
+    validate_video_id(request.video_id)
+    validate_language(request.language)
 
     if request.video_id not in tm.video_index:
         raise HTTPException(status_code=404, detail=f"Video {request.video_id} not found")
@@ -62,6 +77,7 @@ async def start_transcribe(request: TranscribeRequest):
 @router.get("/api/videos/{video_id}/sample-frame")
 async def get_sample_frame(video_id: str, timestamp: float = 1.0):
     """Extract and return a single JPEG frame at the given timestamp."""
+    validate_video_id(video_id)
     tm = get_task_manager()
     video_info = tm.video_index.get(video_id)
     if not video_info:
@@ -103,6 +119,11 @@ async def get_srt(
     video_id: str, language: str = "zh", version: str = "draft",
 ):
     from src.api.versions import ensure_migrated
+
+    # Validate before ensure_migrated — it builds paths from these too.
+    validate_video_id(video_id)
+    validate_language(language)
+    validate_version(version)
 
     tm = get_task_manager()
     if video_id not in tm.video_index:

@@ -86,8 +86,14 @@ def create_app() -> FastAPI:
             if full_path.startswith(_RESERVED):
                 raise HTTPException(status_code=404)
             candidate = UI_DIST / full_path
-            if candidate.is_file():
-                return FileResponse(candidate)
+            # Containment: a crafted path (e.g. '../../etc/passwd') must not
+            # be served from outside the built UI directory. Fall through to
+            # index.html on any escape rather than leaking an arbitrary file.
+            ui_root = UI_DIST.resolve()
+            resolved = candidate.resolve()
+            within = resolved == ui_root or ui_root in resolved.parents
+            if within and resolved.is_file():
+                return FileResponse(resolved)
             return FileResponse(UI_DIST / "index.html")
 
     @app.on_event("startup")
