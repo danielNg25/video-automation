@@ -64,6 +64,7 @@ class Pipeline:
         url: str,
         options: dict | None = None,
         progress_callback: Callable[[str, float, str], None] | None = None,
+        install_signal_handlers: bool = False,
     ) -> dict:
         """Process a single video through the full pipeline.
 
@@ -79,13 +80,26 @@ class Pipeline:
         options = options or {}
         force = options.get("force", False)
 
-        self._setup_signal_handlers()
+        # Only the CLI entry point owns process signals. Installing these from
+        # inside the API server would clobber uvicorn's SIGINT/SIGTERM handlers
+        # and raise KeyboardInterrupt into whatever is running.
+        if install_signal_handlers:
+            self._setup_signal_handlers()
 
         # --- Step 1: Extract video_id (attempt early dedup) ---
         video_id = options.get("video_id")
 
         # Load or create state early so emit() can persist progress
         state = PipelineState.load(video_id) if video_id else PipelineState(video_id="pending")
+
+        # Cancellation: the CLI sets self._interrupted via a signal handler;
+        # the API full-pipeline path passes options["should_cancel"] tied to
+        # its task status. _cancelled() is the single source of truth checked
+        # at stage boundaries and before publishing the SRT.
+        _sc = options.get("should_cancel")
+
+        def _cancelled() -> bool:
+            return self._interrupted or bool(_sc and _sc())
 
         def emit(stage: str, progress: float, message: str):
             logger.info(f"[{stage}] {message}")
@@ -134,7 +148,7 @@ class Pipeline:
                 video_id = state.video_id
                 emit("download", 0.20, f"Download already complete: {video_id}")
 
-            if self._interrupted:
+            if _cancelled():
                 return self._make_result(state, "interrupted")
 
             # --- Stage: Transcribe ---
@@ -164,11 +178,19 @@ class Pipeline:
                 crop_override = options.get("ocr_crop_bottom_pct")
                 if crop_override is not None:
                     ocr_config = {**ocr_config, "crop_bottom_pct": float(crop_override)}
-                transcriber = get_transcriber(ocr_config, progress_callback=ocr_progress)
+                transcriber = get_transcriber(
+                    ocr_config,
+                    progress_callback=ocr_progress,
+                    should_cancel=_cancelled,
+                )
 
                 segments = await asyncio.to_thread(
                     transcriber.transcribe, video_path, source_lang, "transcribe"
                 )
+
+                # Cancelled mid-OCR: abort before writing a partial SRT.
+                if _cancelled():
+                    return self._make_result(state, "interrupted")
 
                 srt_dir = Path("data/srt")
                 srt_dir.mkdir(parents=True, exist_ok=True)
@@ -184,7 +206,7 @@ class Pipeline:
             else:
                 emit("transcribe", 0.45, "Transcription already complete")
 
-            if self._interrupted:
+            if _cancelled():
                 return self._make_result(state, "interrupted")
 
             # --- Stage: Translate (optional) ---
@@ -206,7 +228,12 @@ class Pipeline:
                 output_path = await translate_with_profile(
                     srt_path, translate_profile, self.config, srt_dir,
                     progress_callback=translate_progress,
+                    should_cancel=_cancelled,
                 )
+                # Cancelled during translation → nothing published; abort before
+                # committing the stage.
+                if output_path is None:
+                    return self._make_result(state, "interrupted")
 
                 state.mark_stage_complete("translate", {
                     "output_path": str(output_path),
@@ -216,7 +243,7 @@ class Pipeline:
             elif translate_profile:
                 emit("translate", 0.60, "Translation already complete")
 
-            if self._interrupted:
+            if _cancelled():
                 return self._make_result(state, "interrupted")
 
             # --- Stage: TTS (optional) ---
@@ -285,7 +312,7 @@ class Pipeline:
             elif tts_voice:
                 emit("tts", 1.00, "TTS already complete")
 
-            if self._interrupted:
+            if _cancelled():
                 return self._make_result(state, "interrupted")
 
             # --- Done ---
@@ -312,6 +339,7 @@ class Pipeline:
         urls: list[str],
         options: dict | None = None,
         progress_callback: Callable[[str, float, str], None] | None = None,
+        install_signal_handlers: bool = False,
     ) -> list[dict]:
         """Process multiple URLs with concurrency control.
 
@@ -324,6 +352,10 @@ class Pipeline:
             List of result dicts, one per URL.
         """
         options = options or {}
+        # Install signal handlers once for the whole batch (CLI only); the
+        # per-URL process_single calls below must NOT reinstall them.
+        if install_signal_handlers:
+            self._setup_signal_handlers()
         concurrency = options.get("concurrency", 3)
         semaphore = asyncio.Semaphore(concurrency)
 

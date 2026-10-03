@@ -714,6 +714,22 @@ douyin-automation/
 
 ---
 
+### Cancellation Hardening (2026-10-03)
+
+> Step 3 of 6 in the backend-hardening pass. Cross-reviewed with Codex.
+
+- [x] **Task 1** — OCR takes an injected `should_cancel` callback (no `src.api` import); TaskManager + pipeline pass one tied to task status, matching both `cancelling` and `cancelled`.
+- [x] **Task 2** — `cancel_task` waits for the worker to stop gracefully (`_CANCEL_GRACE_SECONDS`, hard-cancel fallback) before cleanup; if the (uninterruptible) `to_thread` worker doesn't finish in time, cleanup is **deferred** (`cleanup_deferred`) rather than racing it.
+- [x] **Task 3** — A cancelled run doesn't publish partial results or advance stages (no partial SRT written, no OCR metadata write; translation is staged to a temp and only published when not cancelled, so an existing translated SRT survives a cancel); cancelled SSE streams terminate.
+- [x] **Task 4** — Positively-established ownership (`_no_destructible_artifacts`): a cancel cleans up only a video it genuinely created (no pre-existing SRT/version/dub/state), even if it's on disk but unindexed; `cleaned` reflects the real result; `delete_video`'s proxy glob bounded so `v1` ≠ `v10`. Cancel-before-start aborts queued children/batches; `interrupted` maps to `cancelled`, not failed.
+- [x] **Task 5** — `Pipeline` installs signal handlers only via `install_signal_handlers=True` (CLI only), never from the API server.
+- [x] **Task 6** — Tests: `test_ocr_cancel.py`, `test_pipeline_signal.py`, updated `test_task_cancel.py` (owned/unowned/deferred) + `test_pipeline_cancel_integration.py` (108 cases across the touched suites).
+- [x] **Task 7** — CHANGELOG + README updates.
+
+**Deferred to step 4 (state & per-video coordination):** exact created-artifact tracking (vs. the current no-pre-existing-artifacts heuristic), early identity + recovery cleanup of an unindexed video for the full-pipeline path, and persistent batch-child registration before scheduling. Also deferred: proxy/ffmpeg process-group cancellation, and steps 4–6.
+
+---
+
 ### One-Time Setup Checklist
 
 - [ ] Docker installed, Douyin API container running

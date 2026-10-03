@@ -78,12 +78,17 @@ async def test_cancel_with_video_id_runs_delete_video(tmp_path, monkeypatch):
         status="downloaded",
     )
 
+    import src.api.task_manager as tm_mod
+    monkeypatch.setattr(tm_mod, "_CANCEL_GRACE_SECONDS", 0.05)
+
     task = tm.create_task("full_pipeline")
     task.video_id = video_id
+    task._owns_video_cleanup = True  # this run created the video
 
-    async def sleeper():
-        await asyncio.sleep(5)
-    task._asyncio_task = asyncio.create_task(sleeper())
+    # Worker finishes within grace → cleanup runs (not deferred).
+    async def done():
+        return
+    task._asyncio_task = asyncio.create_task(done())
 
     result = await tm.cancel_task(task.task_id)
 

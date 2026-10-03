@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import uuid
 from collections.abc import Callable
 from pathlib import Path
 
@@ -34,14 +36,32 @@ async def translate_with_profile(
     config: dict,
     output_dir: Path,
     progress_callback: Callable[[int, int, str], None] | None = None,
-) -> Path:
-    """High-level: load profile, create translator, translate, return output path."""
+    should_cancel: Callable[[], bool] | None = None,
+) -> Path | None:
+    """High-level: load profile, translate, publish the output SRT.
+
+    Translation is staged to a temp file and only published (atomic rename)
+    when the run was not cancelled — so a cancel during translation can't
+    overwrite an existing translated SRT. Returns the published path, or
+    ``None`` if the run was cancelled before publication.
+    """
     profile = load_profile(profile_name)
     translator = get_translator(config)
 
     video_stem = srt_path.stem.rsplit("_", 1)[0]  # e.g., "abc123_zh" -> "abc123"
-    output_path = output_dir / f"{video_stem}_{profile.target_language}.srt"
+    final_path = output_dir / f"{video_stem}_{profile.target_language}.srt"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    tmp_path = output_dir / f".{video_stem}_{profile.target_language}.{uuid.uuid4().hex}.tmp.srt"
 
-    return await translator.translate_srt(
-        srt_path, profile, output_path, progress_callback=progress_callback
-    )
+    try:
+        await translator.translate_srt(
+            srt_path, profile, tmp_path, progress_callback=progress_callback
+        )
+        if should_cancel and should_cancel():
+            tmp_path.unlink(missing_ok=True)
+            return None
+        os.replace(tmp_path, final_path)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
+    return final_path

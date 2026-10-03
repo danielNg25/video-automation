@@ -141,6 +141,9 @@ async def _run_full_pipeline(
 
     tm = get_task_manager()
     task = tm.tasks[task_id]
+    # A queued child cancelled before it acquired its slot must not start.
+    if tm._cancelled_before_start(task):
+        return
     task.status = "running"
 
     def emit(stage: str, progress: float, message: str):
@@ -178,6 +181,9 @@ async def _run_full_pipeline(
             "underlay_db": underlay_db,
             "subtitle_style": subtitle_style,
             "ocr_crop_bottom_pct": ocr_crop_bottom_pct,
+            # Let a cancel stop OCR mid-run: the pipeline polls this.
+            "should_cancel": lambda: tm.tasks[task_id].status
+            in ("cancelling", "cancelled"),
         }
 
         result = await pipeline.process_single(url, options, emit)
@@ -190,6 +196,8 @@ async def _run_full_pipeline(
 
             # Register video in task manager index so FE can see it immediately
             vid = result.get("video_id", "")
+            # This task created the video only if it's not already indexed.
+            task._owns_video_cleanup = bool(vid) and vid not in tm.video_index
             if vid and vid not in tm.video_index:
                 from src.api.models import VideoResponse
                 from src.utils.metadata import extract_metadata_from_file
@@ -241,6 +249,13 @@ async def _run_full_pipeline(
                 "status": "skipped",
                 "video_ids": [result.get("video_id", "")],
             })
+        elif result.get("status") == "interrupted":
+            # Cooperative cancellation — not a failure. cancel_task owns the
+            # terminal 'cancelled' state/event; don't emit a competing error
+            # or persist a failed run.
+            if task.status not in ("cancelling", "cancelled"):
+                task.status = "cancelled"
+            update_pipeline_run(task_id, {"status": "cancelled"})
         else:
             task.status = "failed"
             task.error = result.get("error", "Unknown error")
@@ -357,6 +372,9 @@ async def _run_batch_pipeline(
 
     tm = get_task_manager()
     batch_task = tm.tasks[batch_id]
+    # A batch cancelled before it started must not spawn children.
+    if tm._cancelled_before_start(batch_task):
+        return
     batch_task.status = "running"
 
     semaphore = asyncio.Semaphore(concurrency)
