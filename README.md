@@ -761,6 +761,20 @@ douyin-automation/
 
 ---
 
+### State Persistence: Atomic Writes + Transactional Registry (2026-10-03)
+
+> Step 4a of 6 in the backend-hardening pass (step 4 split into 4a state-layer / 4b recovery+lifecycle). Cross-reviewed with Codex.
+
+- [x] **Task 1** — `_atomic_write_json` (temp + file `fsync` + `os.replace` + parent-dir `fsync`) replaces truncate-before-lock for state, registry, and run-log — no half-written/empty reads, rename survives a crash.
+- [x] **Task 2** — `_update_json_transactional` (read-modify-write under a sidecar `{path}.lock`) for `register_processed`, **`unregister_processed`** (delete_video's last bypass), `create_pipeline_run`, `update_pipeline_run` — no lost updates under concurrency.
+- [x] **Task 3** — Lock-free reads (`_read_json`); a corrupt file is backed up to `{path}.corrupt.{pid}` + a warning logged, not silently discarded.
+- [x] **Task 4** — Tests: `tests/test_state_atomic.py` (round-trip, corrupt backup, 30-thread no-lost-update for registry / run-log / update, register↔unregister interleaving).
+- [x] **Task 5** — CHANGELOG + README updates.
+
+**Deferred to 4b:** resume-by-stage, unique pending identity, dedup-by-requested-stage, retry-keeps-original-options, plus the step-3 lifecycle carryovers (early identity, exact artifact ownership, batch-child registration).
+
+---
+
 ### One-Time Setup Checklist
 
 - [ ] Docker installed, Douyin API container running

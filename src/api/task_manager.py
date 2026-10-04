@@ -244,17 +244,13 @@ class TaskManager:
         if state_file.exists():
             state_file.unlink()
 
-        # Remove from processed_videos.json registry
-        registry_path = logs_dir / "processed_videos.json"
-        if registry_path.exists():
-            try:
-                import json
-                registry = json.loads(registry_path.read_text())
-                if video_id in registry:
-                    del registry[video_id]
-                    registry_path.write_text(json.dumps(registry, indent=2))
-            except Exception:
-                pass
+        # Remove from processed_videos.json registry (transactional: under the
+        # same sidecar lock as register_processed, so no lost update / torn read).
+        try:
+            from src.utils.state import unregister_processed
+            unregister_processed(video_id)
+        except Exception as e:
+            logger.warning(f"Failed to unregister {video_id}: {e}")
 
         # Remove from index
         del self.video_index[video_id]
