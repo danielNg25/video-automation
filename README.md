@@ -730,6 +730,21 @@ douyin-automation/
 
 ---
 
+### Download Integrity (2026-10-03)
+
+> Step 2 of 6 in the backend-hardening pass. Cross-reviewed with Codex.
+
+- [x] **Task 1** — Douyin + yt-dlp download to a unique temp, then atomic `os.replace()` only after the download completes and passes basic (negative-guard) validation; a failure/kill/obvious error body won't truncate or clobber an existing `{id}.mp4`.
+- [x] **Task 2** — Douyin follows redirects and validates a buffered 512-byte prefix (`_validate_download`): BOM/whitespace strip, reject empty/HTML/JSON/`text/html`/`application/json`/plaintext-error bodies across chunk boundaries.
+- [x] **Task 3** — yt-dlp fallback gets the extracted bare URL (Douyin-aware, non-mangling `_clean_url`), `--` before the URL, a unique staging dir (fragments isolated + `rmtree`'d), non-empty-output check, `--abort-on-unavailable-fragments`, and process-group kill/reap on timeout/cancel.
+- [x] **Task 4** — `FFmpegProcessor.generate_proxy` encodes to a staging temp then atomically renames; failure preserves any existing proxy.
+- [x] **Task 5** — Tests: `tests/test_downloader.py` + `tests/test_ffmpeg_proxy.py` (37 cases, incl. preservation/cleanup/reaping).
+- [x] **Task 6** — CHANGELOG + README updates.
+
+**Not in this step:** per-video locking across state/SRT/cleanup (steps 3–4), deep container validation beyond the prefix sniff, and steps 3–6.
+
+---
+
 ### One-Time Setup Checklist
 
 - [ ] Docker installed, Douyin API container running

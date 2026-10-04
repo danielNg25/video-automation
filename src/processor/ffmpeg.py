@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import uuid
 from pathlib import Path
 
 from src.utils.logger import setup_logger
@@ -90,6 +92,10 @@ class FFmpegProcessor:
         """
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # Encode to a unique temp file, then atomically publish. A concurrent
+        # request (or a failed/killed encode) must never see a half-written
+        # proxy at output_path and serve it as if complete.
+        tmp_path = output_path.parent / f".{output_path.stem}.{uuid.uuid4().hex}.part.mp4"
         cmd = [
             "ffmpeg", "-y",
             "-i", str(video_path),
@@ -100,12 +106,17 @@ class FFmpegProcessor:
             "-c:a", "aac",
             "-b:a", "64k",
             "-movflags", "+faststart",
-            str(output_path),
+            str(tmp_path),
         ]
 
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-        if result.returncode != 0:
-            raise RuntimeError(f"Proxy generation failed: {result.stderr[-500:]}")
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            if result.returncode != 0:
+                raise RuntimeError(f"Proxy generation failed: {result.stderr[-500:]}")
+            os.replace(tmp_path, output_path)
+        except BaseException:
+            Path(tmp_path).unlink(missing_ok=True)
+            raise
 
         logger.info(f"Generated proxy: {output_path}")
         return output_path

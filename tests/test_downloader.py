@@ -1,10 +1,11 @@
+import asyncio
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.downloader import download_with_fallback
+from src.downloader import _clean_url, download_with_fallback
 from src.downloader.douyin import DouyinDownloader
 from src.downloader.ytdlp import YtDlpDownloader
 
@@ -132,8 +133,261 @@ class TestDouyinDownloader:
                 await dl.download("https://v.douyin.com/test/", tmp_path)
 
 
+    @staticmethod
+    def _mock_douyin_client(aweme_id, chunks_or_raiser):
+        api_response = {
+            "code": 200,
+            "data": {
+                "aweme_id": aweme_id,
+                "desc": "x",
+                "author": {"nickname": "u"},
+                "video": {"duration": 1000, "play_addr": {"url_list": ["http://e/v.mp4"]}},
+            },
+        }
+        mock_response = MagicMock()
+        mock_response.json.return_value = api_response
+        mock_response.raise_for_status = MagicMock()
+
+        mock_stream = MagicMock()
+        mock_stream.raise_for_status = MagicMock()
+        if callable(chunks_or_raiser):
+            mock_stream.aiter_bytes = chunks_or_raiser
+        else:
+            mock_stream.aiter_bytes = lambda chunk_size=8192, _c=chunks_or_raiser: _async_iter(_c)
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+        mock_client.stream = MagicMock(return_value=_async_context(mock_stream))
+        return mock_client
+
+    @pytest.mark.asyncio
+    async def test_download_partial_failure_preserves_existing(self, tmp_path):
+        """A mid-stream error must not truncate or remove an existing valid
+        {id}.mp4 (which the yt-dlp fallback would otherwise skip)."""
+        (tmp_path / "555.mp4").write_bytes(b"GOOD EXISTING VIDEO")
+        dl = DouyinDownloader(api_base="http://test:8080")
+
+        async def _boom(chunk_size=8192):
+            yield b"partial bytes"
+            raise OSError("connection reset mid-stream")
+
+        mock_client = self._mock_douyin_client("555", _boom)
+        with patch("src.downloader.douyin.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value = _async_context(mock_client)
+            with pytest.raises(OSError):
+                await dl.download("https://v.douyin.com/test/", tmp_path)
+
+        assert (tmp_path / "555.mp4").read_bytes() == b"GOOD EXISTING VIDEO"
+        assert not list(tmp_path.glob("*.part"))
+
+    @pytest.mark.parametrize(
+        "chunks",
+        [
+            [b"<!DOCTYPE html><html>blocked</html>"],       # HTML
+            [b"\xef\xbb\xbf<html>err</html>"],              # BOM then HTML
+            [b"   \n  ", b"<html>later chunk</html>"],      # whitespace chunk, then HTML
+            [b"Forbidden"],                                  # plaintext error
+            [b"   \n\t  "],                                  # whitespace-only body
+            [b'{"error":"nope"}'],                           # JSON error
+            [b""],                                           # empty body
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_download_rejects_non_video_bodies(self, tmp_path, chunks):
+        """A 200 whose body isn't a video (HTML/JSON/text/empty, with or
+        without BOM/leading whitespace) is rejected; an existing file stays."""
+        (tmp_path / "666.mp4").write_bytes(b"GOOD EXISTING VIDEO")
+        dl = DouyinDownloader(api_base="http://test:8080")
+        mock_client = self._mock_douyin_client("666", chunks)
+        with patch("src.downloader.douyin.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value = _async_context(mock_client)
+            with pytest.raises(ValueError):
+                await dl.download("https://v.douyin.com/test/", tmp_path)
+
+        assert (tmp_path / "666.mp4").read_bytes() == b"GOOD EXISTING VIDEO"
+        assert not list(tmp_path.glob("*.part"))
+
+
 class TestYtDlpDownloader:
     """Tests for YtDlpDownloader."""
+
+    @pytest.mark.asyncio
+    async def test_download_timeout_kills_subprocess(self, tmp_path):
+        """A metadata call that overruns the timeout must kill + reap the child
+        and raise, not orphan a running yt-dlp."""
+        dl = YtDlpDownloader(timeout=1)
+
+        async def hang():
+            await asyncio.sleep(10)
+            return (b"", b"")
+
+        proc = AsyncMock()
+        proc.returncode = None
+        proc.communicate = hang
+        proc.pid = 999999  # a real-looking but nonexistent pid
+        proc.kill = MagicMock()
+        proc.wait = AsyncMock()
+
+        async def mock_create_subprocess(*args, **kwargs):
+            return proc
+
+        # Patch os.killpg so the test never signals a real process group.
+        with (
+            patch("src.downloader.ytdlp.asyncio.create_subprocess_exec", mock_create_subprocess),
+            patch("src.downloader.ytdlp.os.killpg", side_effect=ProcessLookupError),
+        ):
+            with pytest.raises(RuntimeError, match="timed out"):
+                await dl.download("https://v.douyin.com/test/", tmp_path)
+
+        proc.kill.assert_called_once()  # group-kill fell back to proc.kill
+        proc.wait.assert_awaited()  # child is reaped, not orphaned
+
+    @pytest.mark.asyncio
+    async def test_download_cancellation_kills_and_propagates(self, tmp_path):
+        """Cancellation must kill+reap the child and re-raise CancelledError."""
+        dl = YtDlpDownloader(timeout=30)
+
+        async def cancelled():
+            raise asyncio.CancelledError()
+
+        proc = AsyncMock()
+        proc.returncode = None
+        proc.communicate = cancelled
+        proc.pid = 999999
+        proc.kill = MagicMock()
+        proc.wait = AsyncMock()
+
+        async def mk(*a, **k):
+            return proc
+
+        with (
+            patch("src.downloader.ytdlp.asyncio.create_subprocess_exec", mk),
+            patch("src.downloader.ytdlp.os.killpg", side_effect=ProcessLookupError),
+        ):
+            with pytest.raises(asyncio.CancelledError):
+                await dl.download("https://v.douyin.com/test/", tmp_path)
+
+        proc.kill.assert_called_once()
+        proc.wait.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_download_failure_cleans_staging_and_preserves_existing(self, tmp_path):
+        """A non-zero yt-dlp exit must leave no staging artifacts and not
+        clobber an existing final file."""
+        (tmp_path / "987654321.mp4").write_bytes(b"GOOD EXISTING")
+        dl = YtDlpDownloader()
+        meta = {"id": "987654321", "title": "t", "uploader": "u", "duration": 1,
+                "width": 1, "height": 1, "description": ""}
+
+        async def meta_comm():
+            return (json.dumps(meta).encode(), b"")
+
+        async def dl_comm():
+            return (b"", b"boom")
+
+        captured = {}
+
+        async def dl_comm_frag():
+            # Simulate yt-dlp leaving its own partial/fragment files in staging.
+            argv = list(captured["argv"])
+            out = Path(argv[argv.index("-o") + 1])
+            out.parent.mkdir(parents=True, exist_ok=True)
+            (out.parent / (out.name + ".part")).write_bytes(b"frag")
+            (out.parent / "987654321.info.json").write_text("{}")
+            return (b"", b"boom")
+
+        meta_proc = AsyncMock(); meta_proc.returncode = 0; meta_proc.communicate = meta_comm
+        dl_proc = AsyncMock(); dl_proc.returncode = 1; dl_proc.communicate = dl_comm_frag
+        n = 0
+
+        async def mk(*a, **k):
+            nonlocal n
+            n += 1
+            if n == 1:
+                return meta_proc
+            captured["argv"] = a
+            return dl_proc
+
+        with patch("src.downloader.ytdlp.asyncio.create_subprocess_exec", mk):
+            with pytest.raises(RuntimeError, match="download failed"):
+                await dl.download("https://v.douyin.com/test/", tmp_path)
+
+        assert (tmp_path / "987654321.mp4").read_bytes() == b"GOOD EXISTING"
+        assert not list(tmp_path.glob(".ytdlp-*"))  # staging + fragments gone
+
+    @pytest.mark.asyncio
+    async def test_download_sidecar_only_output_rejected(self, tmp_path):
+        """Exit zero but only a sidecar (no media file) must not publish."""
+        (tmp_path / "987654321.mp4").write_bytes(b"GOOD EXISTING")
+        dl = YtDlpDownloader()
+        meta = {"id": "987654321", "title": "t", "uploader": "u", "duration": 1,
+                "width": 1, "height": 1, "description": ""}
+        captured = {}
+
+        async def meta_comm():
+            return (json.dumps(meta).encode(), b"")
+
+        async def dl_comm():
+            argv = list(captured["argv"])
+            out = Path(argv[argv.index("-o") + 1])
+            out.parent.mkdir(parents=True, exist_ok=True)
+            (out.parent / "987654321.info.json").write_text("{}")  # sidecar only
+            return (b"", b"")
+
+        meta_proc = AsyncMock(); meta_proc.returncode = 0; meta_proc.communicate = meta_comm
+        dl_proc = AsyncMock(); dl_proc.returncode = 0; dl_proc.communicate = dl_comm
+        n = 0
+
+        async def mk(*a, **k):
+            nonlocal n
+            n += 1
+            if n == 1:
+                return meta_proc
+            captured["argv"] = a
+            return dl_proc
+
+        with patch("src.downloader.ytdlp.asyncio.create_subprocess_exec", mk):
+            with pytest.raises(RuntimeError, match="no / empty output"):
+                await dl.download("https://v.douyin.com/test/", tmp_path)
+
+        assert (tmp_path / "987654321.mp4").read_bytes() == b"GOOD EXISTING"
+        assert not list(tmp_path.glob(".ytdlp-*"))
+
+    @pytest.mark.asyncio
+    async def test_download_empty_output_rejected(self, tmp_path):
+        """Exit zero but an empty output file must not replace a real video."""
+        (tmp_path / "987654321.mp4").write_bytes(b"GOOD EXISTING")
+        dl = YtDlpDownloader()
+        meta = {"id": "987654321", "title": "t", "uploader": "u", "duration": 1,
+                "width": 1, "height": 1, "description": ""}
+        captured = {}
+
+        async def meta_comm():
+            return (json.dumps(meta).encode(), b"")
+
+        async def dl_comm():
+            out = list(captured["argv"])[list(captured["argv"]).index("-o") + 1]
+            Path(out).write_bytes(b"")  # zero-byte output
+            return (b"", b"")
+
+        meta_proc = AsyncMock(); meta_proc.returncode = 0; meta_proc.communicate = meta_comm
+        dl_proc = AsyncMock(); dl_proc.returncode = 0; dl_proc.communicate = dl_comm
+        n = 0
+
+        async def mk(*a, **k):
+            nonlocal n
+            n += 1
+            if n == 1:
+                return meta_proc
+            captured["argv"] = a
+            return dl_proc
+
+        with patch("src.downloader.ytdlp.asyncio.create_subprocess_exec", mk):
+            with pytest.raises(RuntimeError, match="no / empty output"):
+                await dl.download("https://v.douyin.com/test/", tmp_path)
+
+        assert (tmp_path / "987654321.mp4").read_bytes() == b"GOOD EXISTING"
+        assert not list(tmp_path.glob(".ytdlp-*"))
 
     @pytest.mark.asyncio
     async def test_download_success(self, tmp_path):
@@ -152,9 +406,14 @@ class TestYtDlpDownloader:
         async def mock_meta_communicate():
             return (json.dumps(meta_info).encode(), b"")
 
+        captured = {}
+
         async def mock_dl_communicate():
-            # Create the output file to simulate download
-            (tmp_path / "987654321.mp4").write_bytes(b"fake video")
+            # Write to the unique temp path yt-dlp was told to use (-o), so the
+            # downloader's atomic os.replace(tmp, final) has something to move.
+            argv = list(captured["dl_argv"])
+            out = argv[argv.index("-o") + 1]
+            Path(out).write_bytes(b"fake video")
             return (b"", b"")
 
         meta_proc = AsyncMock()
@@ -171,7 +430,9 @@ class TestYtDlpDownloader:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
+                captured["meta_argv"] = args
                 return meta_proc
+            captured["dl_argv"] = args
             return dl_proc
 
         with patch("src.downloader.ytdlp.asyncio.create_subprocess_exec", mock_create_subprocess):
@@ -182,6 +443,12 @@ class TestYtDlpDownloader:
         assert result.author == "testuser"
         assert result.duration == 30.0
         assert "video" in result.hashtags
+        # Final file is published atomically; no .part left behind.
+        assert (tmp_path / "987654321.mp4").exists()
+        assert not list(tmp_path.glob("*.part.mp4"))
+        # '--' terminates options before the URL in both invocations.
+        assert "--" in captured["meta_argv"] and captured["meta_argv"][-1] == "https://v.douyin.com/test/"
+        assert "--" in captured["dl_argv"] and captured["dl_argv"][-1] == "https://v.douyin.com/test/"
 
     @pytest.mark.asyncio
     async def test_download_metadata_failure(self, tmp_path):
@@ -203,8 +470,81 @@ class TestYtDlpDownloader:
                 await dl.download("https://v.douyin.com/bad/", tmp_path)
 
 
+class TestCleanUrl:
+    """Tests for _clean_url (share-text → bare URL for yt-dlp)."""
+
+    def test_extracts_url_from_share_text(self):
+        assert (
+            _clean_url("1.95 复制打开抖音 https://v.douyin.com/SeJ-W3i5s5s/ 看看")
+            == "https://v.douyin.com/SeJ-W3i5s5s/"
+        )
+
+    def test_passes_through_clean_url(self):
+        assert _clean_url("https://www.douyin.com/video/7123") == "https://www.douyin.com/video/7123"
+
+    def test_handles_cjk_punctuation_adjacent_to_douyin_url(self):
+        # No space before the Chinese comma — the Douyin pattern stops cleanly.
+        assert (
+            _clean_url("复制 https://v.douyin.com/abc/，打开抖音")
+            == "https://v.douyin.com/abc/"
+        )
+
+    def test_does_not_mangle_standalone_url_legal_chars(self):
+        # Parentheses and semicolons are legal URL characters and must survive.
+        assert (
+            _clean_url("https://example.test/video_(2024)")
+            == "https://example.test/video_(2024)"
+        )
+        assert (
+            _clean_url("https://example.test/watch?token=abc;v=2")
+            == "https://example.test/watch?token=abc;v=2"
+        )
+
+    def test_standalone_douyin_url_keeps_query(self):
+        # A standalone Douyin URL with a query must not be truncated at the path.
+        assert (
+            _clean_url("https://v.douyin.com/abc/?token=abc;v=2")
+            == "https://v.douyin.com/abc/?token=abc;v=2"
+        )
+
+    def test_standalone_url_with_embedded_douyin_is_not_rewritten(self):
+        # The outer URL is standalone; the embedded Douyin URL must not win.
+        url = "https://example.test/watch?redirect=https://www.douyin.com/video/123"
+        assert _clean_url(url) == url
+
+    def test_no_url_returns_stripped_input(self):
+        assert _clean_url("  just text  ") == "just text"
+
+
 class TestDownloadWithFallback:
     """Tests for download_with_fallback."""
+
+    @pytest.mark.asyncio
+    async def test_fallback_receives_cleaned_url(self, tmp_path):
+        """When falling back to yt-dlp, the bare URL (not the share text) is
+        passed."""
+        from src.utils.metadata import VideoMetadata
+
+        captured = {}
+
+        async def fake_ytdlp_download(self, url, output_dir):
+            captured["url"] = url
+            return VideoMetadata(video_id="789", file_path=str(output_dir / "789.mp4"))
+
+        with (
+            patch(
+                "src.downloader.DouyinDownloader.download",
+                new_callable=AsyncMock,
+                side_effect=Exception("API down"),
+            ),
+            patch("src.downloader.YtDlpDownloader.download", fake_ytdlp_download),
+        ):
+            config = {"douyin": {"api_base": "http://test:8080"}}
+            await download_with_fallback(
+                "1.9 复制打开抖音 https://v.douyin.com/abc/ 看", tmp_path, config
+            )
+
+        assert captured["url"] == "https://v.douyin.com/abc/"
 
     @pytest.mark.asyncio
     async def test_primary_succeeds(self, tmp_path):
