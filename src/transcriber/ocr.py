@@ -74,6 +74,7 @@ class OCRTranscriber(BaseTranscriber):
         progress_callback=None,
         crop_bottom_pct: float = 0.0,
         execution_provider: str = "auto",
+        should_cancel=None,
     ):
         self.fps = fps
         self.confidence_threshold = confidence_threshold
@@ -82,6 +83,10 @@ class OCRTranscriber(BaseTranscriber):
         self.progress_callback = progress_callback
         self.crop_bottom_pct = crop_bottom_pct
         self.execution_provider = execution_provider
+        # Caller-supplied cancellation check: a zero-arg callable returning
+        # True when the run should stop. Keeps the transcriber decoupled from
+        # the API/TaskManager (no import back into src.api).
+        self.should_cancel = should_cancel
 
         region_cfg = subtitle_region_config or {}
         self.min_y = region_cfg.get("min_y", 0.65)
@@ -133,7 +138,6 @@ class OCRTranscriber(BaseTranscriber):
         video_path: str,
         language: str = "zh",
         task: str = "transcribe",
-        task_id: str | None = None,
     ) -> list[dict]:
         """Extract subtitles from burned-in text in video frames.
 
@@ -180,13 +184,19 @@ class OCRTranscriber(BaseTranscriber):
                 logger.warning("No frames extracted from video")
                 return []
 
+            # Cancel check between the (uninterruptible) frame extraction and
+            # the OCR loop, so a cancel during extraction stops here.
+            if self.should_cancel and self.should_cancel():
+                logger.info("OCR cancelled after frame extraction")
+                return []
+
             total_frames = len(frames)
             ocr_lang = "ch" if language == "zh" else "en"
             ocr = self._get_ocr(ocr_lang)
 
             if self.ocr_region:
                 return self._ocr_with_manual_region(
-                    frames, ocr, frame_height, frame_width, task_id=task_id
+                    frames, ocr, frame_height, frame_width
                 )
 
             # Single streaming pass: OCR every frame, build a rolling
@@ -212,15 +222,10 @@ class OCRTranscriber(BaseTranscriber):
             )
 
             for i, frame_path in enumerate(frames):
-                # Cancel check: short-circuit if the task is being cancelled.
-                if task_id is not None:
-                    from src.api.task_manager import get_task_manager_instance
-                    tm = get_task_manager_instance()
-                    if tm is not None:
-                        t = tm.tasks.get(task_id)
-                        if t is not None and t.status == "cancelling":
-                            logger.info(f"OCR loop cancelled at frame {i}/{len(frames)}")
-                            return self._deduplicate_frames(frame_texts)
+                # Cancel check: short-circuit if the caller signalled cancel.
+                if self.should_cancel and self.should_cancel():
+                    logger.info(f"OCR loop cancelled at frame {i}/{len(frames)}")
+                    return self._deduplicate_frames(frame_texts)
 
                 pct = 0.10 + (i / total_frames) * 0.75
                 if i % 10 == 0:
@@ -259,8 +264,10 @@ class OCRTranscriber(BaseTranscriber):
             self._emit_progress(0.85, "Deduplicating and generating SRT...")
             segments = self._deduplicate_frames(frame_texts)
 
-        # Save OCR metadata with subtitle region for Phase 6 blur
-        if all_subtitle_bboxes:
+        # Save OCR metadata with subtitle region for Phase 6 blur — but not if
+        # we were cancelled: a cancelled run must not write artifacts that
+        # cleanup (which may already have run) wouldn't know about.
+        if all_subtitle_bboxes and not (self.should_cancel and self.should_cancel()):
             video_stem = video_path.stem
             srt_dir = video_path.parent.parent / "srt"
             self._save_ocr_metadata(
@@ -276,7 +283,6 @@ class OCRTranscriber(BaseTranscriber):
         ocr,
         frame_height: int,
         frame_width: int,
-        task_id: str | None = None,
     ) -> list[dict]:
         """OCR using a manually specified region."""
         region = self.ocr_region
@@ -293,15 +299,10 @@ class OCRTranscriber(BaseTranscriber):
         frame_texts = []
 
         for i, frame_path in enumerate(frames):
-            # Cancel check: short-circuit if the task is being cancelled.
-            if task_id is not None:
-                from src.api.task_manager import get_task_manager_instance
-                tm = get_task_manager_instance()
-                if tm is not None:
-                    t = tm.tasks.get(task_id)
-                    if t is not None and t.status == "cancelling":
-                        logger.info(f"OCR loop cancelled at frame {i}/{len(frames)}")
-                        return self._deduplicate_frames(frame_texts)
+            # Cancel check: short-circuit if the caller signalled cancel.
+            if self.should_cancel and self.should_cancel():
+                logger.info(f"OCR loop cancelled at frame {i}/{len(frames)}")
+                return self._deduplicate_frames(frame_texts)
 
             pct = 0.15 + (i / total_frames) * 0.65
             if i % 10 == 0:

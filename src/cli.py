@@ -91,7 +91,9 @@ def process(url, subtitle_lang, translate_profile, tts_voice, tts_provider, tts_
 
     console.print(f"\n[bold]Processing:[/bold] {url}\n")
 
-    result = _run_async(pipeline.process_single(url, options, on_progress))
+    result = _run_async(
+        pipeline.process_single(url, options, on_progress, install_signal_handlers=True)
+    )
 
     status = result.get("status", "unknown")
     if status == "done":
@@ -190,7 +192,9 @@ def batch(url_file, concurrency, subtitle_lang, translate_profile, privacy, forc
     def on_progress(stage: str, progress: float, message: str):
         console.print(f"  [dim]{message}[/dim]")
 
-    results = _run_async(pipeline.process_batch(urls, options, on_progress))
+    results = _run_async(
+        pipeline.process_batch(urls, options, on_progress, install_signal_handlers=True)
+    )
 
     # Summary
     succeeded = sum(1 for r in results if r.get("status") == "done")

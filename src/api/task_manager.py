@@ -17,6 +17,10 @@ from src.utils.metadata import extract_metadata_from_file
 
 logger = setup_logger(__name__)
 
+# How long a cancel waits for the worker to stop gracefully (OCR polls
+# should_cancel) before hard-cancelling the coroutine. Patchable in tests.
+_CANCEL_GRACE_SECONDS = 5.0
+
 
 @dataclass
 class Task:
@@ -36,6 +40,10 @@ class Task:
     _asyncio_task: asyncio.Task | None = None
     _running_subprocess: subprocess.Popen | None = None
     _child_task_ids: list[str] = field(default_factory=list)
+    # True only when THIS task created the video (fresh download). Gates
+    # cancel cleanup so a cancel can't delete a pre-existing video's SRTs,
+    # versions, and dubs.
+    _owns_video_cleanup: bool = False
 
 
 def _detect_video_status(video_id: str, has_srt: bool, srt_langs: list[str]) -> str:
@@ -185,8 +193,9 @@ class TaskManager:
             except OSError as e:
                 logger.warning(f"Failed to delete {path}: {e}")
 
-        # Proxy video
-        for proxy in proxy_dir.glob(f"{video_id}*"):
+        # Proxy video. Use bounded patterns ('{id}_' / '{id}.') so deleting
+        # video 'v1' can't also remove 'v10_360p.mp4'.
+        for proxy in [*proxy_dir.glob(f"{video_id}_*"), *proxy_dir.glob(f"{video_id}.*")]:
             try:
                 proxy.unlink()
             except OSError as e:
@@ -267,6 +276,50 @@ class TaskManager:
         for queue in self._subscribers.get(task_id, []):
             queue.put_nowait(entry)
 
+    def _no_destructible_artifacts(self, video_id: str) -> bool:
+        """True when no SRT / version / dub / state artifacts for video_id
+        exist yet — i.e. this run genuinely created the video, so a cancel's
+        cleanup won't destroy prior work. A lone raw .mp4 is fine (we just
+        wrote it); subtitles, dubs, versions, or a state file mean the id
+        pre-existed and must be preserved.
+        """
+        srt_dir = Path("data/srt")
+        tts_dir = Path("data/tts")
+        logs_dir = Path("data/logs")
+        if list(srt_dir.glob(f"{video_id}_*")) or list(srt_dir.glob(f"{video_id}.*")):
+            return False
+        if list(tts_dir.glob(f"{video_id}_*")) or (tts_dir / video_id).exists():
+            return False
+        if (logs_dir / f"{video_id}_state.json").exists():
+            return False
+        registry = logs_dir / "processed_videos.json"
+        if registry.exists():
+            try:
+                if video_id in json.loads(registry.read_text()):
+                    return False
+            except Exception:
+                pass
+        return True
+
+    def _cancelled_before_start(self, task) -> bool:
+        """Honor a cancel that landed while the task was still queued.
+
+        A queued worker that was cancelled before acquiring its slot must NOT
+        flip its own status back to 'running' and start work — that would
+        overwrite existing artifacts and emit a stray 'complete'. Emits a
+        terminal 'cancelled' event so any SSE subscriber unblocks.
+        """
+        if task.status in ("cancelling", "cancelled"):
+            logger.info(f"{task.task_type} {task.task_id} cancelled before start")
+            task.status = "cancelled"
+            self._emit(
+                task.task_id,
+                "cancelled",
+                {"video_id": task.video_id, "cleaned": False},
+            )
+            return True
+        return False
+
     async def run_subprocess_tracked(
         self,
         task_id: str,
@@ -342,39 +395,65 @@ class TaskManager:
             except (ProcessLookupError, OSError):
                 pass  # already exited
 
-        # Cancel the coroutine. Wait up to 5s for it to exit cleanly.
+        # Let the worker stop gracefully first: status is now 'cancelling', so
+        # the OCR loop's should_cancel() returns True and the thread returns at
+        # the next frame, finishing the coroutine. Waiting here ensures the
+        # worker has stopped BEFORE cleanup — otherwise delete_video could race
+        # the thread still writing frames/SRT. Hard-cancel only if it overruns.
+        # `worker_stopped` tracks whether the coroutine actually finished: a
+        # to_thread worker cannot be force-joined, so if the grace elapses we
+        # hard-cancel the coroutine but must NOT clean up (the thread may still
+        # be writing) — cleanup is deferred.
+        worker_stopped = True
         if task._asyncio_task is not None and not task._asyncio_task.done():
-            task._asyncio_task.cancel()
             try:
-                await asyncio.wait_for(task._asyncio_task, timeout=5.0)
-            except (asyncio.CancelledError, asyncio.TimeoutError):
-                pass
+                await asyncio.wait_for(
+                    asyncio.shield(task._asyncio_task), timeout=_CANCEL_GRACE_SECONDS
+                )
+            except asyncio.TimeoutError:
+                task._asyncio_task.cancel()
+                worker_stopped = False
+            except asyncio.CancelledError:
+                # The cancel request ITSELF was cancelled (e.g. server shutdown).
+                # The shielded worker is still running — don't trust its state
+                # and don't clean up; propagate so we don't silently proceed.
+                raise
+            except Exception:
+                pass  # worker coroutine finished with an error — it is done
 
         # Cleanup. Best-effort — failure here doesn't unmark cancellation.
-        # Only the pipeline-y task types (whose whole purpose is producing one
-        # video end-to-end) trigger delete_video. A cancelled TTS task carries
-        # the source video_id but the source itself is still good — wiping it
-        # would also nuke unrelated SRTs and dubs.
-        CLEANUP_TASK_TYPES = {"download", "pipeline", "full_pipeline"}
+        # Only delete the video when THIS task created it (fresh download) AND
+        # the worker has actually stopped; otherwise a cancel would wipe a
+        # pre-existing video's SRTs/versions/dubs or race a live worker. Report
+        # the real delete_video result.
         cleaned = False
-        if task.video_id and task.task_type in CLEANUP_TASK_TYPES:
-            try:
-                self.delete_video(task.video_id)
-                cleaned = True
-            except Exception as e:
-                logger.error(f"delete_video({task.video_id}) failed during cancel: {e}")
+        cleanup_deferred = False
+        if task.video_id and task._owns_video_cleanup:
+            if worker_stopped:
+                try:
+                    cleaned = self.delete_video(task.video_id)
+                except Exception as e:
+                    logger.error(f"delete_video({task.video_id}) failed during cancel: {e}")
+            else:
+                cleanup_deferred = True
+                logger.warning(
+                    f"Cancel of {task_id}: worker for {task.video_id} did not stop "
+                    f"within {_CANCEL_GRACE_SECONDS}s — deferring cleanup to avoid a race"
+                )
 
         task.status = "cancelled"
         task.message = "Cancelled by user"
         self._emit(task_id, "cancelled", {
             "video_id": task.video_id,
             "cleaned": cleaned,
+            "cleanup_deferred": cleanup_deferred,
         })
 
         return {
             "task_id": task_id,
             "status": "cancelled",
             "cleaned": cleaned,
+            "cleanup_deferred": cleanup_deferred,
             "video_id": task.video_id,
         }
 
@@ -389,7 +468,7 @@ class TaskManager:
                 yield event
 
             # If already done, no need to wait
-            if task.status in ("completed", "failed"):
+            if task.status in ("completed", "failed", "cancelled"):
                 return
 
         # Register subscriber
@@ -402,7 +481,7 @@ class TaskManager:
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=30.0)
                     yield event
-                    if event["event"] in ("complete", "error"):
+                    if event["event"] in ("complete", "error", "cancelled"):
                         break
                 except asyncio.TimeoutError:
                     # Send keepalive to prevent connection drop, continue waiting
@@ -417,6 +496,8 @@ class TaskManager:
         from src.downloader import download_with_fallback
 
         task = self.tasks[task_id]
+        if self._cancelled_before_start(task):
+            return
         task.status = "running"
         task.message = "Starting download..."
         self._emit(task_id, "progress", {"progress": 0.0, "message": "Starting download..."})
@@ -454,6 +535,12 @@ class TaskManager:
                 thumbnail=thumbnail,
                 has_srt=False,
                 status="downloaded",
+            )
+            # Only a brand-new video id (not already indexed) is owned by this
+            # task for cancel cleanup.
+            task._owns_video_cleanup = (
+                video_id not in self.video_index
+                and self._no_destructible_artifacts(video_id)
             )
             self.video_index[video_id] = video_resp
 
@@ -496,6 +583,8 @@ class TaskManager:
         from src.transcriber import get_transcriber
 
         task = self.tasks[task_id]
+        if self._cancelled_before_start(task):
+            return
         task.status = "running"
         task.video_id = video_id
         task.message = "Initializing OCR engine..."
@@ -531,12 +620,20 @@ class TaskManager:
                 ocr_cfg,
                 ocr_region=ocr_region,
                 progress_callback=ocr_progress,
+                should_cancel=lambda: task.status in ("cancelling", "cancelled"),
             )
 
             # Run CPU-bound transcription in a thread
             segments = await asyncio.to_thread(
-                transcriber.transcribe, video_path, language, task_type, task_id
+                transcriber.transcribe, video_path, language, task_type
             )
+
+            # Cancelled mid-run: do NOT publish the partial transcript or emit
+            # completion (it would overwrite an existing SRT with partial text
+            # and mark the task done). cancel_task handles the terminal state.
+            if task.status in ("cancelling", "cancelled"):
+                logger.info(f"Transcribe {task_id} cancelled — not publishing partial SRT")
+                return
 
             task.message = "Generating SRT file..."
             self._emit(
@@ -584,6 +681,8 @@ class TaskManager:
         from src.translator.profiles import load_profile
 
         task = self.tasks[task_id]
+        if self._cancelled_before_start(task):
+            return
         task.status = "running"
         task.video_id = video_id
         task.message = "Loading translation profile..."
@@ -619,8 +718,12 @@ class TaskManager:
                 )
 
             output_path = await translate_with_profile(
-                srt_path, profile_name, config, srt_dir, progress_callback=on_progress
+                srt_path, profile_name, config, srt_dir, progress_callback=on_progress,
+                should_cancel=lambda: task.status in ("cancelling", "cancelled"),
             )
+            if output_path is None:
+                logger.info(f"Translate {task_id} cancelled — not publishing")
+                return
 
             # Update video index with new language
             target_lang = profile.target_language
@@ -684,6 +787,8 @@ class TaskManager:
         from src.tts.runner import run_tts_track
 
         task = self.tasks[task_id]
+        if self._cancelled_before_start(task):
+            return
         task.status = "running"
         task.video_id = video_id
         task.message = "Preparing TTS..."
@@ -764,6 +869,8 @@ class TaskManager:
         from src.tts.runner import build_llm_translator, get_tts_provider
 
         task = self.tasks[task_id]
+        if self._cancelled_before_start(task):
+            return
         task.status = "running"
         task.message = "Preparing standalone dub..."
         self._emit(task_id, "progress", {"progress": 0.0, "message": "Preparing standalone dub..."})
@@ -902,6 +1009,8 @@ class TaskManager:
         from src.transcriber import get_transcriber
 
         task = self.tasks[task_id]
+        if self._cancelled_before_start(task):
+            return
         task.status = "running"
         task.message = "Starting pipeline..."
 
@@ -949,6 +1058,10 @@ class TaskManager:
                 has_srt=False,
                 status="downloaded",
             )
+            task._owns_video_cleanup = (
+                video_id not in self.video_index
+                and self._no_destructible_artifacts(video_id)
+            )
             self.video_index[video_id] = video_resp
             task.video_id = video_id
 
@@ -984,12 +1097,17 @@ class TaskManager:
             transcriber = get_transcriber(
                 ocr_config,
                 progress_callback=transcribe_progress,
+                should_cancel=lambda: task.status in ("cancelling", "cancelled"),
             )
 
             video_path = str(file_path)
             segments = await asyncio.to_thread(
                 transcriber.transcribe, video_path, source_language, "transcribe"
             )
+
+            if task.status in ("cancelling", "cancelled"):
+                logger.info(f"Pipeline {task_id} cancelled — not publishing partial SRT")
+                return
 
             # Generate SRT
             srt_dir = Path("data/srt")
@@ -1008,7 +1126,7 @@ class TaskManager:
             emit("transcribe", 0.70, f"Transcription complete ({len(segments)} segments)")
 
             # ── Stage 3: Translate (0.70 – 1.00) ──
-            if translate_profile:
+            if translate_profile and task.status not in ("cancelling", "cancelled"):
                 from src.translator import translate_with_profile
 
                 emit("translate", 0.70, "Starting translation...")
@@ -1022,10 +1140,14 @@ class TaskManager:
                         {"stage": "translate", "progress": pct, "message": message},
                     )
 
-                await translate_with_profile(
+                out_path = await translate_with_profile(
                     srt_path, translate_profile, config, srt_dir,
                     progress_callback=on_translate_progress,
+                    should_cancel=lambda: task.status in ("cancelling", "cancelled"),
                 )
+                if out_path is None:
+                    logger.info(f"Pipeline {task_id} cancelled during translation")
+                    return
 
                 # Update video index with translated language
                 from src.translator.profiles import load_profile
@@ -1038,6 +1160,11 @@ class TaskManager:
                 self.video_index[video_id] = video_resp
 
                 emit("translate", 0.98, "Translation complete")
+
+            # Cancelled during translation: don't emit a 'complete' terminal.
+            if task.status in ("cancelling", "cancelled"):
+                logger.info(f"Pipeline {task_id} cancelled before completion")
+                return
 
             # ── Complete ──
             task.status = "completed"
